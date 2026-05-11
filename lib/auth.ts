@@ -21,6 +21,7 @@ async function exchangeForLongLivedToken(shortLivedToken: string): Promise<strin
 }
 
 export const authOptions: AuthOptions = {
+  debug: true,
   logger: {
     error(code, metadata) {
       console.error("[NextAuth][error]", code, JSON.stringify(metadata, null, 2))
