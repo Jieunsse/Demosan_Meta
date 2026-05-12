@@ -12,7 +12,7 @@ const MAX_IMAGE_DATA_URL_LEN = 4_300_000
 
 type CampaignRequestBody = {
   headline?: string
-  bodyCopy?: string
+  primaryText?: string
   dailyBudget?: number
   startDate?: string
   endDate?: string
@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
   const { accessToken, adAccountId, pageId } = session
   return withRouteHandler(true, '', async () => {
       const body = (await req.json()) as CampaignRequestBody
-      const { headline, bodyCopy, dailyBudget, startDate, endDate, ageMin, ageMax, linkUrl, cta, imageDataUrl } = body
+      const { headline, primaryText, dailyBudget, startDate, endDate, ageMin, ageMax, linkUrl, cta, imageDataUrl } = body
       const genders = Array.isArray(body.genders)
         ? Array.from(new Set(body.genders.filter((g) => g === 1 || g === 2)))
         : []
@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
         throw new ValidationError('타겟 지역(국가)을 최소 한 곳 선택해주세요.')
       }
 
-      if (!headline || !bodyCopy || !dailyBudget || !startDate || !endDate || !linkUrl) {
+      if (!headline || !primaryText || !dailyBudget || !startDate || !endDate || !linkUrl) {
         throw new ValidationError('필수 필드가 누락됐어요.')
       }
 
@@ -88,7 +88,7 @@ export async function POST(req: NextRequest) {
       const result = await metaAds.createCampaign(
         {
           headline,
-          bodyCopy,
+          primaryText,
           dailyBudget,
           startDate,
           endDate,

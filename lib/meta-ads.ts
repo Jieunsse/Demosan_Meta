@@ -9,7 +9,7 @@ const GRAPH = 'https://graph.facebook.com/v20.0'
 
 export interface CreateCampaignParams {
   headline: string
-  bodyCopy: string
+  primaryText: string
   dailyBudget: number  // 원화(KRW) 정수 — Meta 에 그대로 전달 (KRW 는 소수 단위 없음)
   startDate: string    // YYYY-MM-DD
   endDate: string      // YYYY-MM-DD
@@ -169,7 +169,7 @@ export const metaAds = {
           object_story_spec: {
             page_id: pageId,
             link_data: {
-              message: params.bodyCopy,
+              message: params.primaryText,
               link: params.linkUrl,
               name: params.headline,
               call_to_action: { type: params.ctaType },

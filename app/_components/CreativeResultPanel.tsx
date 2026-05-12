@@ -101,14 +101,14 @@ export default function CreativeResultPanel({
 
             <textarea
               className="body-copy-edit"
-              aria-label="바디 카피"
-              value={state.bodyCopy}
+              aria-label="기본 텍스트"
+              value={state.primaryText}
               onChange={(e) =>
-                dispatch({ type: "SET_BODY_COPY", bodyCopy: e.target.value })
+                dispatch({ type: "SET_PRIMARY_TEXT", primaryText: e.target.value })
               }
             />
             <p className="body-copy-meta">
-              <span>{state.bodyCopy.length} / 200자</span>
+              <span>{state.primaryText.length} / 200자</span>
             </p>
 
             <div className="cta-chip-row">

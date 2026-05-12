@@ -33,7 +33,7 @@ export default function CreateTab({ onNext }: { onNext: () => void }) {
       onSuccess: (data) => {
         setDisplayedHeadlines(data.headlines);
         dispatch({ type: "SET_HEADLINE", headline: data.headlines[0] });
-        dispatch({ type: "SET_BODY_COPY", bodyCopy: data.bodyCopy });
+        dispatch({ type: "SET_PRIMARY_TEXT", primaryText: data.primaryText });
         dispatch({ type: "SET_TARGETING", targeting: data.targeting });
         setElapsedSec(Math.round((Date.now() - startedAt) / 100) / 10);
       },

@@ -21,7 +21,7 @@ export type CreativeState = {
   headline: string;
   cta: CtaId;
   image: ImageId;
-  bodyCopy: string;
+  primaryText: string;
   generatedImages: [string, string, string] | null;
   // AI 카피 생성 시 타겟 설명에서 추출한 타겟팅 — 광고 집행 페이지의 기본값으로 사용
   targeting: ExtractedTargeting | null;
@@ -34,7 +34,7 @@ export type CreativeAction =
   | { type: "SET_HEADLINE"; headline: string }
   | { type: "SET_CTA"; cta: CtaId }
   | { type: "SET_IMAGE"; image: ImageId }
-  | { type: "SET_BODY_COPY"; bodyCopy: string }
+  | { type: "SET_PRIMARY_TEXT"; primaryText: string }
   | { type: "SET_GENERATED_IMAGES"; images: [string, string, string] }
   | { type: "SET_TARGETING"; targeting: ExtractedTargeting }
   | { type: "SET_LAUNCHED_CAMPAIGN"; value: LaunchedCampaign }
@@ -45,7 +45,7 @@ const INITIAL_STATE: CreativeState = {
   headline: INITIAL_HEADLINE,
   cta: "sample",
   image: "img2",
-  bodyCopy: "",
+  primaryText: "",
   generatedImages: null,
   targeting: null,
   launchedCampaign: null,
@@ -57,7 +57,7 @@ function reducer(state: CreativeState, action: CreativeAction): CreativeState {
     case "SET_HEADLINE":        return { ...state, headline: action.headline };
     case "SET_CTA":             return { ...state, cta: action.cta };
     case "SET_IMAGE":           return { ...state, image: action.image };
-    case "SET_BODY_COPY":       return { ...state, bodyCopy: action.bodyCopy };
+    case "SET_PRIMARY_TEXT":    return { ...state, primaryText: action.primaryText };
     case "SET_GENERATED_IMAGES": return { ...state, generatedImages: action.images };
     case "SET_TARGETING":       return { ...state, targeting: action.targeting };
     case "SET_LAUNCHED_CAMPAIGN": return { ...state, launchedCampaign: action.value };

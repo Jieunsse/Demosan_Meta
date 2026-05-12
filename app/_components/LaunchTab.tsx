@@ -59,7 +59,7 @@ export default function LaunchTab({ onNext }: { onNext: () => void }) {
     mutation.mutate(
       {
         headline: state.headline,
-        bodyCopy: state.bodyCopy,
+        primaryText: state.primaryText,
         dailyBudget,
         startDate: dateStart,
         endDate: dateEnd,

@@ -4,9 +4,11 @@
 한국어 vibe coder 가 좋은 결과를 얻도록 설계됐어요.
 
 ## 사용자
+
 비전공자 한국인 vibe coder. 한국어로 답해요. 코드 용어는 풀어서 설명해요. 결과는 화면으로 확인.
 
 ## Stack
+
 Next.js 16 (App Router · RSC · Server Actions) · React 19 · TypeScript strict · Tailwind 3 · Node 20+.
 
 ## 5가지 Vibe Coder 프로토콜 (모든 작업에 적용)

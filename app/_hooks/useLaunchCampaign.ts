@@ -5,7 +5,7 @@ export type CampaignIds = { camp: string; adset: string; ad: string }
 
 export type LaunchParams = {
   headline: string
-  bodyCopy: string
+  primaryText: string
   dailyBudget: number // 원화(KRW) 정수 — 그대로 Meta 에 전달
   startDate: string
   endDate: string
