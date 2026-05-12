@@ -26,8 +26,10 @@ export interface GenerateImageResult {
 
 /* ── Internal ───────────────────────────────────────────────────── */
 
-// gemini-2.5-flash-image ("Nano Banana", GA). 못 찾으면 preview alias 로 폴백.
-const IMAGE_MODELS = ["gemini-2.5-flash-image", "gemini-2.5-flash-image-preview"];
+// 안정적으로 사용 가능한 Gemini 이미지 생성 모델 순으로 정렬.
+// gemini-2.0-flash-preview-image-generation: 대부분의 AI Studio API 키에서 접근 가능.
+// gemini-2.5-flash-image: 일부 preview 등록 키에서만 접근 가능 (폴백용).
+const IMAGE_MODELS = ["gemini-2.0-flash-preview-image-generation", "gemini-2.5-flash-image"];
 const DEFAULT_COUNT = 3;
 const MAX_COUNT = 4;
 const STAGGER_MS = 600;      // 3장을 동시에 폭발시키지 않고 슬롯마다 시작을 늦춤 (레이트 리밋 완화)
@@ -63,7 +65,11 @@ async function attemptGenerate(ai: GoogleGenAI, contents: ContentPart[]): Promis
   let lastErr: unknown;
   for (const model of IMAGE_MODELS) {
     try {
-      const response = await ai.models.generateContent({ model, contents });
+      const response = await ai.models.generateContent({
+        model,
+        contents,
+        config: { responseModalities: ["image", "text"] },
+      });
       const parts = response.candidates?.[0]?.content?.parts ?? [];
       for (const part of parts) {
         const inline = part.inlineData;
@@ -73,7 +79,9 @@ async function attemptGenerate(ai: GoogleGenAI, contents: ContentPart[]): Promis
       }
       return null; // 응답 O / 이미지 X — 같은 모델 재시도가 alias 폴백보다 나아서 폴백 안 함
     } catch (err) {
-      lastErr = err; // model-not-found / 일시 오류 등 → 다음 모델로 폴백
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[gemini-image] model ${model} 실패: ${msg}`);
+      lastErr = err; // → 다음 모델로 폴백
     }
   }
   throw lastErr instanceof Error ? lastErr : new Error("이미지 생성 호출에 실패했어요.");
