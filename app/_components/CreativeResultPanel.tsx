@@ -2,6 +2,7 @@
 
 import { CTAS } from "@/lib/creative-options";
 import { useCreative } from "./CreativeProvider";
+import GeneratedImagesBlock from "./GeneratedImagesBlock";
 
 type Props = {
   displayedHeadlines: [string, string, string];
@@ -135,6 +136,8 @@ export default function CreativeResultPanel({
           </>
         )}
       </section>
+
+      <GeneratedImagesBlock />
 
       <hr className="divider" />
 
