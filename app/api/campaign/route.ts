@@ -1,14 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { metaAds } from '@/lib/meta-ads'
+import { metaAds, type MetaObjectiveParam, type BidStrategyParam, type PlacementsParam, type PlatformsParam } from '@/lib/meta-ads'
 import { withRouteHandler, ValidationError } from '@/lib/route-handler'
-import { CTA_META_TYPE, type CtaId } from '@/lib/creative-options'
-import { COUNTRY_CODES } from '@/lib/geo-options'
+import { CTA_META_TYPE, type CtaId } from '@entities/creative/options'
+import { COUNTRY_CODES } from '@shared/lib/geo-options'
 
 const MIN_DAILY_BUDGET_KRW = 10_000
-// 3MB 이미지를 base64 로 인코딩하면 약 4MB — data URL prefix 포함 여유분
+// base64-encoded 3 MB image ≈ 4 MB with data URL prefix overhead
 const MAX_IMAGE_DATA_URL_LEN = 4_300_000
+
+const VALID_OBJECTIVES: ReadonlySet<MetaObjectiveParam> = new Set(['OUTCOME_TRAFFIC', 'OUTCOME_AWARENESS', 'OUTCOME_ENGAGEMENT'])
+const VALID_BID_STRATEGIES: ReadonlySet<BidStrategyParam> = new Set(['LOWEST_COST_WITHOUT_CAP', 'LOWEST_COST_WITH_BID_CAP', 'COST_CAP'])
+const VALID_PLATFORMS: ReadonlySet<PlatformsParam> = new Set(['both', 'facebook', 'instagram'])
+const VALID_PLACEMENT_POSITIONS = new Set([
+  'facebook_feed', 'instagram_feed', 'instagram_stories', 'audience_network', 'messenger',
+])
 
 type CampaignRequestBody = {
   headline?: string
@@ -24,6 +31,12 @@ type CampaignRequestBody = {
   cta?: CtaId
   status?: 'ACTIVE' | 'PAUSED'
   imageDataUrl?: string
+  objective?: string
+  mode?: 'simple' | 'detailed'
+  bidStrategy?: string
+  bidAmount?: number
+  placements?: { mode: 'auto' } | { mode: 'manual'; positions: string[] }
+  platforms?: string
 }
 
 export async function POST(req: NextRequest) {
@@ -85,6 +98,31 @@ export async function POST(req: NextRequest) {
 
       const ctaType = (cta && CTA_META_TYPE[cta]) || 'LEARN_MORE'
 
+      // Invalid detail-mode values fall through to defaults rather than rejecting the whole request.
+      const objective: MetaObjectiveParam =
+        body.objective && VALID_OBJECTIVES.has(body.objective as MetaObjectiveParam)
+          ? (body.objective as MetaObjectiveParam)
+          : 'OUTCOME_TRAFFIC'
+      const bidStrategy: BidStrategyParam =
+        body.bidStrategy && VALID_BID_STRATEGIES.has(body.bidStrategy as BidStrategyParam)
+          ? (body.bidStrategy as BidStrategyParam)
+          : 'LOWEST_COST_WITHOUT_CAP'
+      const bidAmount =
+        bidStrategy !== 'LOWEST_COST_WITHOUT_CAP' && typeof body.bidAmount === 'number' && Number.isFinite(body.bidAmount) && body.bidAmount > 0
+          ? body.bidAmount
+          : undefined
+      let placements: PlacementsParam | undefined
+      if (body.placements?.mode === 'manual' && Array.isArray(body.placements.positions)) {
+        const positions = body.placements.positions.filter((p) => typeof p === 'string' && VALID_PLACEMENT_POSITIONS.has(p))
+        placements = positions.length > 0 ? { mode: 'manual', positions } : { mode: 'auto' }
+      } else {
+        placements = { mode: 'auto' }
+      }
+      const platforms: PlatformsParam =
+        body.platforms && VALID_PLATFORMS.has(body.platforms as PlatformsParam)
+          ? (body.platforms as PlatformsParam)
+          : 'both'
+
       const result = await metaAds.createCampaign(
         {
           headline,
@@ -100,6 +138,11 @@ export async function POST(req: NextRequest) {
           ctaType,
           status,
           imageDataUrl,
+          objective,
+          bidStrategy,
+          bidAmount,
+          placements,
+          platforms,
         },
         accessToken,
         adAccountId,

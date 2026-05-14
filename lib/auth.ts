@@ -3,8 +3,8 @@ import FacebookProvider from "next-auth/providers/facebook"
 
 const GRAPH = "https://graph.facebook.com/v20.0"
 
-// 로그인 직후 받은 단기(1~2시간) 토큰을 60일짜리 long-lived 토큰으로 교환해요.
-// 교환에 실패하면 단기 토큰을 그대로 써요 (당장은 동작, 곧 만료).
+// Exchanges the short-lived (1-2h) login token for a 60-day long-lived token.
+// Falls back to the short-lived token on failure — works for now but expires soon.
 async function exchangeForLongLivedToken(shortLivedToken: string): Promise<string> {
   try {
     const url =
