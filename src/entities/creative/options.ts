@@ -4,10 +4,11 @@ export const TONES = [
   { id: 'trendy' as const, label: '트렌디·발랄하게', promptDesc: '트렌디하고 발랄한 톤' },
 ] as const
 
+// Meta CTA 버튼 타입 — label은 Meta가 한국어로 실제 표시하는 문구예요.
 export const CTAS = [
-  { id: 'buy' as const, label: '지금 구매하기' },
-  { id: 'learn' as const, label: '자세히 알아보기' },
-  { id: 'sample' as const, label: '무료 샘플 받기' },
+  { id: 'buy'    as const, label: '지금 구매하기' },   // SHOP_NOW
+  { id: 'learn'  as const, label: '자세히 알아보기' }, // LEARN_MORE
+  { id: 'sample' as const, label: '혜택 받기' },       // GET_OFFER
 ] as const
 
 export const IMAGES = [
@@ -27,15 +28,25 @@ export const TONE_PROMPT_DESC: Record<ToneId, string> = {
 }
 
 export const CTA_LABEL: Record<CtaId, string> = {
-  buy: '지금 구매하기',
-  learn: '자세히 알아보기',
-  sample: '무료 샘플 받기',
+  buy:    '지금 구매하기',
+  learn:  '자세히 알아보기',
+  sample: '혜택 받기',
 }
 
 export const CTA_META_TYPE: Record<CtaId, string> = {
   buy: 'SHOP_NOW',
   learn: 'LEARN_MORE',
   sample: 'GET_OFFER',
+}
+
+// 아웃컴 칩 선택 시 자동으로 결정되는 CTA — 유저가 직접 고르지 않아요.
+export const OUTCOME_TO_CTA: Record<string, CtaId> = {
+  traffic:       'learn', // LEARN_MORE — 사이트 방문 유도
+  engagement:    'learn', // LEARN_MORE — 게시물 반응
+  awareness:     'learn', // LEARN_MORE — 인지도
+  leads:         'buy',   // SHOP_NOW  — 가입자 확보 (Phase 2)
+  sales:         'buy',   // SHOP_NOW  — 매출 향상 (Phase 2)
+  app_promotion: 'buy',   // SHOP_NOW  — 앱 설치 (Phase 2)
 }
 
 export const IMAGE_ART: Record<ImageId, string> = {
@@ -45,27 +56,24 @@ export const IMAGE_ART: Record<ImageId, string> = {
 }
 
 export const OBJECTIVES_PHASE1 = [
-  { id: 'traffic'    as const, metaObjective: 'OUTCOME_TRAFFIC'    as const, label: '트래픽',  outcomeLabel: '더 많은 사이트 방문', copyTone: '클릭 유도·urgency·명확한 CTA 강조' },
-  { id: 'engagement' as const, metaObjective: 'OUTCOME_ENGAGEMENT' as const, label: '참여',    outcomeLabel: '더 많은 게시물 반응', copyTone: '공감·질문 던지기·대화형, 댓글/공유를 유도' },
+  { id: 'traffic'    as const, metaObjective: 'OUTCOME_TRAFFIC'    as const, label: '트래픽',  outcomeLabel: '사이트 방문 유도',    copyTone: '클릭 유도·urgency·명확한 CTA 강조' },
+  { id: 'engagement' as const, metaObjective: 'OUTCOME_ENGAGEMENT' as const, label: '참여',    outcomeLabel: '게시물 반응 키우기',  copyTone: '공감·질문 던지기·대화형, 댓글/공유를 유도' },
   { id: 'awareness'  as const, metaObjective: 'OUTCOME_AWARENESS'  as const, label: '인지도',  outcomeLabel: '인지도 넓히기',       copyTone: '브랜드 약속·메모러블·짧고 강한 헤드라인, 첫 노출 인상 위주' },
 ] as const
 
 export const OBJECTIVES_PHASE2 = [
-  { id: 'leads'         as const, label: '잠재고객', outcomeLabel: '더 많은 가입자',  reason: '리드 폼·개인정보처리방침 URL 연동 필요' },
-  { id: 'sales'         as const, label: '판매',     outcomeLabel: '더 많은 매출',    reason: 'Meta Pixel·전환 이벤트 매핑 필요' },
-  { id: 'app_promotion' as const, label: '앱 홍보',  outcomeLabel: '더 많은 앱 설치', reason: '앱 등록·Meta SDK 연동 필요' },
+  { id: 'leads'         as const, metaObjective: 'OUTCOME_LEADS'          as const, label: '잠재고객', outcomeLabel: '가입자 확보',  copyTone: '가입 유도·리드 폼 강조·개인정보 신뢰 강조' },
+  { id: 'sales'         as const, metaObjective: 'OUTCOME_SALES'          as const, label: '판매',     outcomeLabel: '매출 향상',    copyTone: '구매 전환·가격 혜택·사회적 증거 강조' },
+  { id: 'app_promotion' as const, metaObjective: 'OUTCOME_APP_PROMOTION'  as const, label: '앱 홍보',  outcomeLabel: '앱 설치 유도', copyTone: '앱 설치 유도·핵심 기능 소개·간편함 강조' },
 ] as const
+
+export const OBJECTIVES_ALL = [...OBJECTIVES_PHASE1, ...OBJECTIVES_PHASE2] as const
 
 export type ObjectivePhase1Id = (typeof OBJECTIVES_PHASE1)[number]['id']
 export type ObjectivePhase2Id = (typeof OBJECTIVES_PHASE2)[number]['id']
-export type MetaObjective = (typeof OBJECTIVES_PHASE1)[number]['metaObjective']
+export type ObjectiveId = ObjectivePhase1Id | ObjectivePhase2Id
+export type MetaObjective = (typeof OBJECTIVES_ALL)[number]['metaObjective']
 
-export function findObjective(id: ObjectivePhase1Id) {
-  return OBJECTIVES_PHASE1.find((o) => o.id === id)!
-}
-
-export const META_OBJECTIVE_API_MAP: Record<MetaObjective, { optimizationGoal: string; billingEvent: string }> = {
-  OUTCOME_TRAFFIC:    { optimizationGoal: 'LINK_CLICKS',     billingEvent: 'LINK_CLICKS' },
-  OUTCOME_ENGAGEMENT: { optimizationGoal: 'POST_ENGAGEMENT', billingEvent: 'IMPRESSIONS' },
-  OUTCOME_AWARENESS:  { optimizationGoal: 'REACH',           billingEvent: 'IMPRESSIONS' },
+export function findObjective(id: ObjectiveId) {
+  return OBJECTIVES_ALL.find((o) => o.id === id)!
 }

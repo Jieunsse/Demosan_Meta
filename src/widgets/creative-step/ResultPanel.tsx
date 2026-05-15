@@ -4,7 +4,6 @@
 
 import Icon from "@shared/ui/Icon";
 import { Badge } from "@shared/ui/primitives";
-import { CTAS, type CtaId } from "@entities/creative/options";
 import AiImageBlock from "./AiImageBlock";
 
 interface Props {
@@ -15,9 +14,6 @@ interface Props {
   onSelectHeadline: (i: number) => void;
   primaryText: string;
   setPrimaryText: (v: string) => void;
-  cta: CtaId;
-  setCta: (id: CtaId) => void;
-  ctaLabels: [string, string, string] | null;
   elapsed: number;
   onSaveToLibrary: () => void;
   saved: boolean;
@@ -33,7 +29,7 @@ export default function ResultPanel(p: Props) {
       <div className="between">
         <div>
           <h2 className="section-title">AI 생성 결과</h2>
-          <p className="section-sub">헤드라인을 고르고, 본문과 CTA를 다듬어 보세요.</p>
+          <p className="section-sub">헤드라인을 고르고, 본문을 다듬어 보세요.</p>
         </div>
         <Badge kind="violet"><Icon name="sparkles" size={12} /> AI 생성</Badge>
       </div>
@@ -49,7 +45,7 @@ export default function ResultPanel(p: Props) {
           <div className="skel" style={{ height: 110 }} />
         </div>
       ) : !p.generated || !p.headlines ? (
-        <div style={{ textAlign: "center", padding: "32px 20px", color: "var(--w-fg-neutral)" }}>
+        <div style={{ textAlign: "center", padding: "32px 20px", color: "var(--w-fg-normal)" }}>
           <div style={{ width: 56, height: 56, borderRadius: "50%", background: "var(--w-accent-violet-soft)", color: "var(--w-accent-violet)", display: "grid", placeItems: "center", margin: "0 auto 14px" }}>
             <Icon name="sparkles" size={22} />
           </div>
@@ -92,21 +88,12 @@ export default function ResultPanel(p: Props) {
             </div>
             <textarea className="textarea" value={p.primaryText} onChange={(e) => p.setPrimaryText(e.target.value)} style={{ minHeight: 120 }} />
           </div>
-          <div className="field" style={{ marginBottom: 18 }}>
-            <label className="field__label">CTA 문구</label>
-            <div className="chips">
-              {CTAS.map((c, i) => (
-                <button key={c.id} type="button" className={"chip" + (p.cta === c.id ? " chip--on" : "")} onClick={() => p.setCta(c.id)}>
-                  {p.ctaLabels?.[i] ?? c.label}
-                </button>
-              ))}
-            </div>
-          </div>
+
 
           <AiImageBlock imageDataUrl={p.imageDataUrl} setImageDataUrl={p.setImageDataUrl} />
 
           <div className="between" style={{ paddingTop: 16, borderTop: "1px solid var(--w-line-alternative)", flexWrap: "wrap", gap: 10 }}>
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 6, font: "500 12px/1 var(--w-font-sans)", color: "var(--w-fg-neutral)" }}>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6, font: "500 12px/1 var(--w-font-sans)", color: "var(--w-fg-normal)" }}>
               <Icon name="check" size={14} style={{ color: "var(--w-status-positive)" }} />
               생성 완료 · {p.elapsed.toFixed(1)}s
             </span>

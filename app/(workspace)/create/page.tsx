@@ -69,19 +69,19 @@ export default function CreatePage() {
     setHeadlineIdx(0);
     creative.dispatch({ type: "SET_HEADLINE", headline: loaded.headline });
     if (loaded.primary != null) creative.dispatch({ type: "SET_PRIMARY_TEXT", primaryText: loaded.primary });
-    if (loaded.ctaId && CTAS.some((c) => c.id === loaded.ctaId)) creative.dispatch({ type: "SET_CTA", cta: loaded.ctaId as CtaId });
+
     if (loaded.tone && TONES.some((t) => t.id === loaded.tone)) creative.dispatch({ type: "SET_TONE", tone: loaded.tone as ToneId });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleGenerate = () => {
-    if (!creative.state.outcomeChip) {
+    if (creative.state.outcomeChips.length === 0) {
       showToast("원하는 결과(outcome)를 먼저 골라주세요");
       return;
     }
     const startedAt = Date.now();
     generateMutation.mutate(
-      { brand, target, goal, tone: creative.state.tone, outcome: creative.state.outcomeChip, hint: creative.state.outcomeHint },
+      { brand, target, goal, tone: creative.state.tone, outcome: creative.state.outcomeChips[0], hint: creative.state.outcomeHint },
       {
         onSuccess: (data) => {
           setDisplayedHeadlines(data.headlines);
@@ -89,7 +89,6 @@ export default function CreatePage() {
           creative.dispatch({ type: "SET_HEADLINE", headline: data.headlines[0] });
           creative.dispatch({ type: "SET_PRIMARY_TEXT", primaryText: data.primaryText });
           creative.dispatch({ type: "SET_TARGETING", targeting: data.targeting });
-          creative.dispatch({ type: "SET_CTA_LABELS", labels: data.ctaLabels });
           setElapsed(Math.round((Date.now() - startedAt) / 100) / 10);
         },
         onError: (err) => {
@@ -108,8 +107,7 @@ export default function CreatePage() {
   const handleSaveToLibrary = () => {
     if (!displayedHeadlines) return;
     const toneLabel = TONES.find((t) => t.id === creative.state.tone)?.label ?? creative.state.tone;
-    const ctaIdx = CTAS.findIndex((c) => c.id === creative.state.cta);
-    const ctaLabel = (creative.state.ctaLabels && ctaIdx >= 0 ? creative.state.ctaLabels[ctaIdx] : null) ?? CTAS.find((c) => c.id === creative.state.cta)?.label ?? creative.state.cta;
+    const ctaLabel = CTAS.find((c) => c.id === creative.state.cta)?.label ?? creative.state.cta;
     const id = library.save({
       brand,
       headline: displayedHeadlines[headlineIdx],
@@ -138,8 +136,8 @@ export default function CreatePage() {
   };
 
   const completed = [generated, !!launched, false];
-  // All steps are always reachable — the actual guard is inside LaunchStep (requires creative + connected account).
-  const stepValid = [true, true];
+  // STEP 03 은 Meta App 개발 모드(skipped) 로 만든 캠페인엔 KPI 가 없어서 진입 차단
+  const stepValid: [boolean, boolean] = [true, !launched?.skipped];
 
   return (
     <div className="page" data-screen-label="광고 만들기">
@@ -166,7 +164,7 @@ export default function CreatePage() {
           setGoal={setGoal}
           tone={creative.state.tone}
           setTone={(id: ToneId) => creative.dispatch({ type: "SET_TONE", tone: id })}
-          outcomeChip={creative.state.outcomeChip}
+          outcomeChips={creative.state.outcomeChips}
           setOutcomeChip={(id) => creative.dispatch({ type: "SET_OUTCOME_CHIP", chip: id })}
           outcomeHint={creative.state.outcomeHint}
           setOutcomeHint={(v) => creative.dispatch({ type: "SET_OUTCOME_HINT", hint: v })}
@@ -177,9 +175,6 @@ export default function CreatePage() {
           onSelectHeadline={handleSelectHeadline}
           primaryText={creative.state.primaryText}
           setPrimaryText={(v: string) => creative.dispatch({ type: "SET_PRIMARY_TEXT", primaryText: v })}
-          cta={creative.state.cta}
-          setCta={(id: CtaId) => creative.dispatch({ type: "SET_CTA", cta: id })}
-          ctaLabels={creative.state.ctaLabels}
           elapsed={elapsed}
           onGenerate={handleGenerate}
           onSaveToLibrary={handleSaveToLibrary}

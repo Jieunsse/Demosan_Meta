@@ -19,6 +19,9 @@ const OBJECTIVE_LABELS: Record<CampaignObjective, string> = {
   OUTCOME_AWARENESS: "인지도",
   OUTCOME_ENGAGEMENT: "참여",
   OUTCOME_TRAFFIC: "트래픽",
+  OUTCOME_LEADS: "가입자",
+  OUTCOME_SALES: "매출",
+  OUTCOME_APP_PROMOTION: "앱 설치",
 };
 
 export default function CampaignBar({ exampleMode, launched, headline, objective, periodLabel, isFetching, onRefetch }: Props) {

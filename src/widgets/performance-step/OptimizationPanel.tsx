@@ -31,8 +31,8 @@ function OptCard({ icon, good, title, lines, children }: { icon: IconName; good:
         {lines.map((l, j) => (
           <div key={j} style={{ font: "500 12.5px/1.55 var(--w-font-sans)", color: "var(--w-fg-neutral)", marginTop: 4 }}>{l}</div>
         ))}
+        {children && <div style={{ marginTop: 10 }}>{children}</div>}
       </div>
-      {children && <div style={{ flex: "0 0 auto", alignSelf: "center" }}>{children}</div>}
     </div>
   );
 }
@@ -69,10 +69,10 @@ export default function OptimizationPanel({ isPaused, suggestions, readiness, da
                 return (
                   <OptCard key={i} icon={warn ? "warn" : "trend-up"} good={!warn} title={s.title} lines={s.detail}>
                     {s.kind === "pause" && (
-                      <button className="btn btn--secondary btn--sm" type="button" disabled={exampleMode || busy} title={lockTitle} onClick={onPause}>{busy ? "처리 중…" : "광고 일시정지"}</button>
+                      <button className="btn btn--primary btn--sm" type="button" disabled={exampleMode || busy} title={lockTitle} onClick={onPause}>{busy ? "처리 중…" : "제안 집행하기"}</button>
                     )}
                     {s.kind === "increase-budget" && (
-                      <button className="btn btn--secondary btn--sm" type="button" disabled={exampleMode || busy} title={lockTitle} onClick={() => onIncreaseBudget(s.toDailyBudget)}>{busy ? "처리 중…" : `일일예산 ${fmtKRW(s.toDailyBudget)}로 올리기`}</button>
+                      <button className="btn btn--primary btn--sm" type="button" disabled={exampleMode || busy} title={lockTitle} onClick={() => onIncreaseBudget(s.toDailyBudget)}>{busy ? "처리 중…" : "제안 집행하기"}</button>
                     )}
                   </OptCard>
                 );

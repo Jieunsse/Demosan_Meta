@@ -4,7 +4,7 @@
 // 2칼럼 레이아웃 오케스트레이터. 왼쪽 InputForm + 오른쪽 ResultPanel.
 // page.tsx 는 step 진행·세션스토리지 입력값·generate mutation 결과를 props 로 전달.
 
-import { type ToneId, type CtaId, type ObjectivePhase1Id } from "@entities/creative/options";
+import { type ToneId, type CtaId, type ObjectiveId } from "@entities/creative/options";
 import InputForm from "./InputForm";
 import ResultPanel from "./ResultPanel";
 
@@ -17,8 +17,8 @@ interface Props {
   setGoal: (v: string) => void;
   tone: ToneId;
   setTone: (id: ToneId) => void;
-  outcomeChip: ObjectivePhase1Id | null;
-  setOutcomeChip: (id: ObjectivePhase1Id | null) => void;
+  outcomeChips: ObjectiveId[];
+  setOutcomeChip: (id: ObjectiveId) => void;
   outcomeHint: string;
   setOutcomeHint: (v: string) => void;
   generating: boolean;
@@ -28,9 +28,6 @@ interface Props {
   onSelectHeadline: (i: number) => void;
   primaryText: string;
   setPrimaryText: (v: string) => void;
-  cta: CtaId;
-  setCta: (id: CtaId) => void;
-  ctaLabels: [string, string, string] | null;
   elapsed: number;
   onGenerate: () => void;
   onSaveToLibrary: () => void;
@@ -53,7 +50,7 @@ export default function CreativeStep(p: Props) {
         setGoal={p.setGoal}
         tone={p.tone}
         setTone={p.setTone}
-        outcomeChip={p.outcomeChip}
+        outcomeChips={p.outcomeChips}
         setOutcomeChip={p.setOutcomeChip}
         outcomeHint={p.outcomeHint}
         setOutcomeHint={p.setOutcomeHint}
@@ -68,9 +65,6 @@ export default function CreativeStep(p: Props) {
         onSelectHeadline={p.onSelectHeadline}
         primaryText={p.primaryText}
         setPrimaryText={p.setPrimaryText}
-        cta={p.cta}
-        setCta={p.setCta}
-        ctaLabels={p.ctaLabels}
         elapsed={p.elapsed}
         onSaveToLibrary={p.onSaveToLibrary}
         saved={p.saved}

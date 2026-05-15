@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { geminiCreative, type GenerateCreativeParams } from '@/lib/gemini-creative'
-import { OBJECTIVES_PHASE1 } from '@entities/creative/options'
+import { OBJECTIVES_ALL } from '@entities/creative/options'
 import { withRouteHandler, ValidationError } from '@/lib/route-handler'
 
-const VALID_OUTCOMES = new Set(OBJECTIVES_PHASE1.map((o) => o.id))
+const VALID_OUTCOMES = new Set(OBJECTIVES_ALL.map((o) => o.id))
 
 export async function POST(req: NextRequest) {
   return withRouteHandler(

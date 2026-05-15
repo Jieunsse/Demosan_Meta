@@ -4,7 +4,14 @@
 
 import Icon from "@shared/ui/Icon";
 import { Badge } from "@shared/ui/primitives";
-import { TONES, OBJECTIVES_PHASE1, type ToneId, type ObjectivePhase1Id } from "@entities/creative/options";
+import { Select } from "@shared/ui/Select";
+import { TONES, OBJECTIVES_PHASE1, OBJECTIVES_PHASE2, type ToneId, type ObjectiveId } from "@entities/creative/options";
+
+const GOAL_OPTIONS = [
+  { value: "브랜드 인지도 높이기", label: "브랜드 인지도 높이기" },
+  { value: "웹사이트 방문 유도",    label: "웹사이트 방문 유도" },
+  { value: "구매 전환",             label: "구매 전환" },
+];
 
 interface Props {
   brand: string;
@@ -15,8 +22,8 @@ interface Props {
   setGoal: (v: string) => void;
   tone: ToneId;
   setTone: (id: ToneId) => void;
-  outcomeChip: ObjectivePhase1Id | null;
-  setOutcomeChip: (id: ObjectivePhase1Id | null) => void;
+  outcomeChips: ObjectiveId[];
+  setOutcomeChip: (id: ObjectiveId) => void;
   outcomeHint: string;
   setOutcomeHint: (v: string) => void;
   generating: boolean;
@@ -37,28 +44,37 @@ export default function InputForm(p: Props) {
         {/* PRD §4 — outcome 칩 (Phase 1 3개) + 자연어 보조. 칩 미선택 시 AI 카피 생성 차단. */}
         <div className="field">
           <label className="field__label">이 광고로 뭘 이루고 싶나요?</label>
-          <div className="chips">
+          <div className="chips" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", justifyItems: "stretch" }}>
             {OBJECTIVES_PHASE1.map((o) => (
               <button
                 key={o.id}
                 type="button"
-                className={"chip" + (p.outcomeChip === o.id ? " chip--on" : "")}
+                className={"chip" + (p.outcomeChips.includes(o.id) ? " chip--on" : "")}
+                style={{ justifyContent: "center" }}
                 onClick={() => p.setOutcomeChip(o.id)}
                 title={o.copyTone}
               >
                 {o.outcomeLabel}
               </button>
             ))}
+            {OBJECTIVES_PHASE2.map((o) => (
+              <button
+                key={o.id}
+                type="button"
+                className={"chip" + (p.outcomeChips.includes(o.id) ? " chip--on" : "")}
+                style={{ justifyContent: "center" }}
+                onClick={() => p.setOutcomeChip(o.id)}
+              >
+                {o.outcomeLabel}
+              </button>
+            ))}
           </div>
-          <p className="field__hint" style={{ marginTop: 8 }}>
-            매출·가입자·앱 설치 같은 목표는 곧 추가돼요. 디테일 설정에서 미리 둘러볼 수 있어요.
-          </p>
           <input
             className="input"
             style={{ marginTop: 10 }}
             value={p.outcomeHint ?? ""}
             onChange={(e) => p.setOutcomeHint(e.target.value)}
-            placeholder="추가로 알려주세요 (선택) — 예) 5월 신상 한정 할인 강조하고 싶어요"
+            placeholder="강조하고 싶은 포인트나 분위기를 자유롭게 적어주세요"
           />
         </div>
         <div className="field">
@@ -81,12 +97,7 @@ export default function InputForm(p: Props) {
         </div>
         <div className="field">
           <label className="field__label">이 광고로 무엇을 얻고 싶나요?</label>
-          <input
-            className="input"
-            value={p.goal}
-            onChange={(e) => p.setGoal(e.target.value)}
-            placeholder="예) 브랜드 인지도 높이기 / 웹사이트 방문 유도 / 구매 전환"
-          />
+          <Select value={p.goal} onChange={p.setGoal} options={GOAL_OPTIONS} />
         </div>
         <div className="field">
           <label className="field__label">광고 느낌</label>
@@ -99,15 +110,15 @@ export default function InputForm(p: Props) {
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 6 }}>
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 6, font: "500 12px/1 var(--w-font-sans)", color: "var(--w-fg-neutral)" }}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 6, font: "500 12px/1 var(--w-font-sans)", color: "var(--w-fg-normal)" }}>
             <Icon name="sparkles" size={14} style={{ color: "var(--w-accent-violet)" }} /> Gemini로 카피 생성
           </span>
           <button
             className="btn btn--primary"
             type="button"
             onClick={p.onGenerate}
-            disabled={p.generating || !p.outcomeChip || !p.brand.trim() || !p.target.trim()}
-            title={!p.outcomeChip ? "원하는 결과(outcome)를 먼저 골라주세요" : undefined}
+            disabled={p.generating || p.outcomeChips.length === 0 || !p.brand.trim() || !p.target.trim()}
+            title={p.outcomeChips.length === 0 ? "원하는 결과(outcome)를 먼저 골라주세요" : undefined}
           >
             {p.generating ? (
               <><div className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} /> 생성 중…</>
