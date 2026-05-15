@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import Icon, { type IconName } from "@shared/ui/Icon";
+import Icon from "@shared/ui/Icon";
 import { useToast } from "@shared/ui/Toast";
 
 type Role = "owner" | "launcher" | "reviewer";
@@ -16,12 +16,11 @@ interface Member {
   lastActive: string | null;
   avatarBg: string | null;
 }
-type DemoState = "m1" | "m2" | "m3" | "m4" | "m5" | "m6" | "m7" | "m8" | "m9" | "m10" | "m11";
 
-const WORKSPACE = { name: "원티드랩 마케팅팀", initial: "원", gradient: "linear-gradient(135deg,#0066ff,#6541f2)" };
+const WORKSPACE = { name: "애드플로우 마케팅팀", initial: "애", gradient: "linear-gradient(135deg,#0066ff,#6541f2)" };
 
 const FULL_MEMBERS: Member[] = [
-  { id: "u1", name: "최지은", email: "marketer@cold.kr", role: "owner", status: "active", joined: "2024-11-12", lastActive: "방금 전", avatarBg: "#ff7a59" },
+  { id: "u1", name: "Jayden Ock", email: "jieunsse@gmail.com", role: "owner", status: "active", joined: "2025-05-11", lastActive: "방금 전", avatarBg: "#ff7a59" },
   { id: "u2", name: "박서윤", email: "seoyoon@cold.kr", role: "launcher", status: "active", joined: "2024-12-03", lastActive: "12분 전", avatarBg: "#0066ff" },
   { id: "u3", name: "이도현", email: "dohyun@cold.kr", role: "launcher", status: "active", joined: "2025-01-20", lastActive: "1시간 전", avatarBg: "#008a2e" },
   { id: "u4", name: "정민서", email: "minseo@cold.kr", role: "launcher", status: "active", joined: "2025-02-08", lastActive: "어제", avatarBg: "#c2185b" },
@@ -39,7 +38,6 @@ const ROLE_DEF: Record<Role, { label: string; chipClass: string; desc: string }>
 
 export default function MembersPage() {
   const showToast = useToast();
-  const [demoState, setDemoState] = useState<DemoState>("m1");
   const [roleFilter, setRoleFilter] = useState<Role | "all">("all");
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
   const [roleSubmenuOpen, setRoleSubmenuOpen] = useState(false);
@@ -47,14 +45,8 @@ export default function MembersPage() {
   const [confirmDelegate, setConfirmDelegate] = useState<{ id: string; name: string } | null>(null);
   const [confirmRemove, setConfirmRemove] = useState<{ id: string; name: string } | null>(null);
 
-  const isOwnerView = demoState !== "m8";
-  const isAlone = demoState === "m7";
-  const isLoading = demoState === "m9";
-  const isError = demoState === "m10";
-  const isMatrixOnly = demoState === "m11";
-
-  const members = isAlone ? FULL_MEMBERS.slice(0, 1) : FULL_MEMBERS;
-  const myId = isOwnerView ? "u1" : "u2";
+  const members = FULL_MEMBERS;
+  const myId = "u1";
 
   const filtered = useMemo(() => (roleFilter === "all" ? members : members.filter((m) => m.role === roleFilter)), [members, roleFilter]);
   const roleCounts: Record<Role, number> = {
@@ -62,15 +54,6 @@ export default function MembersPage() {
     launcher: members.filter((m) => m.role === "launcher").length,
     reviewer: members.filter((m) => m.role === "reviewer").length,
   };
-
-  useEffect(() => {
-    if (demoState === "m2") { setMenuOpen("u5"); setRoleSubmenuOpen(false); }
-    else if (demoState === "m6") { setMenuOpen("i1"); setRoleSubmenuOpen(false); }
-    else { setMenuOpen(null); setRoleSubmenuOpen(false); }
-    setInviteOpen(demoState === "m5");
-    setConfirmDelegate(demoState === "m3" ? { id: "u2", name: "박서윤" } : null);
-    setConfirmRemove(demoState === "m4" ? { id: "u5", name: "김하늘" } : null);
-  }, [demoState]);
 
   useEffect(() => {
     const close = (e: MouseEvent) => {
@@ -82,22 +65,6 @@ export default function MembersPage() {
     return () => document.removeEventListener("click", close);
   }, []);
 
-  if (isMatrixOnly) {
-    return (
-      <div className="page" data-screen-label="권한 매트릭스">
-        <div className="page__head">
-          <div>
-            <span className="w-overline" style={{ color: "var(--w-fg-neutral)" }}>워크스페이스 · 구성원·권한</span>
-            <h1 className="page__title" style={{ marginTop: 4 }}>역할별 권한</h1>
-            <p className="page__sub">각 역할이 무엇을 할 수 있는지 한눈에 확인하세요.</p>
-          </div>
-        </div>
-        <DemoStrip value={demoState} onChange={setDemoState} />
-        <PermissionMatrix />
-      </div>
-    );
-  }
-
   return (
     <div className="page" data-screen-label="구성원·권한">
       <div className="page__head" style={{ alignItems: "flex-start" }}>
@@ -107,17 +74,13 @@ export default function MembersPage() {
             <span className="w-overline" style={{ color: "var(--w-fg-neutral)" }}>워크스페이스 · 구성원·권한</span>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 4 }}>
               <h1 className="page__title" style={{ marginTop: 0 }}>{WORKSPACE.name}</h1>
-              {isOwnerView && <button className="icon-btn" type="button" title="워크스페이스 설정에서 이름·로고 수정"><Icon name="settings" size={14} /></button>}
+              <button className="icon-btn" type="button" title="워크스페이스 설정에서 이름·로고 수정"><Icon name="settings" size={14} /></button>
             </div>
             <p className="page__sub">멤버 {members.length}명 · 한 사람이 한 워크스페이스에 속해 함께 광고를 운영해요.</p>
           </div>
         </div>
-        {isOwnerView && !isError && (
-          <button className="btn btn--primary" type="button" onClick={() => setInviteOpen(true)}><Icon name="plus" size={14} /> 멤버 초대</button>
-        )}
+        <button className="btn btn--primary" type="button" onClick={() => setInviteOpen(true)}><Icon name="plus" size={14} /> 멤버 초대</button>
       </div>
-
-      <DemoStrip value={demoState} onChange={setDemoState} />
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
         <button type="button" onClick={() => setRoleFilter("all")} className={"filter-chip" + (roleFilter === "all" ? " filter-chip--on" : "")}>
@@ -132,99 +95,74 @@ export default function MembersPage() {
         ))}
       </div>
 
-      {isError ? (
-        <ErrorCard title="구성원 목록을 불러오지 못했어요" reason="워크스페이스 동기화 중 오류가 발생했어요. 잠시 후 다시 시도해 주세요." onRetry={() => { showToast("다시 불러오는 중…"); setDemoState("m1"); }} />
-      ) : isLoading ? (
-        <MembersTableSkeleton />
-      ) : (
-        <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-          <table className="dtable">
-            <thead>
-              <tr>
-                <th>멤버</th>
-                <th style={{ width: 220 }}>이메일</th>
-                <th style={{ width: 130 }}>역할</th>
-                <th style={{ width: 110 }}>상태</th>
-                <th style={{ width: 110 }}>합류일</th>
-                <th style={{ width: 110 }}>마지막 활동</th>
-                {isOwnerView && <th style={{ width: 50 }} />}
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((m) => {
-                const isInvited = m.status === "invited";
-                const isMe = m.id === myId;
-                return (
-                  <tr key={m.id} className={"dtable__row" + (isInvited ? " dtable__row--dim" : "")}>
-                    <td>
-                      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                        <Avatar member={m} />
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                            <span style={{ font: "600 13.5px/1.35 var(--w-font-sans)", color: isInvited ? "var(--w-fg-neutral)" : "var(--w-fg-strong)" }}>{m.name || "—"}</span>
-                            {isMe && <span className="me-pill">나</span>}
-                          </div>
-                          {isInvited && <div style={{ font: "500 11.5px/1 var(--w-font-sans)", color: "var(--w-fg-alternative)", marginTop: 4 }}>초대 수락 대기 중</div>}
+      <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+        <table className="dtable">
+          <thead>
+            <tr>
+              <th>멤버</th>
+              <th style={{ width: 220 }}>이메일</th>
+              <th style={{ width: 130 }}>역할</th>
+              <th style={{ width: 110 }}>상태</th>
+              <th style={{ width: 110 }}>합류일</th>
+              <th style={{ width: 110 }}>마지막 활동</th>
+              <th style={{ width: 50 }} />
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((m) => {
+              const isInvited = m.status === "invited";
+              const isMe = m.id === myId;
+              return (
+                <tr key={m.id} className={"dtable__row" + (isInvited ? " dtable__row--dim" : "")}>
+                  <td>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      <Avatar member={m} />
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <span style={{ font: "600 13.5px/1.35 var(--w-font-sans)", color: isInvited ? "var(--w-fg-neutral)" : "var(--w-fg-strong)" }}>{m.name || "—"}</span>
+                          {isMe && <span className="me-pill">나</span>}
                         </div>
+                        {isInvited && <div style={{ font: "500 11.5px/1 var(--w-font-sans)", color: "var(--w-fg-alternative)", marginTop: 4 }}>초대 수락 대기 중</div>}
                       </div>
-                    </td>
-                    <td style={{ font: "500 12.5px/1.4 var(--w-font-mono)", color: "var(--w-fg-neutral)" }}>{m.email}</td>
-                    <td><RoleChip role={m.role} /></td>
-                    <td><StatusBadge status={m.status} /></td>
-                    <td style={{ font: "500 12.5px/1 var(--w-font-mono)", color: isInvited ? "var(--w-fg-alternative)" : "var(--w-fg-normal)" }}>{m.joined || "—"}</td>
-                    <td style={{ font: "500 12.5px/1 var(--w-font-sans)", color: isInvited ? "var(--w-fg-alternative)" : "var(--w-fg-neutral)" }}>{m.lastActive || "—"}</td>
-                    {isOwnerView && (
-                      <td data-menu-root style={{ position: "relative" }}>
-                        {!isMe && (
-                          <button className="icon-btn" type="button" title="더 보기" onClick={(e) => { e.stopPropagation(); setMenuOpen(menuOpen === m.id ? null : m.id); setRoleSubmenuOpen(false); }}>
-                            <Icon name="dots" size={16} />
-                          </button>
-                        )}
-                        {menuOpen === m.id && (
-                          isInvited ? (
-                            <InvitedMenu
-                              onResend={() => { setMenuOpen(null); showToast("초대 메일을 다시 보냈어요"); }}
-                              onCancel={() => { setMenuOpen(null); showToast(`${m.email} 초대를 취소했어요`); }}
-                            />
-                          ) : (
-                            <ActiveMenu
-                              member={m}
-                              submenuOpen={roleSubmenuOpen}
-                              setSubmenuOpen={setRoleSubmenuOpen}
-                              onChangeRole={(r) => {
-                                if (r === "owner") { setConfirmDelegate({ id: m.id, name: m.name ?? m.email }); setMenuOpen(null); }
-                                else { setMenuOpen(null); showToast(`${m.name ?? m.email}님 역할을 '${ROLE_DEF[r].label}'(으)로 변경했어요`); }
-                              }}
-                              onRemove={() => { setConfirmRemove({ id: m.id, name: m.name ?? m.email }); setMenuOpen(null); }}
-                            />
-                          )
-                        )}
-                      </td>
+                    </div>
+                  </td>
+                  <td style={{ font: "500 12.5px/1.4 var(--w-font-mono)", color: "var(--w-fg-neutral)" }}>{m.email}</td>
+                  <td><RoleChip role={m.role} /></td>
+                  <td><StatusBadge status={m.status} /></td>
+                  <td style={{ font: "500 12.5px/1 var(--w-font-mono)", color: isInvited ? "var(--w-fg-alternative)" : "var(--w-fg-normal)" }}>{m.joined || "—"}</td>
+                  <td style={{ font: "500 12.5px/1 var(--w-font-sans)", color: isInvited ? "var(--w-fg-alternative)" : "var(--w-fg-neutral)" }}>{m.lastActive || "—"}</td>
+                  <td data-menu-root style={{ position: "relative" }}>
+                    {!isMe && (
+                      <button className="icon-btn" type="button" title="더 보기" onClick={(e) => { e.stopPropagation(); setMenuOpen(menuOpen === m.id ? null : m.id); setRoleSubmenuOpen(false); }}>
+                        <Icon name="dots" size={16} />
+                      </button>
                     )}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {isAlone && (
-        <div className="card" style={{ marginTop: 16, padding: 28, display: "flex", alignItems: "center", gap: 20, background: "linear-gradient(135deg, rgba(0,102,255,0.04), rgba(101,65,242,0.06))", borderColor: "transparent" }}>
-          <div style={{ width: 52, height: 52, borderRadius: 14, background: "rgba(0,102,255,0.12)", color: "var(--w-primary-press)", display: "grid", placeItems: "center", flex: "0 0 auto" }}><Icon name="users" size={24} /></div>
-          <div style={{ flex: 1 }}>
-            <div style={{ font: "700 16px/1.3 var(--w-font-display)", color: "var(--w-fg-strong)", letterSpacing: "-0.01em" }}>팀원을 초대해 함께 작업하세요</div>
-            <div style={{ font: "500 13px/1.55 var(--w-font-sans)", color: "var(--w-fg-neutral)", marginTop: 6 }}>팀원이 캠페인을 만들고, 게재 권한이 있는 멤버가 검토 후 게재해요.</div>
-          </div>
-          <button className="btn btn--primary" type="button" onClick={() => setInviteOpen(true)}><Icon name="plus" size={14} /> 멤버 초대</button>
-        </div>
-      )}
-
-      {!isOwnerView && !isLoading && !isError && (
-        <div style={{ marginTop: 14, textAlign: "right" }}>
-          <button className="btn-link" type="button" style={{ color: "var(--w-fg-alternative)", fontSize: 12 }}>워크스페이스 나가기</button>
-        </div>
-      )}
+                    {menuOpen === m.id && (
+                      isInvited ? (
+                        <InvitedMenu
+                          onResend={() => { setMenuOpen(null); showToast("초대 메일을 다시 보냈어요"); }}
+                          onCancel={() => { setMenuOpen(null); showToast(`${m.email} 초대를 취소했어요`); }}
+                        />
+                      ) : (
+                        <ActiveMenu
+                          member={m}
+                          submenuOpen={roleSubmenuOpen}
+                          setSubmenuOpen={setRoleSubmenuOpen}
+                          onChangeRole={(r) => {
+                            if (r === "owner") { setConfirmDelegate({ id: m.id, name: m.name ?? m.email }); setMenuOpen(null); }
+                            else { setMenuOpen(null); showToast(`${m.name ?? m.email}님 역할을 '${ROLE_DEF[r].label}'(으)로 변경했어요`); }
+                          }}
+                          onRemove={() => { setConfirmRemove({ id: m.id, name: m.name ?? m.email }); setMenuOpen(null); }}
+                        />
+                      )
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
 
       <div style={{ marginTop: 28 }}>
         <PermissionMatrix />
@@ -232,8 +170,8 @@ export default function MembersPage() {
 
       {inviteOpen && (
         <InviteModal
-          onClose={() => { setInviteOpen(false); if (demoState === "m5") setDemoState("m1"); }}
-          onSend={(emails) => { setInviteOpen(false); if (demoState === "m5") setDemoState("m1"); showToast(`${emails.length}명에게 초대를 보냈어요`); }}
+          onClose={() => setInviteOpen(false)}
+          onSend={(emails) => { setInviteOpen(false); showToast(`${emails.length}명에게 초대를 보냈어요`); }}
         />
       )}
       {confirmDelegate && (
@@ -242,8 +180,8 @@ export default function MembersPage() {
           desc="본인은 자동으로 '팀원·게재'로 변경되고, 팀장은 한 명만 가능해요."
           confirmLabel="위임하기"
           tone="primary"
-          onClose={() => { setConfirmDelegate(null); if (demoState === "m3") setDemoState("m1"); }}
-          onConfirm={() => { showToast(`${confirmDelegate.name}님을 팀장으로 위임했어요`); setConfirmDelegate(null); if (demoState === "m3") setDemoState("m1"); }}
+          onClose={() => setConfirmDelegate(null)}
+          onConfirm={() => { showToast(`${confirmDelegate.name}님을 팀장으로 위임했어요`); setConfirmDelegate(null); }}
         />
       )}
       {confirmRemove && (
@@ -252,30 +190,10 @@ export default function MembersPage() {
           desc="만든 캠페인·소재는 워크스페이스에 그대로 남고 작성자는 '(탈퇴한 멤버)'로 표시돼요."
           confirmLabel="내보내기"
           tone="danger"
-          onClose={() => { setConfirmRemove(null); if (demoState === "m4") setDemoState("m1"); }}
-          onConfirm={() => { showToast(`${confirmRemove.name}님을 내보냈어요`); setConfirmRemove(null); if (demoState === "m4") setDemoState("m1"); }}
+          onClose={() => setConfirmRemove(null)}
+          onConfirm={() => { showToast(`${confirmRemove.name}님을 내보냈어요`); setConfirmRemove(null); }}
         />
       )}
-    </div>
-  );
-}
-
-const DEMO_STATES: [DemoState, string][] = [
-  ["m1", "M1 기본"], ["m2", "M2 멤버 ⋯"], ["m3", "M3 위임 확인"], ["m4", "M4 내보내기 확인"],
-  ["m5", "M5 초대 모달"], ["m6", "M6 초대 ⋯"], ["m7", "M7 혼자"], ["m8", "M8 비-팀장"],
-  ["m9", "M9 로딩"], ["m10", "M10 에러"], ["m11", "M11 매트릭스"],
-];
-
-function DemoStrip({ value, onChange }: { value: DemoState; onChange: (v: DemoState) => void }) {
-  return (
-    <div className="card" style={{ padding: 10, display: "flex", alignItems: "center", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
-      <Icon name="info" size={14} style={{ color: "var(--w-fg-alternative)" }} />
-      <span style={{ font: "500 12.5px/1 var(--w-font-sans)", color: "var(--w-fg-neutral)" }}>데모 상태:</span>
-      <div className="seg" style={{ flexWrap: "wrap" }}>
-        {DEMO_STATES.map(([k, l]) => (
-          <button key={k} type="button" className={value === k ? "on" : ""} onClick={() => onChange(k)}>{l}</button>
-        ))}
-      </div>
     </div>
   );
 }
@@ -455,34 +373,6 @@ function ModalShell({ children, onClose, width = 480 }: { children: ReactNode; o
   );
 }
 
-function MembersTableSkeleton() {
-  return (
-    <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-      <table className="dtable">
-        <thead>
-          <tr>
-            <th>멤버</th><th style={{ width: 220 }}>이메일</th><th style={{ width: 130 }}>역할</th>
-            <th style={{ width: 110 }}>상태</th><th style={{ width: 110 }}>합류일</th><th style={{ width: 110 }}>마지막 활동</th><th style={{ width: 50 }} />
-          </tr>
-        </thead>
-        <tbody>
-          {[0, 1, 2, 3, 4].map((i) => (
-            <tr key={i} className="dtable__row">
-              <td><div style={{ display: "flex", gap: 12, alignItems: "center" }}><div className="skel" style={{ width: 36, height: 36, borderRadius: "50%" }} /><div className="skel" style={{ height: 14, width: 110 }} /></div></td>
-              <td><div className="skel" style={{ height: 12, width: 160 }} /></td>
-              <td><div className="skel" style={{ height: 22, width: 80, borderRadius: 999 }} /></td>
-              <td><div className="skel" style={{ height: 22, width: 56, borderRadius: 999 }} /></td>
-              <td><div className="skel" style={{ height: 12, width: 80 }} /></td>
-              <td><div className="skel" style={{ height: 12, width: 70 }} /></td>
-              <td><div className="skel" style={{ height: 14, width: 14, borderRadius: 4 }} /></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
 const PERM_ROWS: { label: string; o: "y" | "n"; l: "y" | "n"; r: "y" | "n"; note?: string; highlight?: boolean }[] = [
   { label: "캠페인 생성·편집", o: "y", l: "y", r: "y" },
   { label: "검토·코멘트", o: "y", l: "y", r: "y" },
@@ -538,16 +428,5 @@ function PermCell({ v, note }: { v: "y" | "n"; note?: string }) {
       <span className="perm-mark perm-mark--n"><Icon name="x" size={12} strokeWidth={2.5} /></span>
       {note && <div style={{ font: "500 11px/1.3 var(--w-font-sans)", color: "var(--w-fg-alternative)", marginTop: 4 }}>{note}</div>}
     </td>
-  );
-}
-
-function ErrorCard({ title, reason, onRetry, icon = "warn" }: { title: string; reason: string; onRetry: () => void; icon?: IconName }) {
-  return (
-    <div className="card" style={{ padding: "40px 32px", display: "flex", flexDirection: "column", alignItems: "center", gap: 12, textAlign: "center" }}>
-      <div style={{ width: 56, height: 56, borderRadius: "50%", background: "rgba(255,66,66,0.10)", color: "var(--w-status-negative)", display: "grid", placeItems: "center" }}><Icon name={icon} size={24} /></div>
-      <div style={{ font: "700 17px/1.3 var(--w-font-sans)", color: "var(--w-fg-strong)", letterSpacing: "-0.01em" }}>{title}</div>
-      <div style={{ font: "500 13px/1.5 var(--w-font-sans)", color: "var(--w-fg-neutral)", maxWidth: 380 }}>{reason}</div>
-      <button className="btn btn--secondary" type="button" style={{ marginTop: 8 }} onClick={onRetry}>다시 시도</button>
-    </div>
   );
 }
