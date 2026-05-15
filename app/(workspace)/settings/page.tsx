@@ -5,11 +5,11 @@ import { useRouter } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import Icon from "@shared/ui/Icon";
 import { Badge } from "@shared/ui/primitives";
-import { useTheme, type ThemeChoice } from "@shared/lib/useTheme";
 import { useToast } from "@shared/ui/Toast";
+import { useNotifSettings } from "@shared/lib/notifications";
 
-type Tab = "account" | "theme" | "notif" | "danger";
-const TABS: [Tab, string][] = [["account", "계정 연결"], ["theme", "화면 테마"], ["notif", "알림"], ["danger", "계정 관리"]];
+type Tab = "account" | "notif" | "danger";
+const TABS: [Tab, string][] = [["account", "계정 연결"], ["notif", "알림"], ["danger", "계정 관리"]];
 
 export default function SettingsPage() {
   const [tab, setTab] = useState<Tab>("account");
@@ -19,7 +19,7 @@ export default function SettingsPage() {
         <div>
           <span className="w-overline" style={{ color: "var(--w-fg-neutral)" }}>설정</span>
           <h1 className="page__title" style={{ marginTop: 4 }}>설정</h1>
-          <p className="page__sub">계정 연결, 화면 테마, 알림을 관리해요.</p>
+          <p className="page__sub">계정 연결, 알림을 관리해요.</p>
         </div>
       </div>
 
@@ -30,7 +30,6 @@ export default function SettingsPage() {
       </div>
 
       {tab === "account" && <AccountTab />}
-      {tab === "theme" && <ThemeTab />}
       {tab === "notif" && <NotifTab />}
       {tab === "danger" && <DangerTab />}
     </div>
@@ -44,7 +43,7 @@ function AccountTab() {
   const browseMode = !!session?.browseMode;
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 20 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       <div className="card card--lg">
         <h2 className="section-title">연결 상태</h2>
         <p className="section-sub">
@@ -88,79 +87,82 @@ function AccountTab() {
         )}
       </div>
 
-      {connected ? (
-        <div className="card" style={{ background: "linear-gradient(135deg, rgba(0,102,255,0.04), rgba(101,65,242,0.05))", borderColor: "transparent" }}>
-          <Badge kind="success" dot live>연결됨</Badge>
-          <div style={{ font: "700 18px/1.3 var(--w-font-sans)", color: "var(--w-fg-strong)", marginTop: 12, letterSpacing: "-0.012em" }}>광고를 만들 수 있어요</div>
-          <p style={{ font: "500 13px/1.55 var(--w-font-sans)", color: "var(--w-fg-neutral)", margin: "10px 0 16px" }}>바로 광고 만들기 화면으로 이동해 첫 캠페인을 시작해보세요.</p>
-          <button className="btn btn--primary btn--sm" type="button" onClick={() => router.push("/create")}><Icon name="sparkles" size={14} /> 광고 만들기로 이동</button>
-        </div>
-      ) : (
-        <div className="card" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          <Badge kind="neutral" dot>둘러보기 모드</Badge>
-          <div style={{ font: "700 17px/1.3 var(--w-font-sans)", color: "var(--w-fg-strong)" }}>연결 없이 먼저 둘러보는 중이에요</div>
-          <p style={{ font: "500 13px/1.55 var(--w-font-sans)", color: "var(--w-fg-neutral)", margin: 0 }}>예시 데이터로 화면과 흐름을 살펴볼 수 있어요. 광고 집행은 연결 후에 가능해요.</p>
-          <button className="btn btn--secondary btn--sm" type="button" onClick={() => router.push("/connect")}>지금 연결하기 →</button>
-        </div>
-      )}
-    </div>
-  );
-}
+      <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 20 }}>
+        {connected ? (
+          <div className="card" style={{ background: "linear-gradient(135deg, rgba(0,102,255,0.04), rgba(101,65,242,0.05))", borderColor: "transparent" }}>
+            <Badge kind="success" dot live>연결됨</Badge>
+            <div style={{ font: "700 18px/1.3 var(--w-font-sans)", color: "var(--w-fg-strong)", marginTop: 12, letterSpacing: "-0.012em" }}>광고를 만들 수 있어요</div>
+            <p style={{ font: "500 13px/1.55 var(--w-font-sans)", color: "var(--w-fg-neutral)", margin: "10px 0 16px" }}>바로 광고 만들기 화면으로 이동해 첫 캠페인을 시작해보세요.</p>
+            <button className="btn btn--primary btn--sm" type="button" onClick={() => router.push("/create")}><Icon name="sparkles" size={14} /> 광고 만들기로 이동</button>
+          </div>
+        ) : (
+          <div className="card" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <Badge kind="warn" dot size="sm">둘러보기</Badge>
+            <div style={{ font: "700 17px/1.3 var(--w-font-sans)", color: "var(--w-fg-strong)" }}>연결 없이 먼저 둘러보는 중이에요</div>
+            <p style={{ font: "500 13px/1.55 var(--w-font-sans)", color: "var(--w-fg-neutral)", margin: 0 }}>예시 데이터로 화면과 흐름을 살펴볼 수 있어요. 광고 집행은 연결 후에 가능해요.</p>
+            <button className="btn btn--secondary btn--sm" type="button" onClick={() => router.push("/connect")}>지금 연결하기 →</button>
+          </div>
+        )}
+      </div>
 
-const THEME_OPTS: { k: ThemeChoice; label: string; desc: string }[] = [
-  { k: "light", label: "라이트", desc: "기본값" },
-  { k: "dark", label: "다크", desc: "어두운 환경" },
-  { k: "system", label: "시스템 설정", desc: "기기 설정 따라가기" },
-];
-
-function ThemeTab() {
-  const [theme, setTheme] = useTheme();
-  return (
-    <div className="card card--lg" style={{ maxWidth: 720 }}>
-      <h2 className="section-title">화면 테마</h2>
-      <p className="section-sub">눈에 편한 테마를 선택하세요. 기기 설정을 따를 수도 있어요.</p>
-      <hr className="divider" />
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12 }}>
-        {THEME_OPTS.map((opt) => (
-          <button key={opt.k} type="button" onClick={() => setTheme(opt.k)} className={"radio-card" + (theme === opt.k ? " radio-card--on" : "")} style={{ flexDirection: "column", padding: 18, gap: 12, alignItems: "stretch" }}>
-            <div style={{ height: 100, borderRadius: 10, position: "relative", overflow: "hidden", background: opt.k === "light" ? "#fff" : opt.k === "dark" ? "#171719" : "linear-gradient(90deg, #fff 50%, #171719 50%)", border: "1px solid var(--w-line-alternative)" }}>
-              <div style={{ position: "absolute", left: 10, top: 10, right: 10, height: 6, background: opt.k === "dark" ? "rgba(255,255,255,0.2)" : "#e1e2e4", borderRadius: 3 }} />
-              <div style={{ position: "absolute", left: 10, top: 24, width: "60%", height: 6, background: opt.k === "dark" ? "rgba(255,255,255,0.12)" : "#eaebec", borderRadius: 3 }} />
-              <div style={{ position: "absolute", left: 10, bottom: 10, height: 24, width: "70%", background: "var(--w-primary-normal)", borderRadius: 6 }} />
+      <div className="card card--lg">
+        <h2 className="section-title">Instagram 오가닉 인사이트</h2>
+        <p className="section-sub">연결된 Facebook 페이지에 Instagram 비즈니스 계정이 링크되면 성과 탭에서 오가닉 인사이트를 자동으로 확인할 수 있어요.</p>
+        <hr className="divider" />
+        <div className="list-row">
+          <div style={{ display: "flex", alignItems: "center", gap: 14, minWidth: 0 }}>
+            <div style={{ width: 40, height: 40, borderRadius: 10, background: "linear-gradient(135deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888)", display: "grid", placeItems: "center", flex: "0 0 auto" }}>
+              <Icon name="image" size={18} style={{ color: "#fff" }} />
             </div>
-            <div style={{ textAlign: "left" }}>
-              <div className="radio-card__text" style={{ marginTop: 0 }}>{opt.label}</div>
-              <div style={{ font: "500 12px/1 var(--w-font-sans)", color: "var(--w-fg-neutral)", marginTop: 4 }}>{opt.desc}</div>
+            <div>
+              <div className="list-row__title">Instagram 비즈니스 계정</div>
+              <div className="list-row__sub">
+                {connected
+                  ? "Facebook 페이지에 Instagram 비즈니스 계정이 연결되면 자동으로 인사이트를 불러와요."
+                  : "먼저 Meta 광고 계정과 Facebook 페이지를 연결해주세요."}
+              </div>
             </div>
+          </div>
+          <button className="btn btn--secondary btn--sm" type="button" onClick={() => router.push("/create")}>
+            성과 탭에서 확인 <Icon name="arrow-right" size={13} />
           </button>
-        ))}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 14, font: "500 12px/1.4 var(--w-font-sans)", color: "var(--w-fg-neutral)" }}>
+          <Icon name="info" size={12} />
+          Instagram 비즈니스 계정 연결은 Facebook 페이지 설정에서 할 수 있어요. 연결 후 다시 로그인하면 인사이트가 활성화돼요.
+        </div>
       </div>
     </div>
   );
 }
 
-const NOTIF_OPTS: [string, string][] = [
-  ["launch", "광고가 게재되기 시작했을 때"],
-  ["perf", "성과가 갑자기 변동했을 때"],
-  ["weekly", "주간 성과 요약"],
-  ["opt", "AI 최적화 제안이 있을 때"],
+
+type NotifKey = "launch" | "perf" | "weekly" | "opt";
+const NOTIF_OPTS: [NotifKey, string, boolean][] = [
+  ["launch", "광고가 게재됐을 때", true],
+  ["opt", "AI 최적화 제안이 있을 때", true],
+  ["perf", "성과가 갑자기 변동했을 때", false],
+  ["weekly", "주간 성과 요약", false],
 ];
 
 function NotifTab() {
-  const [n, setN] = useState<Record<string, boolean>>({ launch: true, perf: true, weekly: false, opt: true });
+  const { settings, update } = useNotifSettings();
   return (
     <div className="card card--lg" style={{ maxWidth: 720 }}>
       <h2 className="section-title">알림</h2>
       <p className="section-sub">중요한 사건이 일어났을 때만 보내드려요.</p>
       <hr className="divider" />
-      {NOTIF_OPTS.map(([k, l]) => (
+      {NOTIF_OPTS.map(([k, l, implemented]) => (
         <div key={k} className="list-row">
-          <div className="list-row__title">{l}</div>
-          <Toggle on={!!n[k]} onChange={(v) => setN((s) => ({ ...s, [k]: v }))} />
+          <div>
+            <div className="list-row__title">{l}</div>
+            {!implemented && <div className="field__hint" style={{ marginTop: 2 }}>준비 중</div>}
+          </div>
+          <Toggle on={!!settings[k]} onChange={(v) => update(k, v)} />
         </div>
       ))}
       <div className="field__hint" style={{ marginTop: 14, display: "flex", alignItems: "center", gap: 6 }}>
-        <Icon name="info" size={12} /> 알림 발송 기능은 아직 준비 중이에요. 이 설정은 지금은 저장되지 않아요.
+        <Icon name="info" size={12} /> 설정이 이 브라우저에 저장돼요.
       </div>
     </div>
   );

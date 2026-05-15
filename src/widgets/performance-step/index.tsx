@@ -3,7 +3,7 @@
 // STEP 03 성과 확인 widget — ADR-001 §deepening ③.
 // useCreative legacy shim 대신 useLaunchDraft + useCreativeDraft 직접 구독.
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import Icon from "@shared/ui/Icon";
@@ -12,6 +12,7 @@ import { useCreativeDraft } from "@entities/creative/model";
 import { useLaunchDraft } from "@entities/campaign/model";
 import { useToast } from "@shared/ui/Toast";
 import { suggestOptimizations, assessAutomationReadiness } from "@entities/insights/optimization";
+import { addNotification } from "@shared/lib/notifications";
 import { shortDate } from "@shared/lib/format";
 
 import CampaignBar from "./CampaignBar";
@@ -22,7 +23,7 @@ import DailyTrend from "./DailyTrend";
 import type { Insights, CampaignObjective } from "./_types";
 
 type ControlParams = {
-  campaignId: string; adSetId: string; adId: string;
+  campaignId: string; adSetId: string; adId?: string;
   action: "pause" | "resume" | "set-daily-budget"; dailyBudget?: number;
 };
 type ControlResult = { ok: true; status?: "ACTIVE" | "PAUSED"; dailyBudget?: number };
@@ -183,6 +184,13 @@ export default function PerformanceStep({ onRestart }: { onRestart: () => void }
   };
   const suggestions = suggestOptimizations(ins, dailyBudget, objective);
   const readiness = assessAutomationReadiness(ins, data.daily.length, objective);
+
+  const notifiedOptRef = useRef(false);
+  useEffect(() => {
+    if (!launched || exampleMode || notifiedOptRef.current || suggestions.length === 0) return;
+    notifiedOptRef.current = true;
+    addNotification({ type: "opt", message: `AI 최적화 제안이 ${suggestions.length}개 있어요. 성과 탭에서 확인해보세요.` });
+  }, [launched, exampleMode, suggestions.length]);
 
   return (
     <>

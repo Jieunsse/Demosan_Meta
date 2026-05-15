@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useSession, signOut } from "next-auth/react";
+import { useSession } from "next-auth/react";
 import Icon, { type IconName } from "@shared/ui/Icon";
 import { useTheme, type ThemeChoice } from "@shared/lib/useTheme";
+import NotificationBell from "@shared/ui/NotificationBell";
+import LogoutButton from "@shared/ui/LogoutButton";
 
 interface NavItem {
   href: string;
@@ -13,13 +15,21 @@ interface NavItem {
   chip?: string;
   count?: number;
   countVariant?: "warn" | "primary";
+  children?: NavItem[];
 }
 
 const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
   {
     label: "메인",
     items: [
-      { href: "/dashboard", label: "대시보드", icon: "grid" },
+      {
+        href: "/dashboard",
+        label: "대시보드",
+        icon: "grid",
+        children: [
+          { href: "/dashboard/instagram", label: "Instagram", icon: "image" },
+        ],
+      },
       { href: "/create", label: "광고 만들기", icon: "sparkles", chip: "AI" },
     ],
   },
@@ -54,7 +64,7 @@ export default function Sidebar() {
 
   const userName = session?.user?.name ?? "";
   const userInitial = userName.trim().charAt(0).toUpperCase() || "M";
-  const userEmail = session?.user?.email ?? "";
+  const userRole = session?.role;
   const adAccountName = session?.adAccountName;
   const pageName = session?.pageName;
   const connected = !!(adAccountName && pageName);
@@ -76,22 +86,39 @@ export default function Sidebar() {
               {group.label}
             </div>
             {group.items.map((it) => {
-              const active = pathname === it.href || pathname.startsWith(it.href + "/");
+              const hasChildren = !!it.children?.length;
+              const active = hasChildren
+                ? pathname === it.href
+                : pathname === it.href || pathname.startsWith(it.href + "/");
               return (
-                <Link
-                  key={it.href}
-                  href={it.href}
-                  className={"side__link" + (active ? " side__link--on" : "")}
-                >
-                  <span className="side__link-icon"><Icon name={it.icon} size={18} /></span>
-                  <span>{it.label}</span>
-                  {it.chip && <span className="side__link-count">{it.chip}</span>}
-                  {it.count != null && (
-                    <span className={"side__link-count" + (it.countVariant === "warn" ? " side__link-count--warn" : it.countVariant === "primary" ? " side__link-count--primary" : "")}>
-                      {it.count}
-                    </span>
-                  )}
-                </Link>
+                <div key={it.href}>
+                  <Link
+                    href={it.href}
+                    className={"side__link" + (active ? " side__link--on" : "")}
+                  >
+                    <span className="side__link-icon"><Icon name={it.icon} size={18} /></span>
+                    <span>{it.label}</span>
+                    {it.chip && <span className="side__link-count">{it.chip}</span>}
+                    {it.count != null && (
+                      <span className={"side__link-count" + (it.countVariant === "warn" ? " side__link-count--warn" : it.countVariant === "primary" ? " side__link-count--primary" : "")}>
+                        {it.count}
+                      </span>
+                    )}
+                  </Link>
+                  {hasChildren && it.children!.map((child) => {
+                    const childActive = pathname === child.href || pathname.startsWith(child.href + "/");
+                    return (
+                      <Link
+                        key={child.href}
+                        href={child.href}
+                        className={"side__link side__link--sub" + (childActive ? " side__link--on" : "")}
+                      >
+                        <span className="side__link-icon"><Icon name={child.icon} size={16} /></span>
+                        <span>{child.label}</span>
+                      </Link>
+                    );
+                  })}
+                </div>
               );
             })}
           </div>
@@ -105,9 +132,13 @@ export default function Sidebar() {
           </div>
           {connected ? (
             <>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--w-status-positive)" }} />
-                <span style={{ font: "600 12px/1.3 var(--w-font-sans)", color: "var(--w-fg-strong)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+                <span style={{ width: 7, height: 7, borderRadius: "50%", flexShrink: 0, background: "var(--w-status-positive)" }} />
+                <span style={{ font: "600 12px/1.3 var(--w-font-sans)", color: "var(--w-fg-strong)" }}>연결됨</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4, color: "var(--w-fg-neutral)" }}>
+                <Icon name="wallet" size={11} />
+                <span style={{ font: "500 11.5px/1.3 var(--w-font-sans)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                   {adAccountName}
                 </span>
               </div>
@@ -136,23 +167,21 @@ export default function Sidebar() {
         </div>
 
         <div className="side__user">
-          <div className="side__avatar">{userInitial}</div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="side__user-name" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-              {userName || "마케터"}
+          <Link href="/settings" style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0, textDecoration: "none" }}>
+            <div className="side__avatar">{userInitial}</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="side__user-name" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {userName || "마케터"}
+              </div>
+              {userRole && (
+                <div className={"side__role-badge" + (userRole === "팀장" ? " side__role-badge--lead" : " side__role-badge--member")}>
+                  {userRole}
+                </div>
+              )}
             </div>
-            <div className="side__user-meta" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-              {userEmail || "—"}
-            </div>
-          </div>
-          <button
-            onClick={() => signOut({ callbackUrl: "/login" })}
-            title="로그아웃"
-            type="button"
-            style={{ width: 28, height: 28, borderRadius: 8, border: "1px solid var(--w-line-normal)", background: "var(--w-bg-elevated)", color: "var(--w-fg-neutral)", display: "grid", placeItems: "center", cursor: "pointer", flex: "0 0 auto" }}
-          >
-            <Icon name="logout" size={13} />
-          </button>
+          </Link>
+          <NotificationBell />
+          <LogoutButton />
         </div>
       </div>
     </aside>
