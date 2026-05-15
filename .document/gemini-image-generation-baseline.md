@@ -8,12 +8,12 @@
 
 ## 1. 진입점 & 파일 구조
 
-| 레이어 | 파일 | 역할 |
-|---|---|---|
-| 클라이언트 훅 | `app/_hooks/useGenerateImage.ts` | `useApiMutation` 래퍼. `POST /api/generate-image` 호출 |
+| 레이어            | 파일                                                                 | 역할                                                                         |
+| ----------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| 클라이언트 훅     | `app/_hooks/useGenerateImage.ts`                                     | `useApiMutation` 래퍼. `POST /api/generate-image` 호출                       |
 | 클라이언트 호출부 | `app/(workspace)/create/_components/CreativeStep.tsx` `AiImageBlock` | "이미지 3장 생성" 버튼 → `gen.mutate({ prompt, referenceImages, count: 3 })` |
-| Route Handler | `app/api/generate-image/route.ts` | 입력 검증(`MAX_REFERENCE_IMAGES = 6`), `geminiImage.generate()` 위임 |
-| Server adapter | `lib/gemini-image.ts` | Gemini SDK 호출 + 슬롯·재시도·모델 폴백 로직 |
+| Route Handler     | `app/api/generate-image/route.ts`                                    | 입력 검증(`MAX_REFERENCE_IMAGES = 6`), `geminiImage.generate()` 위임         |
+| Server adapter    | `lib/gemini-image.ts`                                                | Gemini SDK 호출 + 슬롯·재시도·모델 폴백 로직                                 |
 
 `useApiMutation` 은 React Query mutation 기반, fetch + JSON 표준 흐름.
 
@@ -22,17 +22,17 @@
 ## 2. 요청·응답 모양
 
 ### 요청 (`POST /api/generate-image`)
+
 ```json
 {
   "prompt": "미니멀한 욕실 선반에 놓인 비건 수분크림, 아침 햇살, 파스텔 톤",
-  "referenceImages": [
-    { "mimeType": "image/jpeg", "dataBase64": "..." }
-  ],
+  "referenceImages": [{ "mimeType": "image/jpeg", "dataBase64": "..." }],
   "count": 3
 }
 ```
 
 ### 응답
+
 ```json
 {
   "images": [
@@ -42,6 +42,7 @@
   ]
 }
 ```
+
 한 장당 base64 DataURL. 보통 PNG, ~700KB ~ 1.5MB. JSON 전체 ~3MB.
 
 ---
@@ -95,13 +96,13 @@ attemptGenerate(ai, contents):
 
 ## 4. 상수 (`lib/gemini-image.ts`)
 
-| 상수 | 값 | 의미 |
-|---|---|---|
-| `IMAGE_MODELS` | `["gemini-2.0-flash-preview-image-generation", "gemini-2.5-flash-image"]` | 모델 폴백 순서 (커밋 `592a3fc` 에서 프로덕션 호환 모델로 교체됨) |
-| `DEFAULT_COUNT` | `3` | PRD 1라운드 3장 |
-| `MAX_COUNT` | `4` | 안전 상한 |
-| `STAGGER_MS` | **`600`** | 슬롯 간 시작 시각 차 — 동시 요청 폭발 방지 목적 |
-| `RETRY_DELAY_MS` | **`1500`** | 슬롯 내 1차 실패 후 재시도 전 sleep |
+| 상수             | 값                                                                        | 의미                                                             |
+| ---------------- | ------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `IMAGE_MODELS`   | `["gemini-2.0-flash-preview-image-generation", "gemini-2.5-flash-image"]` | 모델 폴백 순서 (커밋 `592a3fc` 에서 프로덕션 호환 모델로 교체됨) |
+| `DEFAULT_COUNT`  | `3`                                                                       | PRD 1라운드 3장                                                  |
+| `MAX_COUNT`      | `4`                                                                       | 안전 상한                                                        |
+| `STAGGER_MS`     | **`600`**                                                                 | 슬롯 간 시작 시각 차 — 동시 요청 폭발 방지 목적                  |
+| `RETRY_DELAY_MS` | **`1500`**                                                                | 슬롯 내 1차 실패 후 재시도 전 sleep                              |
 
 ---
 
@@ -109,18 +110,18 @@ attemptGenerate(ai, contents):
 
 > 측정치 아닌 대략. Gemini 이미지 모델 한 슬롯 호출은 4~8s 범위.
 
-| 단계 | 시간 |
-|---|---|
-| slot 0 시작 (t=0ms) → 응답 | 4~8s |
-| slot 1 시작 (t=600ms) → 응답 | 0.6s + 4~8s |
-| slot 2 시작 (t=1200ms) → 응답 | 1.2s + 4~8s |
-| **Promise.all 종료 (= max slot)** | **5.2~9.2s** (happy path) |
-| 1슬롯 실패→재시도 발생 시 추가 | +1.5s + 4~8s |
-| **worst case (모든 슬롯 1회 재시도)** | **~11~14s** |
-| Base64 JSON 응답 직렬화/전송 (~3MB) | 0.5~1.5s |
-| 클라이언트 `<img src>` 디코드 | 1MB 당 100~300ms |
-| **체감 총 대기 (happy path)** | **6~10s** |
-| **체감 총 대기 (worst)** | **12~15s** |
+| 단계                                  | 시간                      |
+| ------------------------------------- | ------------------------- |
+| slot 0 시작 (t=0ms) → 응답            | 4~8s                      |
+| slot 1 시작 (t=600ms) → 응답          | 0.6s + 4~8s               |
+| slot 2 시작 (t=1200ms) → 응답         | 1.2s + 4~8s               |
+| **Promise.all 종료 (= max slot)**     | **5.2~9.2s** (happy path) |
+| 1슬롯 실패→재시도 발생 시 추가        | +1.5s + 4~8s              |
+| **worst case (모든 슬롯 1회 재시도)** | **~11~14s**               |
+| Base64 JSON 응답 직렬화/전송 (~3MB)   | 0.5~1.5s                  |
+| 클라이언트 `<img src>` 디코드         | 1MB 당 100~300ms          |
+| **체감 총 대기 (happy path)**         | **6~10s**                 |
+| **체감 총 대기 (worst)**              | **12~15s**                |
 
 UI 안내문구: "AI가 이미지를 만들고 있어요… (10~30초 정도 걸려요)" — `CreativeStep.tsx:352`
 
@@ -147,10 +148,10 @@ UI 안내문구: "AI가 이미지를 만들고 있어요… (10~30초 정도 걸
 
 ## 8. 다음 단계 — Tier 1 적용 계획 (이 문서 직후 진행)
 
-| 변경 | 위치 | Before → After | 기대 효과 |
-|---|---|---|---|
-| `STAGGER_MS` | `lib/gemini-image.ts` | `600` → `100` | -1s (마지막 슬롯이 0.2s 안에 시작) |
-| `RETRY_DELAY_MS` | `lib/gemini-image.ts` | `1500` → `500` | -1s (재시도 발생 시) |
+| 변경             | 위치                  | Before → After | 기대 효과                          |
+| ---------------- | --------------------- | -------------- | ---------------------------------- |
+| `STAGGER_MS`     | `lib/gemini-image.ts` | `600` → `100`  | -1s (마지막 슬롯이 0.2s 안에 시작) |
+| `RETRY_DELAY_MS` | `lib/gemini-image.ts` | `1500` → `500` | -1s (재시도 발생 시)               |
 
 총 happy path 단축: **약 -1s** / worst case 단축: **약 -2s**.
 

@@ -1,10 +1,10 @@
-import { TONES, OBJECTIVES_PHASE1, type ToneId, type ObjectivePhase1Id } from "@entities/creative/options";
+import { TONES, OBJECTIVES_ALL, type ToneId, type ObjectiveId } from "@entities/creative/options";
 
 export interface BriefPromptInput {
   headline: string;
   primaryText: string;
   tone: ToneId;
-  outcomeChip: ObjectivePhase1Id | null;
+  outcomeChip: ObjectiveId | null;
   /** Number of scene shots attached (image data is passed separately as referenceImages). */
   scenesCount: number;
   hasLogo: boolean;
@@ -14,7 +14,7 @@ export interface BriefPromptInput {
 
 export function buildBriefPrompt(input: BriefPromptInput): string {
   const toneLabel = TONES.find((t) => t.id === input.tone)?.label ?? input.tone;
-  const outcomeDef = input.outcomeChip ? OBJECTIVES_PHASE1.find((o) => o.id === input.outcomeChip) : null;
+  const outcomeDef = input.outcomeChip ? OBJECTIVES_ALL.find((o) => o.id === input.outcomeChip) : null;
   const lines: (string | null)[] = [
     "Facebook/Instagram 광고용 이미지 디자인 의뢰입니다.",
     "",

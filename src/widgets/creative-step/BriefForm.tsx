@@ -5,7 +5,7 @@
 // 자료/사이즈/추가 지시는 brief 모드 안 로컬 state.
 
 import Icon from "@shared/ui/Icon";
-import { TONES, OBJECTIVES_PHASE1, type ToneId, type ObjectivePhase1Id } from "@entities/creative/options";
+import { TONES, OBJECTIVES_ALL, type ToneId, type ObjectiveId } from "@entities/creative/options";
 
 export const ASPECT_OPTIONS = [
   { id: "1:1" as const,  label: "1:1 정사각형",       enabled: true,  hint: "피드용 — 가장 안전" },
@@ -18,7 +18,7 @@ export type AspectId = (typeof ASPECT_OPTIONS)[number]["id"];
 function BriefRow({ label, value }: { label: string; value: string }) {
   return (
     <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
-      <span style={{ font: "500 11px/1.4 var(--w-font-sans)", color: "var(--w-fg-neutral)", flex: "0 0 72px" }}>{label}</span>
+      <span style={{ font: "500 11px/1.4 var(--w-font-sans)", color: "var(--w-fg-normal)", flex: "0 0 72px" }}>{label}</span>
       <span style={{ font: "500 12.5px/1.5 var(--w-font-sans)", color: "var(--w-fg-strong)", overflow: "hidden", textOverflow: "ellipsis" }}>{value}</span>
     </div>
   );
@@ -27,9 +27,9 @@ function BriefRow({ label, value }: { label: string; value: string }) {
 export default function BriefForm({
   state, scenes, logo, aspect, briefNotes, generating,
   onAddScenes, onRemoveScene, onClearScenes, onSetLogo, onRemoveLogo,
-  onAspectChange, onNotesChange, onGenerate,
+  onAspectChange, onNotesChange, onGenerate, onZoom,
 }: {
-  state: { headline: string; primaryText: string; tone: ToneId; outcomeChip: ObjectivePhase1Id | null };
+  state: { headline: string; primaryText: string; tone: ToneId; outcomeChips: ObjectiveId[] };
   scenes: string[];
   logo: string | null;
   aspect: AspectId;
@@ -43,9 +43,10 @@ export default function BriefForm({
   onAspectChange: (id: AspectId) => void;
   onNotesChange: (v: string) => void;
   onGenerate: () => void;
+  onZoom: (src: string) => void;
 }) {
   const toneLabel = TONES.find((t) => t.id === state.tone)?.label ?? state.tone;
-  const outcomeDef = state.outcomeChip ? OBJECTIVES_PHASE1.find((o) => o.id === state.outcomeChip) : null;
+  const outcomeDef = state.outcomeChips[0] ? OBJECTIVES_ALL.find((o) => o.id === state.outcomeChips[0]) : null;
   const hasCopy = !!state.headline?.trim();
   const hasMaterials = scenes.length > 0 || !!logo;
 
@@ -83,12 +84,12 @@ export default function BriefForm({
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
             <span style={{ font: "500 12px/1 var(--w-font-sans)", color: "var(--w-fg-strong)" }}>연출컷 (분위기·앵글 참고)</span>
             <div style={{ display: "flex", gap: 6 }}>
-              <label className="btn btn--ghost btn--sm" style={{ cursor: "pointer" }}>
+              <label className="btn btn--ghost btn--sm" style={{ cursor: "pointer", borderColor: "var(--w-line-normal)" }}>
                 <Icon name="upload" size={12} /> 연출컷 추가{scenes.length > 0 ? ` (${scenes.length})` : ""}
                 <input type="file" accept="image/*" multiple style={{ display: "none" }} onChange={(e) => onAddScenes(e.target.files)} />
               </label>
               {scenes.length > 0 && (
-                <button type="button" className="btn btn--ghost btn--sm" onClick={onClearScenes}>비우기</button>
+                <button type="button" className="btn btn--ghost btn--sm" onClick={onClearScenes} style={{ borderColor: "var(--w-line-normal)" }}>비우기</button>
               )}
             </div>
           </div>
@@ -97,7 +98,13 @@ export default function BriefForm({
               {scenes.map((src, i) => (
                 <div key={i} style={{ position: "relative", width: 60, height: 60 }}>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={src} alt={`연출컷 ${i + 1}`} style={{ width: 60, height: 60, objectFit: "cover", borderRadius: 6, border: "1px solid var(--w-line-normal)", display: "block" }} />
+                  <img
+                    src={src}
+                    alt={`연출컷 ${i + 1}`}
+                    title="클릭하면 크게 볼 수 있어요"
+                    onClick={() => onZoom(src)}
+                    style={{ width: 60, height: 60, objectFit: "cover", borderRadius: 6, border: "1px solid var(--w-line-normal)", display: "block", cursor: "zoom-in" }}
+                  />
                   <button
                     type="button"
                     aria-label={`연출컷 ${i + 1} 삭제`}
@@ -119,19 +126,25 @@ export default function BriefForm({
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
             <span style={{ font: "500 12px/1 var(--w-font-sans)", color: "var(--w-fg-strong)" }}>로고 파일 (선택)</span>
             <div style={{ display: "flex", gap: 6 }}>
-              <label className="btn btn--ghost btn--sm" style={{ cursor: "pointer" }}>
+              <label className="btn btn--ghost btn--sm" style={{ cursor: "pointer", borderColor: "var(--w-line-normal)" }}>
                 <Icon name="upload" size={12} /> {logo ? "로고 변경" : "로고 첨부"}
                 <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => onSetLogo(e.target.files)} />
               </label>
               {logo && (
-                <button type="button" className="btn btn--ghost btn--sm" onClick={onRemoveLogo}>제거</button>
+                <button type="button" className="btn btn--ghost btn--sm" onClick={onRemoveLogo} style={{ borderColor: "var(--w-line-normal)" }}>제거</button>
               )}
             </div>
           </div>
           {logo ? (
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={logo} alt="로고" style={{ width: 60, height: 60, objectFit: "contain", borderRadius: 6, border: "1px solid var(--w-line-normal)", background: "#fff" }} />
+              <img
+                src={logo}
+                alt="로고"
+                title="클릭하면 크게 볼 수 있어요"
+                onClick={() => onZoom(logo)}
+                style={{ width: 60, height: 60, objectFit: "contain", borderRadius: 6, border: "1px solid var(--w-line-normal)", background: "#fff", cursor: "zoom-in" }}
+              />
               <span className="field__hint" style={{ margin: 0 }}>투명 배경 PNG 권장. AI는 분위기만 참고하고 이미지에 직접 합성하진 않아요.</span>
             </div>
           ) : (

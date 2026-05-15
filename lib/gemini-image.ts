@@ -41,8 +41,24 @@ const MAX_COUNT = 4;
 const STAGGER_MS = 100;
 // 500 ms sleep on first failure/empty-response (includes safety blocks).
 const RETRY_DELAY_MS = 500;
+const MAX_REFERENCE_IMAGES = 6;
+
+export function sanitizeRefs(raw: unknown): ReferenceImage[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const refs = (raw as unknown[])
+    .filter((r): r is ReferenceImage =>
+      !!r && typeof (r as ReferenceImage).mimeType === "string" && typeof (r as ReferenceImage).dataBase64 === "string",
+    )
+    .slice(0, MAX_REFERENCE_IMAGES);
+  return refs.length ? refs : undefined;
+}
+
 // TODO(PRD): fix output aspect ratio to 1:1 via config.imageConfig.aspectRatio once confirmed
 //            supported by this SDK version. (Current model default is approximately square.)
+
+const AD_CONTEXT = "Generate a high-quality commercial ad image for Meta.";
+const REF_STYLE_GUIDE =
+  "Use the reference image as the primary visual style guide. Keep the subject, composition, and color palette close to the reference.";
 
 type ContentPart =
   | { text: string }
@@ -57,14 +73,26 @@ function requireEnv(key: string): string {
 }
 
 function buildContents(prompt: string, refs: ReferenceImage[]): ContentPart[] {
-  const parts: ContentPart[] = [{ text: prompt }];
+  const hasRefs = refs.length > 0;
+  const hasPrompt = !!prompt;
+
+  let text: string;
+  if (hasRefs && hasPrompt) {
+    text = `${AD_CONTEXT}\n${REF_STYLE_GUIDE}\nAdditional creative direction: ${prompt}`;
+  } else if (hasRefs) {
+    text = `${AD_CONTEXT}\n${REF_STYLE_GUIDE}`;
+  } else {
+    text = `${AD_CONTEXT}\n${prompt}`;
+  }
+
+  // Reference images first to anchor visual style, then the instruction text
+  const parts: ContentPart[] = [];
   for (const ref of refs) {
     if (ref?.mimeType && ref?.dataBase64) {
-      parts.push({
-        inlineData: { mimeType: ref.mimeType, data: ref.dataBase64 },
-      });
+      parts.push({ inlineData: { mimeType: ref.mimeType, data: ref.dataBase64 } });
     }
   }
+  parts.push({ text });
   return parts;
 }
 
@@ -155,18 +183,45 @@ export const geminiImage = {
     return !!process.env.GOOGLE_AI_API_KEY;
   },
 
-  async generate(params: GenerateImageParams): Promise<GenerateImageResult> {
-    const prompt = params.prompt?.trim();
-    if (!prompt) throw new Error("이미지 프롬프트가 비어 있어요.");
+  async generateStream(
+    params: GenerateImageParams,
+    onImage: (index: number, dataUrl: string) => void,
+  ): Promise<void> {
+    const prompt = params.prompt?.trim() ?? "";
+    const refs = Array.isArray(params.referenceImages) ? params.referenceImages : [];
+    if (!prompt && refs.length === 0) throw new Error("프롬프트 또는 레퍼런스 이미지를 입력해주세요.");
 
     const apiKey = requireEnv("GOOGLE_AI_API_KEY");
-    const count = Math.max(
-      1,
-      Math.min(MAX_COUNT, params.count ?? DEFAULT_COUNT),
+    const count = Math.max(1, Math.min(MAX_COUNT, params.count ?? DEFAULT_COUNT));
+    const ai = new GoogleGenAI({ apiKey });
+    const contents = buildContents(prompt, refs);
+
+    let hasAny = false;
+    await Promise.all(
+      Array.from({ length: count }, (_, i) =>
+        sleep(i * STAGGER_MS).then(async () => {
+          const img = await generateSlot(ai, contents, i);
+          if (img) {
+            hasAny = true;
+            onImage(i, img);
+          }
+        }),
+      ),
     );
-    const refs = Array.isArray(params.referenceImages)
-      ? params.referenceImages
-      : [];
+    if (!hasAny) {
+      throw new Error(
+        "이미지가 생성되지 않았어요. 잠시 후 다시 시도해주세요. (자세한 사유는 서버 콘솔의 [gemini-image] 로그 확인)",
+      );
+    }
+  },
+
+  async generate(params: GenerateImageParams): Promise<GenerateImageResult> {
+    const prompt = params.prompt?.trim() ?? "";
+    const refs = Array.isArray(params.referenceImages) ? params.referenceImages : [];
+    if (!prompt && refs.length === 0) throw new Error("프롬프트 또는 레퍼런스 이미지를 입력해주세요.");
+
+    const apiKey = requireEnv("GOOGLE_AI_API_KEY");
+    const count = Math.max(1, Math.min(MAX_COUNT, params.count ?? DEFAULT_COUNT));
 
     const ai = new GoogleGenAI({ apiKey });
     const contents = buildContents(prompt, refs);
