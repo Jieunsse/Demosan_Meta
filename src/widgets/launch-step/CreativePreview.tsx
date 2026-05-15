@@ -80,7 +80,7 @@ export default function CreativePreview() {
           </div>
         </div>
       </div>
-      <p style={{ font: "500 12px/1.5 var(--w-font-sans)", color: "var(--w-fg-neutral)", margin: "10px 0 0" }}>
+      <p style={{ font: "500 12px/1.5 var(--w-font-sans)", color: "var(--w-fg-normal)", margin: "10px 0 0" }}>
         업로드하지 않으면 아래에서 입력한 페이지의 og:image 가 사용돼요. JPEG·3MB 이하 권장.
       </p>
     </>

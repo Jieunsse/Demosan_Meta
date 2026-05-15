@@ -12,12 +12,14 @@ export type DeliveryStatus = "PAUSED" | "ACTIVE";
 export type LaunchedCampaign = {
   campaignId: string;
   adSetId: string;
-  adId: string;
+  adId?: string;
   dailyBudget: number;
   startDate: string;
   endDate: string;
   status: "ACTIVE" | "PAUSED";
-  objective?: "OUTCOME_TRAFFIC" | "OUTCOME_AWARENESS" | "OUTCOME_ENGAGEMENT";
+  objective?: "OUTCOME_TRAFFIC" | "OUTCOME_AWARENESS" | "OUTCOME_ENGAGEMENT" | "OUTCOME_LEADS" | "OUTCOME_SALES" | "OUTCOME_APP_PROMOTION";
+  // Meta App 개발 모드 — Ad Creative/Ad 단계 skip 한 캠페인. STEP 03 차단·success card 분기에 사용
+  skipped?: boolean;
 };
 
 export type LaunchState = {
@@ -66,7 +68,6 @@ export type LaunchAction =
   | { type: "SET_DELIVERY"; value: DeliveryStatus }
   | { type: "SET_IMAGE_DATA_URL"; value: string | null }
   | { type: "SET_LAUNCHED_CAMPAIGN"; value: LaunchedCampaign }
-  | { type: "RESET_DETAIL_FIELDS" }
   | { type: "RESET" };
 
 function isoDate(offsetDays = 0): string {
@@ -100,16 +101,6 @@ const INITIAL_STATE: LaunchState = {
   launchedCampaign: null,
 };
 
-// Resets only the detail-mode fields; mode, platforms, and launchedCampaign are preserved.
-const DETAIL_DEFAULTS = {
-  bidStrategy: INITIAL_STATE.bidStrategy,
-  bidAmount: INITIAL_STATE.bidAmount,
-  customAudienceIds: INITIAL_STATE.customAudienceIds,
-  lookalikeEnabled: INITIAL_STATE.lookalikeEnabled,
-  placements: INITIAL_STATE.placements,
-  autoPauseGuardrailEnabled: INITIAL_STATE.autoPauseGuardrailEnabled,
-  abTestEnabled: INITIAL_STATE.abTestEnabled,
-} as const;
 
 function reducer(state: LaunchState, action: LaunchAction): LaunchState {
   switch (action.type) {
@@ -132,7 +123,6 @@ function reducer(state: LaunchState, action: LaunchAction): LaunchState {
     case "SET_DELIVERY":             return { ...state, delivery: action.value };
     case "SET_IMAGE_DATA_URL":       return { ...state, imageDataUrl: action.value };
     case "SET_LAUNCHED_CAMPAIGN":    return { ...state, launchedCampaign: action.value };
-    case "RESET_DETAIL_FIELDS":      return { ...state, ...DETAIL_DEFAULTS };
     case "RESET":                    return INITIAL_STATE;
     default:                         return state;
   }

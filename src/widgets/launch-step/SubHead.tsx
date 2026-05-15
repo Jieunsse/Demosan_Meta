@@ -7,7 +7,7 @@ export default function SubHead({ title, subtitle }: { title: string; subtitle?:
         {title}
       </div>
       {subtitle && (
-        <div style={{ font: "500 12px/1.45 var(--w-font-sans)", color: "var(--w-fg-neutral)", marginTop: 4 }}>
+        <div style={{ font: "400 13px/1.45 var(--w-font-sans)", color: "var(--w-fg-neutral)", marginTop: 4 }}>
           {subtitle}
         </div>
       )}

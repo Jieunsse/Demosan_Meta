@@ -28,9 +28,11 @@ export type LaunchParams = {
   bidAmount?: number
   placements?: LaunchPlacements
   platforms?: LaunchPlatforms
+  // Meta App 개발 모드 호환 — true 면 서버가 Campaign + AdSet 까지만 만들고 응답
+  skipAdCreation?: boolean
 }
 
-type LaunchResponse = { campaignId: string; adSetId: string; adId: string }
+type LaunchResponse = { campaignId: string; adSetId: string; adId?: string }
 
 export function useLaunchCampaign() {
   const mutation = useApiMutation<LaunchParams, LaunchResponse>('/api/campaign')

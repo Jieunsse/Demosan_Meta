@@ -1,6 +1,7 @@
 "use client";
 
 // 광고가 Meta 에 등록된 직후 보여지는 성공 카드 — Campaign/AdSet/Ad ID 복사 + "성과 확인하러 가기" 버튼.
+// skipped 모드(Meta App 개발 모드 호환) 는 CampaignSkeletonSuccessCard 가 별도로 렌더.
 
 import { useState } from "react";
 import Icon from "@shared/ui/Icon";
@@ -33,7 +34,7 @@ export default function LaunchSuccessCard({ onNext }: { onNext: () => void }) {
         </div>
         <div>
           <div style={{ font: "700 15px/1.3 var(--w-font-sans)", color: "var(--w-fg-strong)" }}>광고가 Meta에 등록됐어요</div>
-          <div style={{ font: "500 12.5px/1.4 var(--w-font-sans)", color: "var(--w-fg-neutral)", marginTop: 2 }}>
+          <div style={{ font: "500 12.5px/1.4 var(--w-font-sans)", color: "var(--w-fg-normal)", marginTop: 2 }}>
             {launched.status === "ACTIVE"
               ? "검토가 끝나면 자동으로 게재가 시작돼요."
               : "일시중지 상태로 만들어졌어요. Meta 광고 관리자에서 켤 수 있어요."}

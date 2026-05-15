@@ -191,7 +191,7 @@ export default function DetailKnobs() {
           <div style={{ display: "flex", alignItems: "center", gap: 6, font: "600 13.5px/1.3 var(--w-font-sans)", color: "var(--w-fg-strong)" }}>
             성과 기준 미달 시 자동 광고중단 <Badge kind="neutral">곧 연동</Badge>
           </div>
-          <p style={{ font: "500 12px/1.5 var(--w-font-sans)", color: "var(--w-fg-neutral)", margin: "3px 0 0" }}>
+          <p style={{ font: "400 13px/1.5 var(--w-font-sans)", color: "var(--w-fg-neutral)", margin: "3px 0 0" }}>
             첫 3일 동안 CPM이 광고 계정 평균 대비 2배 넘으면 자동으로 일시정지해요.
           </p>
         </div>
@@ -212,7 +212,7 @@ export default function DetailKnobs() {
           <div style={{ display: "flex", alignItems: "center", gap: 6, font: "600 13.5px/1.3 var(--w-font-sans)", color: "var(--w-fg-strong)" }}>
             헤드라인 두 개로 A/B 시험 <Badge kind="neutral">곧 연동</Badge>
           </div>
-          <p style={{ font: "500 12px/1.5 var(--w-font-sans)", color: "var(--w-fg-neutral)", margin: "3px 0 0" }}>
+          <p style={{ font: "400 13px/1.5 var(--w-font-sans)", color: "var(--w-fg-neutral)", margin: "3px 0 0" }}>
             STEP 01에서 만든 헤드라인 중 2개를 같은 광고세트에 두 광고로 등록해요. 7일 후 우세한 쪽 안내.
           </p>
         </div>

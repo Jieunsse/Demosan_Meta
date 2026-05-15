@@ -74,7 +74,7 @@ export default function SummaryCard() {
       </div>
       <hr className="divider" />
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-        <span style={{ font: "500 12px/1 var(--w-font-sans)", color: "var(--w-fg-neutral)" }}>Meta 연결 상태</span>
+        <span style={{ font: "500 12px/1 var(--w-font-sans)", color: "var(--w-fg-normal)" }}>Meta 연결 상태</span>
         {accountConnected ? <Badge kind="success" dot live>연결됨</Badge> : <Badge kind="warn" dot>미연결</Badge>}
       </div>
       <div className="checklist">
@@ -89,10 +89,10 @@ export default function SummaryCard() {
 function SumRow({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid var(--w-line-alternative)" }}>
-      <span style={{ font: "500 12.5px/1 var(--w-font-sans)", color: "var(--w-fg-neutral)" }}>{label}</span>
+      <span style={{ font: "500 12.5px/1 var(--w-font-sans)", color: "var(--w-fg-normal)" }}>{label}</span>
       <div style={{ textAlign: "right" }}>
         <span style={{ font: "600 13px/1 var(--w-font-sans)", color: "var(--w-fg-strong)" }}>{value}</span>
-        {sub && <div style={{ font: "500 11.5px/1 var(--w-font-mono)", color: "var(--w-fg-alternative)", marginTop: 4 }}>{sub}</div>}
+        {sub && <div style={{ font: "500 11.5px/1 var(--w-font-mono)", color: "var(--w-fg-neutral)", marginTop: 4 }}>{sub}</div>}
       </div>
     </div>
   );

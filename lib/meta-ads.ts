@@ -30,12 +30,16 @@ export interface CreateCampaignParams {
   bidAmount?: number                  // KRW — only used when bidStrategy is a cap variant
   placements?: PlacementsParam        // defaults to auto (Advantage+) when omitted
   platforms?: PlatformsParam          // omitted or 'both' = let Meta auto-select publisher_platforms
+  pixelId?: string                    // optional — adds tracking_specs for passive pixel event tracking
+  mode?: 'simple' | 'detailed'
+  // Meta 앱 개발 모드 호환 — POST /adcreatives 가 subcode 1885183 으로 막혀서 Campaign + AdSet 까지만 생성하고 종료
+  skipAdCreation?: boolean
 }
 
 export interface CampaignResult {
   campaignId: string
   adSetId: string
-  adId: string
+  adId?: string
 }
 
 export interface InsightsResult {
@@ -164,7 +168,7 @@ function buildPlacementTargeting(p?: PlacementsParam): Record<string, unknown> {
       case 'instagram_feed':     publisherPlatforms.add('instagram');        instagramPositions.add('stream');           break
       case 'instagram_stories':  publisherPlatforms.add('instagram');        instagramPositions.add('story');            break
       case 'audience_network':   publisherPlatforms.add('audience_network'); audienceNetworkPositions.add('classic');    break
-      case 'messenger':          publisherPlatforms.add('messenger');        messengerPositions.add('story');            break
+      case 'messenger':          publisherPlatforms.add('messenger');        messengerPositions.add('messenger_home');   break
     }
   }
   return {
@@ -293,7 +297,9 @@ export const metaAds = {
       : undefined
 
     const objective: MetaObjectiveParam = params.objective ?? 'OUTCOME_TRAFFIC'
-    const optimizationGoal = OPTIMIZATION_GOAL_BY_OBJECTIVE[objective]
+    const optimizationGoal = params.mode === 'simple' && objective === 'OUTCOME_TRAFFIC'
+      ? 'LANDING_PAGE_VIEWS'
+      : OPTIMIZATION_GOAL_BY_OBJECTIVE[objective]
     const bidStrategy: BidStrategyParam = params.bidStrategy ?? 'LOWEST_COST_WITHOUT_CAP'
     const manualPlacement = buildPlacementTargeting(params.placements)
     // Manual placements already encode publisher_platforms per position; only fall back
@@ -334,15 +340,21 @@ export const metaAds = {
             age_max: params.ageMax,
             ...(params.genders && params.genders.length > 0 ? { genders: params.genders } : {}),
             geo_locations: { countries: params.countries },
-            targeting_automation: { advantage_audience: 0 },
+            targeting_automation: { advantage_audience: params.mode === 'simple' ? 1 : 0 },
             ...placement,
           },
           start_time: toUnixKST(params.startDate),
           end_time: toUnixKST(params.endDate, true),
           status,
+          ...(params.pixelId ? { tracking_specs: [{ 'action.type': ['offsite_conversion'], 'fb.pixel': [params.pixelId] }] } : {}),
           access_token: token,
         }),
       })
+
+      // Meta 앱 개발 모드 호환 — Ad Creative/Ad 단계는 공개 모드 앱만 허용되므로 여기서 종료
+      if (params.skipAdCreation) {
+        return { campaignId: campaign.id, adSetId: adSet.id }
+      }
 
       const creative = await graphFetch<{ id: string }>(`/${accountId}/adcreatives`, {
         method: 'POST',
@@ -358,6 +370,7 @@ export const metaAds = {
               ...(imageHash ? { image_hash: imageHash } : {}),
             },
           },
+          ...(params.mode === 'simple' ? { degrees_of_freedom_spec: { creative_features_spec: { standard_enhancements: { enroll_status: 'OPT_IN' } } } } : {}),
           access_token: token,
         }),
       })
