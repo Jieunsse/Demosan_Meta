@@ -1,10 +1,21 @@
 import { withAuth } from "next-auth/middleware"
 import { NextResponse } from "next/server"
+import { credentialsCache } from "@/lib/meta-credentials"
 
 export default withAuth(
-  function middleware(req) {
+  async function middleware(req) {
     const { pathname } = req.nextUrl
     const token = req.nextauth.token
+
+    // 1) Meta 자격증명 미설정 → /install 마법사로
+    const creds = await credentialsCache.get()
+    if (!creds) {
+      const url = req.nextUrl.clone()
+      url.pathname = "/install"
+      url.search = ""
+      return NextResponse.redirect(url)
+    }
+
     // 광고 계정 + 페이스북 페이지 둘 다 선택돼야 셋업 완료
     const isSetUp = !!token?.adAccountId && !!token?.pageId
     // 둘러보기 모드 — 셋업 미완료라도 앱 진입 허용
@@ -36,5 +47,8 @@ export default withAuth(
 )
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|fonts|login|api/auth).*)"],
+  matcher: [
+    // install/auth/install-api/health, 정적 자원, 폰트, 로그인 제외 (가드 발동 시 무한 루프 방지)
+    "/((?!install|api/auth|api/install|api/health|_next/static|_next/image|favicon.ico|fonts|login).*)",
+  ],
 }
