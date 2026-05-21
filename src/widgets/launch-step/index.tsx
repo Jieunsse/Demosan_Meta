@@ -47,11 +47,6 @@ import { validateLaunch, type ValidationIssue } from "@features/launch-validatio
 
 const GENDER_OPTS: [Gender, string][] = [["all", "전체"], ["male", "남성"], ["female", "여성"]];
 
-const SUB_STEPS = [
-  { n: 1 as const, label: "소재 확인" },
-  { n: 2 as const, label: "예산 · 타겟" },
-  { n: 3 as const, label: "최종 확인" },
-];
 
 interface Props {
   onNext: () => void;
@@ -200,7 +195,21 @@ export default function LaunchStep({ onNext, goSettings, goCreative }: Props) {
   const canLaunch = baseLaunchOk && (skipAd || !urlRequired || httpsOk);
   const canSkipLaunch = baseLaunchOk;
 
-  const [subStep, setSubStep] = useState<1 | 2 | 3>(1);
+  const [subStep, setSubStep] = useState<1 | 2 | 3 | 4 | 5>(1);
+  const subSteps: Array<{ n: 1|2|3|4|5; label: string }> = state.mode === "detailed"
+    ? [
+        { n: 1, label: "소재 확인" },
+        { n: 2, label: "예산 · 일정" },
+        { n: 3, label: "타겟" },
+        { n: 4, label: "고급 설정" },
+        { n: 5, label: "최종 확인" },
+      ]
+    : [
+        { n: 1, label: "소재 확인" },
+        { n: 2, label: "예산 · 일정" },
+        { n: 3, label: "타겟" },
+        { n: 4, label: "최종 확인" },
+      ];
 
   const toggleCountry = (code: string) => {
     const next = state.countries.includes(code)
@@ -215,11 +224,11 @@ export default function LaunchStep({ onNext, goSettings, goCreative }: Props) {
       <div className="card card--lg">
         {/* 스텝 인디케이터 */}
         <div style={{ display: "flex", alignItems: "center", marginBottom: 20 }}>
-          {SUB_STEPS.map((s, i) => {
+          {subSteps.map((s, i) => {
             const done = s.n < subStep;
             const active = s.n === subStep;
             return (
-              <div key={s.n} style={{ display: "flex", alignItems: "center", flex: i < SUB_STEPS.length - 1 ? 1 : undefined }}>
+              <div key={s.n} style={{ display: "flex", alignItems: "center", flex: i < subSteps.length - 1 ? 1 : undefined }}>
                 <button
                   type="button"
                   onClick={() => setSubStep(s.n)}
@@ -245,7 +254,7 @@ export default function LaunchStep({ onNext, goSettings, goCreative }: Props) {
                     {s.label}
                   </span>
                 </button>
-                {i < SUB_STEPS.length - 1 && (
+                {i < subSteps.length - 1 && (
                   <div style={{ flex: 1, height: 1, background: done ? "var(--w-accent-violet)" : "var(--w-line-normal)", margin: "0 10px" }} />
                 )}
               </div>
@@ -287,17 +296,10 @@ export default function LaunchStep({ onNext, goSettings, goCreative }: Props) {
           </>
         )}
 
-        {/* 2단계: 예산 · 타겟 */}
+        {/* 2단계: 예산 · 일정 */}
         {subStep === 2 && (
           <>
-            {state.mode === "detailed" && (
-              <>
-                <ObjectivePicker goCreative={goCreative} />
-                <DetailKnobs />
-                <hr className="divider" />
-              </>
-            )}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
               <div>
                 <SubHead title="일일 예산" />
                 <div className="input--addon">
@@ -310,18 +312,30 @@ export default function LaunchStep({ onNext, goSettings, goCreative }: Props) {
                     aria-label="일일 예산"
                   />
                 </div>
+                <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+                  {["30,000", "50,000", "100,000", "200,000"].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      className={"chip" + (state.budget === preset ? " chip--on" : "")}
+                      onClick={() => dispatch({ type: "SET_BUDGET", value: preset })}
+                    >
+                      ₩{preset}
+                    </button>
+                  ))}
+                </div>
                 <div className="field__hint" style={{ marginTop: 8 }}>최소 ₩10,000부터 설정할 수 있어요.</div>
               </div>
               <div>
                 <SubHead title="집행 기간" />
-                <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", gap: 8, alignItems: "center" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", gap: 12, alignItems: "center" }}>
                   <DatePicker
                     value={state.dateStart}
                     onChange={(v) => dispatch({ type: "SET_DATE_START", value: v })}
                     placeholder="시작일"
                     aria-label="시작일"
                   />
-                  <span style={{ color: "var(--w-fg-neutral)" }}>—</span>
+                  <span style={{ color: "var(--w-fg-neutral)", textAlign: "center" }}>—</span>
                   <DatePicker
                     value={state.dateEnd}
                     onChange={(v) => dispatch({ type: "SET_DATE_END", value: v })}
@@ -329,11 +343,38 @@ export default function LaunchStep({ onNext, goSettings, goCreative }: Props) {
                     aria-label="종료일"
                   />
                 </div>
-                <div className="field__hint" style={{ marginTop: 8 }}>총 {days}일 · 예상 노출 {fmt(impMin)}–{fmt(impMax)}</div>
               </div>
+              {(budgetNum > 0 || days > 0) && (
+                <div style={{
+                  display: "flex", alignItems: "center", gap: 10,
+                  padding: "12px 16px", borderRadius: 10,
+                  background: "var(--w-primary-soft)",
+                  color: "var(--w-primary-press)",
+                  font: "500 13px/1.4 var(--w-font-sans)",
+                }}>
+                  <Icon name="sparkles" size={14} />
+                  <span>
+                    {days > 0 ? `${days}일간 ` : ""}예상 노출&nbsp;
+                    <strong>{fmt(impMin)} – {fmt(impMax)}회</strong>
+                  </span>
+                </div>
+              )}
             </div>
 
-            <hr className="divider" />
+            <div className="between" style={{ marginTop: 24 }}>
+              <button className="btn btn--secondary" type="button" onClick={() => setSubStep(1)}>
+                <Icon name="arrow-left" size={14} /> 이전
+              </button>
+              <button className="btn btn--primary" type="button" onClick={() => setSubStep(3)}>
+                다음 <Icon name="arrow-right" size={14} />
+              </button>
+            </div>
+          </>
+        )}
+
+        {/* 3단계: 타겟 */}
+        {subStep === 3 && (
+          <>
             <SubHead
               title="타겟"
               subtitle={state.mode === "simple" ? "광고를 노출할 국가만 선택하세요. 연령·성별은 Meta 어드밴티지+가 자동으로 최적화해요." : "AI가 채워둔 값이에요. 그대로 두거나 조정해도 돼요."}
@@ -400,18 +441,35 @@ export default function LaunchStep({ onNext, goSettings, goCreative }: Props) {
             </div>
 
             <div className="between" style={{ marginTop: 24 }}>
-              <button className="btn btn--secondary" type="button" onClick={() => setSubStep(1)}>
+              <button className="btn btn--secondary" type="button" onClick={() => setSubStep(2)}>
                 <Icon name="arrow-left" size={14} /> 이전
               </button>
-              <button className="btn btn--primary" type="button" onClick={() => setSubStep(3)}>
+              <button className="btn btn--primary" type="button" onClick={() => setSubStep(4)}>
                 다음 <Icon name="arrow-right" size={14} />
               </button>
             </div>
           </>
         )}
 
-        {/* 3단계: 최종 확인 */}
-        {subStep === 3 && (
+        {/* 4단계: 고급 설정 (detailed only) */}
+        {subStep === 4 && state.mode === "detailed" && (
+          <>
+            <ObjectivePicker goCreative={goCreative} />
+            <hr className="divider" />
+            <DetailKnobs />
+            <div className="between" style={{ marginTop: 24 }}>
+              <button className="btn btn--secondary" type="button" onClick={() => setSubStep(3)}>
+                <Icon name="arrow-left" size={14} /> 이전
+              </button>
+              <button className="btn btn--primary" type="button" onClick={() => setSubStep(5)}>
+                다음 <Icon name="arrow-right" size={14} />
+              </button>
+            </div>
+          </>
+        )}
+
+        {/* 최종 확인: simple=4단계, detailed=5단계 */}
+        {((subStep === 4 && state.mode !== "detailed") || subStep === 5) && (
           <>
             <SubHead title="게재 상태" />
             <div className="seg" style={{ marginTop: 4 }}>
@@ -469,7 +527,7 @@ export default function LaunchStep({ onNext, goSettings, goCreative }: Props) {
               </div>
             )}
             <div className="between" style={{ marginTop: 8 }}>
-              <button className="btn btn--secondary" type="button" onClick={() => setSubStep(2)}>
+              <button className="btn btn--secondary" type="button" onClick={() => setSubStep(state.mode === "detailed" ? 4 : 3)}>
                 <Icon name="arrow-left" size={14} /> 이전
               </button>
               <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
