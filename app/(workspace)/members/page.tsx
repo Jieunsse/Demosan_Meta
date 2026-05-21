@@ -1,34 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import Icon from "@shared/ui/Icon";
 import { useToast } from "@shared/ui/Toast";
-
-type Role = "owner" | "launcher" | "reviewer";
-type MemberStatus = "active" | "invited";
-interface Member {
-  id: string;
-  name: string | null;
-  email: string;
-  role: Role;
-  status: MemberStatus;
-  joined: string | null;
-  lastActive: string | null;
-  avatarBg: string | null;
-}
+import { MOCK_MEMBERS, type Member, type MemberStatus, type Role } from "@/lib/mock-members";
 
 const WORKSPACE = { name: "애드플로우 마케팅팀", initial: "애", gradient: "linear-gradient(135deg,#0066ff,#6541f2)" };
-
-const FULL_MEMBERS: Member[] = [
-  { id: "u1", name: "Jayden Ock", email: "jieunsse@gmail.com", role: "owner", status: "active", joined: "2025-05-11", lastActive: "방금 전", avatarBg: "#ff7a59" },
-  { id: "u2", name: "박서윤", email: "seoyoon@cold.kr", role: "launcher", status: "active", joined: "2024-12-03", lastActive: "12분 전", avatarBg: "#0066ff" },
-  { id: "u3", name: "이도현", email: "dohyun@cold.kr", role: "launcher", status: "active", joined: "2025-01-20", lastActive: "1시간 전", avatarBg: "#008a2e" },
-  { id: "u4", name: "정민서", email: "minseo@cold.kr", role: "launcher", status: "active", joined: "2025-02-08", lastActive: "어제", avatarBg: "#c2185b" },
-  { id: "u5", name: "김하늘", email: "haneul@cold.kr", role: "reviewer", status: "active", joined: "2025-03-15", lastActive: "어제", avatarBg: "#6541f2" },
-  { id: "u6", name: "오현우", email: "hyunwoo@cold.kr", role: "reviewer", status: "active", joined: "2025-04-02", lastActive: "3일 전", avatarBg: "#9c5800" },
-  { id: "i1", name: null, email: "newbie@cold.kr", role: "launcher", status: "invited", joined: null, lastActive: null, avatarBg: null },
-  { id: "i2", name: null, email: "intern@cold.kr", role: "reviewer", status: "invited", joined: null, lastActive: null, avatarBg: null },
-];
 
 const ROLE_DEF: Record<Role, { label: string; chipClass: string; desc: string }> = {
   owner: { label: "팀장", chipClass: "role-chip role-chip--owner", desc: "모든 권한" },
@@ -37,6 +15,7 @@ const ROLE_DEF: Record<Role, { label: string; chipClass: string; desc: string }>
 };
 
 export default function MembersPage() {
+  const router = useRouter();
   const showToast = useToast();
   const [roleFilter, setRoleFilter] = useState<Role | "all">("all");
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
@@ -45,7 +24,7 @@ export default function MembersPage() {
   const [confirmDelegate, setConfirmDelegate] = useState<{ id: string; name: string } | null>(null);
   const [confirmRemove, setConfirmRemove] = useState<{ id: string; name: string } | null>(null);
 
-  const members = FULL_MEMBERS;
+  const members = MOCK_MEMBERS;
   const myId = "u1";
 
   const filtered = useMemo(() => (roleFilter === "all" ? members : members.filter((m) => m.role === roleFilter)), [members, roleFilter]);
@@ -113,7 +92,12 @@ export default function MembersPage() {
               const isInvited = m.status === "invited";
               const isMe = m.id === myId;
               return (
-                <tr key={m.id} className={"dtable__row" + (isInvited ? " dtable__row--dim" : "")}>
+                <tr
+                  key={m.id}
+                  className={"dtable__row" + (isInvited ? " dtable__row--dim" : "")}
+                  onClick={isInvited ? undefined : () => router.push(`/members/${m.id}`)}
+                  style={isInvited ? undefined : { cursor: "pointer" }}
+                >
                   <td>
                     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                       <Avatar member={m} />
