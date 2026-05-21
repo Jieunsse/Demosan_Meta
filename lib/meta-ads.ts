@@ -105,6 +105,20 @@ export interface CampaignSummary {
   abTestAxis?: AbTestAxisParam
   abTestVariantA?: string  // axis 종속 — headline 텍스트 / primaryText / 이미지 URL
   abTestVariantB?: string
+  // ADR-011 — Campaign Configuration 탭용 소재·타겟팅 필드
+  imageUrl?: string
+  primaryText?: string
+  cta?: string
+  landingUrl?: string
+  ageMin?: number
+  ageMax?: number
+  genders?: number[]
+  countries?: string[]
+  platforms?: PlatformsParam
+  placementMode?: 'auto' | 'manual'
+  placementPositions?: string[]
+  bidStrategy?: BidStrategyParam
+  bidAmount?: number | null
 }
 
 interface MetaError { error: { message: string; code: number; error_subcode?: number; error_user_msg?: string; error_data?: string } }
@@ -248,7 +262,22 @@ interface RawCampaign {
   start_time?: string
   stop_time?: string
   daily_budget?: string
-  adsets?: { data?: Array<{ id: string; daily_budget?: string; ads?: { data?: Array<{ id: string }> } }> }
+  adsets?: { data?: Array<{
+    id: string
+    daily_budget?: string
+    bid_strategy?: string
+    bid_amount?: string
+    targeting?: {
+      age_min?: number
+      age_max?: number
+      genders?: number[]
+      geo_locations?: { countries?: string[] }
+      publisher_platforms?: string[]
+      facebook_positions?: string[]
+      instagram_positions?: string[]
+    }
+    ads?: { data?: Array<{ id: string }> }
+  }> }
   insights?: { data?: Array<{ impressions?: string; clicks?: string; ctr?: string; spend?: string }> }
   issues_info?: RawIssueInfo[]
 }
@@ -256,7 +285,7 @@ interface RawCampaign {
 const CAMPAIGN_FIELDS = (period: InsightsPeriod) => [
   'id', 'name', 'effective_status', 'objective', 'start_time', 'stop_time', 'daily_budget',
   'issues_info',
-  'adsets.limit(1){id,daily_budget,ads.limit(1){id}}',
+  'adsets.limit(1){id,daily_budget,bid_strategy,bid_amount,targeting{age_min,age_max,genders,geo_locations,publisher_platforms,facebook_positions,instagram_positions},ads.limit(1){id}}',
   `insights.date_preset(${presetFor(period)}){impressions,clicks,ctr,spend}`,
 ].join(',')
 
@@ -306,6 +335,22 @@ function mapRawCampaign(c: RawCampaign): CampaignSummary {
   const spend = Math.round(parseFloat(ins?.spend ?? '0'))
   const dailyBudgetRaw = c.daily_budget ?? adset?.daily_budget
   const obj = c.objective ?? ''
+  const tgt = adset?.targeting
+  const pubPlatforms = tgt?.publisher_platforms ?? []
+  const hasFb = pubPlatforms.includes('facebook')
+  const hasIg = pubPlatforms.includes('instagram')
+  const platforms: PlatformsParam =
+    pubPlatforms.length === 0 ? 'both'
+    : hasFb && hasIg ? 'both'
+    : hasFb ? 'facebook'
+    : hasIg ? 'instagram'
+    : 'both'
+  const fbPos = tgt?.facebook_positions ?? []
+  const igPos = tgt?.instagram_positions ?? []
+  const placementPositions: string[] = [
+    ...fbPos.map((p) => `facebook_${p}`),
+    ...igPos.map((p) => p === 'stream' ? 'instagram_feed' : p === 'story' ? 'instagram_stories' : `instagram_${p}`),
+  ]
   return {
     id: c.id,
     name: c.name,
@@ -320,6 +365,15 @@ function mapRawCampaign(c: RawCampaign): CampaignSummary {
     dailyBudget: dailyBudgetRaw != null && Number.isFinite(Number(dailyBudgetRaw)) ? Math.round(Number(dailyBudgetRaw)) : null,
     impressions, clicks, ctr, spend,
     issueReason: pickIssueReason(c.issues_info),
+    ageMin: tgt?.age_min,
+    ageMax: tgt?.age_max,
+    genders: tgt?.genders,
+    countries: tgt?.geo_locations?.countries,
+    platforms,
+    placementMode: placementPositions.length > 0 ? 'manual' : 'auto',
+    placementPositions: placementPositions.length > 0 ? placementPositions : undefined,
+    bidStrategy: adset?.bid_strategy as BidStrategyParam | undefined,
+    bidAmount: adset?.bid_amount != null ? Math.round(Number(adset.bid_amount)) : null,
   }
 }
 
@@ -906,5 +960,129 @@ export const metaAds = {
     await this.setStatus(campaignId, token, 'ACTIVE')
     await this.setStatus(adSetId, token, 'ACTIVE')
     if (adId) await this.setStatus(adId, token, 'ACTIVE')
+  },
+
+  async updateAdSet(
+    adSetId: string,
+    token: string,
+    payload: {
+      dailyBudget?: number
+      startDate?: string
+      endDate?: string | null
+      targeting?: { ageMin?: number; ageMax?: number; genders?: number[]; countries?: string[] }
+      bidStrategy?: BidStrategyParam
+      bidAmount?: number | null
+      platforms?: PlatformsParam
+      placements?: PlacementsParam
+    },
+  ): Promise<string[]> {
+    const body: Record<string, unknown> = { access_token: token }
+    const applied: string[] = []
+    if (payload.dailyBudget !== undefined) {
+      body.daily_budget = String(payload.dailyBudget)
+      applied.push('dailyBudget')
+    }
+    if (payload.startDate !== undefined) {
+      body.start_time = toUnixKST(payload.startDate)
+      applied.push('startDate')
+    }
+    if ('endDate' in payload) {
+      body.end_time = payload.endDate ? toUnixKST(payload.endDate, true) : ''
+      applied.push('endDate')
+    }
+    if (payload.bidStrategy !== undefined) {
+      body.bid_strategy = payload.bidStrategy
+      applied.push('bidStrategy')
+    }
+    if ('bidAmount' in payload) {
+      body.bid_amount = payload.bidAmount != null ? String(payload.bidAmount) : null
+      applied.push('bidAmount')
+    }
+    if (payload.targeting || payload.platforms !== undefined || payload.placements !== undefined) {
+      const current = await graphFetch<{ targeting?: Record<string, unknown> }>(
+        `/${adSetId}?fields=targeting&access_token=${token}`,
+      )
+      const base = { ...(current.targeting ?? {}) }
+      if (payload.targeting) {
+        const t = payload.targeting
+        if (t.ageMin !== undefined) base.age_min = t.ageMin
+        if (t.ageMax !== undefined) base.age_max = t.ageMax
+        if (t.genders !== undefined) base.genders = t.genders.length > 0 ? t.genders : undefined
+        if (t.countries !== undefined) base.geo_locations = { countries: t.countries }
+        applied.push('targeting')
+      }
+      if (payload.platforms !== undefined) {
+        base.publisher_platforms = payload.platforms === 'both' ? undefined
+          : payload.platforms === 'facebook' ? ['facebook']
+          : ['instagram']
+        applied.push('platforms')
+      }
+      if (payload.placements !== undefined) {
+        const merged = { ...buildPlacementTargeting(payload.placements) }
+        Object.assign(base, merged)
+        applied.push('placements')
+      }
+      body.targeting = base
+    }
+    await graphFetch<{ success?: boolean }>(`/${adSetId}`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    })
+    return applied
+  },
+
+  async replaceAdCreative(
+    adId: string,
+    token: string,
+    accountId: string,
+    params: { headline: string; primaryText: string; imageDataUrl?: string; reuseExistingImage?: boolean },
+  ): Promise<{ newCreativeId: string }> {
+    type RawAd = {
+      creative?: {
+        id?: string
+        object_story_spec?: {
+          page_id?: string
+          link_data?: { link?: string; call_to_action?: Record<string, unknown>; image_hash?: string }
+        }
+      }
+    }
+    const ad = await graphFetch<RawAd>(
+      `/${adId}?fields=creative{id,object_story_spec{page_id,link_data{link,call_to_action,image_hash}}}&access_token=${token}`,
+    )
+    const spec = ad.creative?.object_story_spec
+    const pageId = spec?.page_id ?? ''
+    const linkData = spec?.link_data ?? {}
+    if (!pageId) throw new Error('광고 크리에이티브 정보를 가져오지 못했어요. 잠시 후 다시 시도해 주세요.')
+
+    const imageHash = params.imageDataUrl
+      ? await uploadAdImage(params.imageDataUrl, token, accountId)
+      : params.reuseExistingImage
+        ? (linkData.image_hash ?? undefined)
+        : undefined
+
+    const newCreative = await graphFetch<{ id: string }>(`/${accountId}/adcreatives`, {
+      method: 'POST',
+      body: JSON.stringify({
+        name: `AdFlow Creative — ${params.headline}`,
+        object_story_spec: {
+          page_id: pageId,
+          link_data: {
+            message: params.primaryText,
+            link: linkData.link,
+            name: params.headline,
+            call_to_action: linkData.call_to_action,
+            ...(imageHash ? { image_hash: imageHash } : {}),
+          },
+        },
+        access_token: token,
+      }),
+    })
+
+    await graphFetch<{ success?: boolean }>(`/${adId}`, {
+      method: 'POST',
+      body: JSON.stringify({ creative: { creative_id: newCreative.id }, access_token: token }),
+    })
+
+    return { newCreativeId: newCreative.id }
   },
 }

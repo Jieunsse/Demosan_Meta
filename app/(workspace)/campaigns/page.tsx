@@ -131,7 +131,7 @@ export default function CampaignsPage() {
   const allVisibleSelected = filtered.length > 0 && filtered.every((c) => selected.has(c.id));
   const toggleAll = () => (allVisibleSelected ? clearSelection() : setSelected(new Set(filtered.map((c) => c.id))));
 
-  const goDetail = (id: string) => router.push(`/campaigns/${id}?period=${period}`);
+  const goDetail = (id: string) => router.push(`/campaigns/${id}?tab=info&period=${period}`);
 
   const runControl = (params: ControlParams, successMsg: string) => {
     control.mutate(params, {

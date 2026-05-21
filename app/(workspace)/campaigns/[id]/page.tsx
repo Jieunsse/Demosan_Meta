@@ -5,11 +5,15 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { useSession } from "next-auth/react";
 import Icon, { type IconName } from "@shared/ui/Icon";
+import DatePicker from "@shared/ui/DatePicker";
+import AgeRange from "@shared/ui/AgeRange";
+import { COUNTRIES } from "@shared/lib/geo-options";
 import { KpiCard } from "@shared/ui/primitives";
 import DualChart, { ChartLegend } from "@shared/ui/DualChart";
 import { fmt, fmtKRW, shortDate, campaignDateInfo, campaignGradient } from "@shared/lib/format";
 import { useApiMutation } from "@shared/lib/api/useApiMutation";
 import { useToast } from "@shared/ui/Toast";
+import ConfirmModal from "@shared/ui/ConfirmModal";
 import { suggestOptimizations, assessAutomationReadiness, type Suggestion } from "@entities/insights/optimization";
 import { abVariantLabel, type AbTestAxis } from "@entities/campaign/model";
 import { loadLaunchedCampaign } from "@entities/campaign/launched-storage";
@@ -65,8 +69,9 @@ export default function CampaignDetailPage() {
 
   const initialPeriod = (searchParams.get("period") ?? "all") as Period;
   const [period, setPeriod] = useState<Period>(initialPeriod === "7d" || initialPeriod === "30d" ? initialPeriod : "all");
-  const initialTab = searchParams.get("tab") === "ab-test" ? "ab-test" : "performance";
-  const [activeTab, setActiveTab] = useState<"performance" | "ab-test">(initialTab as "performance" | "ab-test");
+  const rawTab = searchParams.get("tab");
+  const initialTab = rawTab === "performance" ? "performance" : rawTab === "ab-test" ? "ab-test" : "info";
+  const [activeTab, setActiveTab] = useState<"info" | "performance" | "ab-test">(initialTab);
 
   // PRD-ab-testing.md §5.1 — 사용자 생성 캠페인은 adflow:launched:{id} 에서 A/B 정보. 1회 load (SSR-safe).
   const [launchedSnapshot] = useState(() => (typeof window !== "undefined" ? loadLaunchedCampaign(id) : null));
@@ -130,14 +135,10 @@ export default function CampaignDetailPage() {
           <h1 className="page__title" style={{ marginTop: 0 }}>{c?.headline ?? "캠페인"}</h1>
           <p className="page__sub">{c?.name ?? id}</p>
         </div>
-        <div style={{ display: "inline-flex", gap: 8 }}>
-          <button className="btn btn--secondary" type="button" onClick={() => insQ.refetch()} disabled={insQ.isFetching}>
-            <Icon name="refresh" size={14} /> {insQ.isFetching ? "불러오는 중…" : "성과 새로고침"}
-          </button>
-        </div>
       </div>
 
       <div className="seg" style={{ marginBottom: 16 }}>
+        <button type="button" className={activeTab === "info" ? "on" : ""} onClick={() => setActiveTab("info")}>캠페인 정보</button>
         <button type="button" className={activeTab === "performance" ? "on" : ""} onClick={() => setActiveTab("performance")}>성과</button>
         <button type="button" className={activeTab === "ab-test" ? "on" : ""} onClick={() => setActiveTab("ab-test")}>
           A/B 테스트
@@ -145,12 +146,14 @@ export default function CampaignDetailPage() {
         </button>
       </div>
 
-      {activeTab === "ab-test" ? (
-        <AbTestTab abInfo={abInfo} insightsWithAds={insightsWithAds} campaignId={id} onCreateWithWinner={() => router.push(`/create?prefill=campaign:${id}`)} />
-      ) : metaUnauthorized ? (
+      {metaUnauthorized ? (
         <DetailErrorCard icon="link" title="광고 계정을 먼저 연결해주세요" reason="Meta 광고 계정과 페이지를 연결해야 캠페인을 볼 수 있어요." ctaLabel="계정 연결로 가기" onAction={() => router.push("/setup")} />
       ) : metaQ.isError ? (
         <DetailErrorCard title="캠페인 정보를 불러오지 못했어요" reason={metaQ.error instanceof Error ? metaQ.error.message : "잠시 후 다시 시도해 주세요"} ctaLabel="다시 시도" onAction={() => metaQ.refetch()} />
+      ) : activeTab === "info" ? (
+        <CampaignConfigurationTab c={c} isLoading={metaQ.isLoading} campaignId={id} onRefetch={metaQ.refetch} isAbCampaign={abInfo !== null} />
+      ) : activeTab === "ab-test" ? (
+        <AbTestTab abInfo={abInfo} insightsWithAds={insightsWithAds} campaignId={id} onCreateWithWinner={() => router.push(`/create?prefill=campaign:${id}`)} />
       ) : (
         <>
           <div className="card" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 16, flexWrap: "wrap" }}>
@@ -190,7 +193,6 @@ export default function CampaignDetailPage() {
                 Meta가 광고를 검토·집계 준비 중이에요. 심사를 통과해 게재가 시작되고 노출이 쌓이면 여기에 표시돼요.<br />
                 <span style={{ color: "var(--w-fg-alternative)" }}>보통 수 분 ~ 수 시간 걸리고, 데이터는 몇 시간 단위로 갱신돼요.</span>
               </div>
-              <button className="btn btn--secondary" type="button" onClick={() => insQ.refetch()}><Icon name="refresh" size={14} /> 성과 새로고침</button>
             </div>
           ) : (
             <>
@@ -635,5 +637,630 @@ function DetailErrorCard({ icon = "warn", title, reason, ctaLabel, onAction }: {
       <div style={{ font: "500 13px/1.5 var(--w-font-sans)", color: "var(--w-fg-neutral)", maxWidth: 380 }}>{reason}</div>
       <button className="btn btn--secondary" type="button" style={{ marginTop: 8 }} onClick={onAction}>{ctaLabel}</button>
     </div>
+  );
+}
+
+const CTA_LABELS: Record<string, string> = {
+  LEARN_MORE: "자세히 알아보기", SHOP_NOW: "지금 구매", SIGN_UP: "가입하기",
+  DOWNLOAD: "다운로드", MESSAGE_PAGE: "메시지 보내기", CALL_NOW: "전화하기",
+  GET_OFFER: "오퍼 받기", SUBSCRIBE: "구독하기", ORDER_NOW: "주문하기", WATCH_MORE: "더 보기",
+};
+const PLATFORM_LABELS: Record<string, string> = {
+  both: "FB + IG (자동 최적화)", facebook: "페이스북", instagram: "인스타그램",
+};
+const PLACEMENT_LABELS: Record<string, string> = {
+  facebook_feed: "페이스북 피드", instagram_feed: "인스타그램 피드",
+  instagram_stories: "인스타그램 스토리", audience_network: "오디언스 네트워크", messenger: "메신저",
+};
+
+function ConfigRow({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <>
+      <span style={{ color: "var(--w-fg-alternative)", font: "500 12.5px/1.6 var(--w-font-sans)", whiteSpace: "nowrap" }}>{label}</span>
+      <span style={{ color: "var(--w-fg-strong)", font: "500 13px/1.6 var(--w-font-sans)" }}>{value}</span>
+    </>
+  );
+}
+
+function CampaignConfigurationTab({ c, isLoading, campaignId, onRefetch, isAbCampaign }: { c: CampaignSummary | undefined; isLoading: boolean; campaignId: string; onRefetch: () => void; isAbCampaign: boolean }) {
+  const showToast = useToast();
+  const [editingSchedule, setEditingSchedule] = useState(false);
+  const [budgetVal, setBudgetVal] = useState("");
+  const [startDateVal, setStartDateVal] = useState("");
+  const [endDateVal, setEndDateVal] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const openScheduleEdit = () => {
+    setBudgetVal(c?.dailyBudget ? String(c.dailyBudget) : "");
+    setStartDateVal(c?.startDate ?? "");
+    setEndDateVal(c?.endDate ?? "");
+    setEditingSchedule(true);
+  };
+
+  const saveSchedule = async () => {
+    const payload: { dailyBudget?: number; startDate?: string; endDate?: string | null } = {};
+    const budget = Number(budgetVal);
+    if (budgetVal && budget !== (c?.dailyBudget ?? 0)) payload.dailyBudget = budget;
+    if (startDateVal && startDateVal !== c?.startDate) payload.startDate = startDateVal;
+    if (endDateVal !== (c?.endDate ?? "")) payload.endDate = endDateVal || null;
+    if (Object.keys(payload).length === 0) { setEditingSchedule(false); return; }
+
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/campaign/${campaignId}/update`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ adSet: payload }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error((data as { error?: string }).error ?? "수정에 실패했어요");
+      showToast("일정·예산을 수정했어요");
+      setEditingSchedule(false);
+      onRefetch();
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "수정에 실패했어요");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const budgetNum = Number(budgetVal);
+  const originalBudget = c?.dailyBudget ?? 0;
+  const bigBudgetChange = budgetVal !== "" && originalBudget > 0 && (budgetNum >= originalBudget * 2 || budgetNum <= originalBudget * 0.5);
+
+  const [editingTargeting, setEditingTargeting] = useState(false);
+  const [ageRange, setAgeRange] = useState<[number, number]>([18, 65]);
+  const [genders, setGenders] = useState<number[]>([]);
+  const [targetCountries, setTargetCountries] = useState<string[]>([]);
+  const [savingTargeting, setSavingTargeting] = useState(false);
+
+  const openTargetingEdit = () => {
+    setAgeRange([c?.ageMin ?? 18, c?.ageMax ?? 65]);
+    setGenders(c?.genders ?? []);
+    setTargetCountries(c?.countries ?? []);
+    setEditingTargeting(true);
+  };
+
+  const saveTargeting = async () => {
+    const payload = {
+      ageMin: ageRange[0],
+      ageMax: ageRange[1],
+      genders,
+      countries: targetCountries,
+    };
+    setSavingTargeting(true);
+    try {
+      const res = await fetch(`/api/campaign/${campaignId}/update`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ adSet: { targeting: payload } }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error((data as { error?: string }).error ?? "수정에 실패했어요");
+      showToast("타겟팅을 수정했어요");
+      setEditingTargeting(false);
+      onRefetch();
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "수정에 실패했어요");
+    } finally {
+      setSavingTargeting(false);
+    }
+  };
+
+  const toggleCountry = (code: string) =>
+    setTargetCountries((prev) => prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code]);
+
+  const toggleGender = (g: number) =>
+    setGenders((prev) => prev.includes(g) ? prev.filter((x) => x !== g) : [...prev, g]);
+
+  const [editingBid, setEditingBid] = useState(false);
+  const [bidStrategy, setBidStrategy] = useState<"LOWEST_COST_WITHOUT_CAP" | "LOWEST_COST_WITH_BID_CAP" | "COST_CAP">("LOWEST_COST_WITHOUT_CAP");
+  const [bidAmount, setBidAmount] = useState("");
+  const [editPlatforms, setEditPlatforms] = useState<"both" | "facebook" | "instagram">("both");
+  const [placementMode, setPlacementMode] = useState<"auto" | "manual">("auto");
+  const [placementPositions, setPlacementPositions] = useState<string[]>([]);
+  const [savingBid, setSavingBid] = useState(false);
+
+  const openBidEdit = () => {
+    setBidStrategy((c?.bidStrategy ?? "LOWEST_COST_WITHOUT_CAP") as typeof bidStrategy);
+    setBidAmount(c?.bidAmount ? String(c.bidAmount) : "");
+    setEditPlatforms(c?.platforms ?? "both");
+    setPlacementMode(c?.placementMode ?? "auto");
+    setPlacementPositions(c?.placementPositions ?? []);
+    setEditingBid(true);
+  };
+
+  const saveBid = async () => {
+    const adSet: Record<string, unknown> = { bidStrategy };
+    adSet.bidAmount = bidStrategy === "LOWEST_COST_WITHOUT_CAP" ? null : (bidAmount ? Number(bidAmount) : null);
+    adSet.platforms = editPlatforms;
+    adSet.placements = placementMode === "auto" ? { mode: "auto" } : { mode: "manual", positions: placementPositions };
+    setSavingBid(true);
+    try {
+      const res = await fetch(`/api/campaign/${campaignId}/update`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ adSet }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error((data as { error?: string }).error ?? "수정에 실패했어요");
+      showToast("입찰·배치를 수정했어요");
+      setEditingBid(false);
+      onRefetch();
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "수정에 실패했어요");
+    } finally {
+      setSavingBid(false);
+    }
+  };
+
+  const togglePosition = (pos: string) =>
+    setPlacementPositions((prev) => prev.includes(pos) ? prev.filter((x) => x !== pos) : [...prev, pos]);
+
+  const [editingCreative, setEditingCreative] = useState(false);
+  const [creativeHeadline, setCreativeHeadline] = useState("");
+  const [creativePrimaryText, setCreativePrimaryText] = useState("");
+  const [imageMode, setImageMode] = useState<"keep" | "upload">("keep");
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imageDataUrl, setImageDataUrl] = useState<string | null>(null);
+  const [showCreativeConfirm, setShowCreativeConfirm] = useState(false);
+  const [savingCreative, setSavingCreative] = useState(false);
+
+  const openCreativeEdit = () => {
+    setCreativeHeadline(c?.headline ?? "");
+    setCreativePrimaryText(c?.primaryText ?? "");
+    setImageMode("keep");
+    setImageFile(null);
+    setImageDataUrl(null);
+    setEditingCreative(true);
+  };
+
+  const handleImageFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImageFile(file);
+    const reader = new FileReader();
+    reader.onload = (ev) => setImageDataUrl(ev.target?.result as string);
+    reader.readAsDataURL(file);
+  };
+
+  const doReplaceCreative = async () => {
+    setSavingCreative(true);
+    try {
+      const body: Record<string, unknown> = {
+        headline: creativeHeadline,
+        primaryText: creativePrimaryText,
+      };
+      if (imageMode === "keep") {
+        body.reuseExistingImage = true;
+      } else if (imageDataUrl) {
+        body.imageDataUrl = imageDataUrl;
+      }
+      const res = await fetch(`/api/campaign/${campaignId}/replace-creative`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error((data as { error?: string }).error ?? "소재 교체에 실패했어요");
+      showToast("소재를 교체했어요. Meta 검토 후 게재돼요.");
+      setEditingCreative(false);
+      setShowCreativeConfirm(false);
+      onRefetch();
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "소재 교체에 실패했어요");
+    } finally {
+      setSavingCreative(false);
+    }
+  };
+
+  const submitCreative = () => {
+    if (c?.status === "live" || c?.status === "issue") {
+      setShowCreativeConfirm(true);
+    } else {
+      doReplaceCreative();
+    }
+  };
+
+  if (isLoading || !c) {
+    return (
+      <div className="card" style={{ display: "flex", justifyContent: "center", padding: "40px 32px" }}>
+        <div className="spinner" style={{ width: 28, height: 28 }} />
+      </div>
+    );
+  }
+
+  const genderLabel = !c.genders || c.genders.length === 0
+    ? "전체"
+    : c.genders.includes(1) && c.genders.includes(2) ? "전체"
+    : c.genders.includes(1) ? "남성" : "여성";
+
+  const platformLabel = c.platforms ? (PLATFORM_LABELS[c.platforms] ?? c.platforms) : "FB + IG (자동 최적화)";
+
+  const placementLabel = c.placementMode === "manual" && c.placementPositions?.length
+    ? c.placementPositions.map((p) => PLACEMENT_LABELS[p] ?? p).join(", ")
+    : "자동 (Advantage+)";
+
+  const dash = <span style={{ color: "var(--w-fg-alternative)" }}>—</span>;
+
+  return (
+    <>
+      <div className="card" style={{ marginBottom: 16 }}>
+        <h3 className="section-title">기본 정보</h3>
+        <hr className="divider" />
+        <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "12px 24px", alignItems: "center" }}>
+          <ConfigRow label="캠페인 목표" value={c.goal} />
+          <ConfigRow label="상태" value={<span className={`chip chip--${STATUS_CHIP[c.status]?.chip ?? "neutral"}`}><span className="chip__dot" />{STATUS_CHIP[c.status]?.label ?? c.status}</span>} />
+          <ConfigRow label="Campaign ID" value={<span style={{ font: "500 12px/1 var(--w-font-mono)", color: "var(--w-fg-neutral)" }}>{campaignId.slice(-10)}</span>} />
+        </div>
+      </div>
+
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="between" style={{ marginBottom: 0 }}>
+          <h3 className="section-title" style={{ marginBottom: 0 }}>일정 · 예산</h3>
+          {!editingSchedule && c.status !== "ended" && (
+            <button className="btn btn--ghost btn--sm" type="button" onClick={openScheduleEdit}>
+              <Icon name="edit" size={13} /> 수정
+            </button>
+          )}
+        </div>
+        <hr className="divider" />
+        {editingSchedule ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <div>
+              <div style={{ font: "600 12.5px/1.3 var(--w-font-sans)", color: "var(--w-fg-strong)", marginBottom: 6 }}>일 예산 (₩)</div>
+              <input
+                className="input"
+                type="number"
+                min={10000}
+                step={1000}
+                value={budgetVal}
+                onChange={(e) => setBudgetVal(e.target.value)}
+                style={{ width: "100%", maxWidth: 220 }}
+              />
+              {bigBudgetChange && (
+                <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 6, padding: "6px 10px", borderRadius: 8, background: "rgba(255,146,0,0.08)", border: "1px solid rgba(255,146,0,0.25)" }}>
+                  <Icon name="warn" size={13} style={{ color: "var(--w-status-cautionary)", flex: "0 0 auto" }} />
+                  <span style={{ font: "500 12px/1.4 var(--w-font-sans)", color: "var(--w-fg-neutral)" }}>큰 예산 변경은 성과 안정화 구간이 재시작될 수 있어요</span>
+                </div>
+              )}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div>
+                <div style={{ font: "600 12.5px/1.3 var(--w-font-sans)", color: "var(--w-fg-strong)", marginBottom: 6 }}>시작일</div>
+                <DatePicker value={startDateVal} onChange={setStartDateVal} aria-label="시작일" />
+              </div>
+              <div>
+                <div style={{ font: "600 12.5px/1.3 var(--w-font-sans)", color: "var(--w-fg-strong)", marginBottom: 6 }}>종료일</div>
+                <DatePicker value={endDateVal} onChange={setEndDateVal} placeholder="종료일 없음" aria-label="종료일" />
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="btn btn--primary btn--sm" type="button" disabled={saving} onClick={saveSchedule}>
+                {saving ? "저장 중…" : "저장"}
+              </button>
+              <button className="btn btn--ghost btn--sm" type="button" disabled={saving} onClick={() => setEditingSchedule(false)}>
+                취소
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "12px 24px", alignItems: "center" }}>
+            <ConfigRow label="시작일" value={c.startDate ?? dash} />
+            <ConfigRow label="종료일" value={c.endDate ?? dash} />
+            <ConfigRow label="일 예산" value={c.dailyBudget ? fmtKRW(c.dailyBudget) : dash} />
+          </div>
+        )}
+      </div>
+
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="between" style={{ marginBottom: 0 }}>
+          <h3 className="section-title" style={{ marginBottom: 0 }}>소재</h3>
+          {!editingCreative && c.status !== "ended" && (
+            isAbCampaign ? (
+              <span title="A/B 시험 중에는 소재 수정 불가" style={{ display: "inline-flex", alignItems: "center", gap: 4, font: "500 12px/1 var(--w-font-sans)", color: "var(--w-fg-alternative)" }}>
+                <Icon name="lock" size={13} /> A/B 시험 중
+              </span>
+            ) : (
+              <button className="btn btn--ghost btn--sm" type="button" onClick={openCreativeEdit}>
+                <Icon name="edit" size={13} /> 수정
+              </button>
+            )
+          )}
+        </div>
+        <hr className="divider" />
+        {editingCreative ? (
+          <>
+            {c.status === "issue" && c.issueReason && (
+              <div style={{ marginBottom: 14, padding: "10px 14px", borderRadius: 8, background: "rgba(255,66,66,0.06)", border: "1px solid rgba(255,66,66,0.25)", display: "flex", gap: 8 }}>
+                <Icon name="warn" size={14} style={{ color: "var(--w-status-negative)", flex: "0 0 auto", marginTop: 1 }} />
+                <div>
+                  <div style={{ font: "600 13px/1.3 var(--w-font-sans)", color: "var(--w-status-negative)" }}>거절 사유: {c.issueReason.summary}</div>
+                  {c.issueReason.message !== c.issueReason.summary && (
+                    <div style={{ font: "500 12px/1.5 var(--w-font-sans)", color: "var(--w-fg-neutral)", marginTop: 4 }}>{c.issueReason.message.slice(0, 200)}</div>
+                  )}
+                </div>
+              </div>
+            )}
+            {c.status === "live" && (
+              <div style={{ marginBottom: 14, padding: "10px 14px", borderRadius: 8, background: "rgba(255,146,0,0.08)", border: "1px solid rgba(255,146,0,0.25)", display: "flex", gap: 8 }}>
+                <Icon name="warn" size={14} style={{ color: "var(--w-status-cautionary)", flex: "0 0 auto", marginTop: 1 }} />
+                <span style={{ font: "500 12px/1.4 var(--w-font-sans)", color: "var(--w-fg-neutral)" }}>소재 교체는 <strong>성과 안정화 구간 재시작 + 재심사</strong>를 일으켜요. 검토 동안 이전 소재가 잠시 노출될 수 있어요.</span>
+              </div>
+            )}
+            {c.status === "paused" && (
+              <div style={{ marginBottom: 14, padding: "10px 14px", borderRadius: 8, background: "var(--w-bg-alternative)", display: "flex", gap: 8 }}>
+                <Icon name="info" size={14} style={{ color: "var(--w-fg-alternative)", flex: "0 0 auto", marginTop: 1 }} />
+                <span style={{ font: "500 12px/1.4 var(--w-font-sans)", color: "var(--w-fg-neutral)" }}>재개 시 새 소재로 검토받아요.</span>
+              </div>
+            )}
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <div>
+                <div style={{ font: "600 12.5px/1.3 var(--w-font-sans)", color: "var(--w-fg-strong)", marginBottom: 6 }}>헤드라인</div>
+                <input className="input" type="text" value={creativeHeadline} onChange={(e) => setCreativeHeadline(e.target.value)} style={{ width: "100%" }} />
+              </div>
+              <div>
+                <div style={{ font: "600 12.5px/1.3 var(--w-font-sans)", color: "var(--w-fg-strong)", marginBottom: 6 }}>본문</div>
+                <textarea className="input" rows={3} value={creativePrimaryText} onChange={(e) => setCreativePrimaryText(e.target.value)} style={{ width: "100%", resize: "vertical" }} />
+              </div>
+              <div>
+                <div style={{ font: "600 12.5px/1.3 var(--w-font-sans)", color: "var(--w-fg-strong)", marginBottom: 8 }}>이미지</div>
+                <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+                  {([{ val: "keep", label: "그대로 유지" }, { val: "upload", label: "직접 업로드" }] as const).map(({ val, label }) => (
+                    <button key={val} type="button" onClick={() => setImageMode(val)}
+                      style={{ padding: "6px 14px", borderRadius: 8, font: "600 12.5px/1 var(--w-font-sans)", cursor: "pointer",
+                        border: imageMode === val ? "1.5px solid var(--w-primary-normal)" : "1.5px solid var(--w-line-alternative)",
+                        background: imageMode === val ? "var(--w-primary-soft)" : "var(--w-bg-normal)",
+                        color: imageMode === val ? "var(--w-primary-press)" : "var(--w-fg-neutral)" }}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                {imageMode === "upload" && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <label className="btn btn--secondary btn--sm" style={{ cursor: "pointer" }}>
+                      <Icon name="upload" size={13} /> 파일 선택
+                      <input type="file" accept="image/*" style={{ display: "none" }} onChange={handleImageFile} />
+                    </label>
+                    {imageFile && <span style={{ font: "500 12px/1.3 var(--w-font-sans)", color: "var(--w-fg-neutral)" }}>{imageFile.name}</span>}
+                    {imageDataUrl && <img src={imageDataUrl} alt="" style={{ width: 48, height: 48, borderRadius: 8, objectFit: "cover" }} />}
+                  </div>
+                )}
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button className="btn btn--primary btn--sm" type="button"
+                  disabled={savingCreative || !creativeHeadline.trim() || !creativePrimaryText.trim() || (imageMode === "upload" && !imageDataUrl)}
+                  onClick={submitCreative}>
+                  {savingCreative ? "교체 중…" : "소재 교체"}
+                </button>
+                <button className="btn btn--ghost btn--sm" type="button" disabled={savingCreative} onClick={() => setEditingCreative(false)}>
+                  취소
+                </button>
+              </div>
+            </div>
+            {showCreativeConfirm && (
+              <ConfirmModal
+                tone="primary"
+                title="이 변경은 성과 안정화 구간 재시작과 재심사를 일으켜요"
+                desc="Meta가 새 소재를 다시 검토해요. 보통 수 분 ~ 수 시간. 검토 동안 이전 소재가 잠시 노출될 수 있어요. 검토 통과 후 게재가 다시 시작돼요."
+                confirmLabel="변경 적용"
+                onClose={() => setShowCreativeConfirm(false)}
+                onConfirm={doReplaceCreative}
+              />
+            )}
+          </>
+        ) : (
+        <div style={{ display: "flex", gap: 20, alignItems: "flex-start" }}>
+          <div style={{ width: 112, height: 112, borderRadius: 12, background: campaignGradient(campaignId), flex: "0 0 auto", overflow: "hidden" }}>
+            {c.imageUrl && <img src={c.imageUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />}
+          </div>
+          <div style={{ flex: 1, display: "grid", gridTemplateColumns: "auto 1fr", gap: "12px 24px", alignItems: "start" }}>
+            <ConfigRow label="헤드라인" value={c.headline} />
+            <ConfigRow label="본문" value={c.primaryText ?? dash} />
+            <ConfigRow label="CTA" value={c.cta ? (CTA_LABELS[c.cta] ?? c.cta) : dash} />
+            <ConfigRow label="랜딩 URL" value={c.landingUrl
+              ? <a href={c.landingUrl} target="_blank" rel="noreferrer" style={{ color: "var(--w-primary-normal)", wordBreak: "break-all", font: "500 12.5px/1.4 var(--w-font-sans)" }}>{c.landingUrl}</a>
+              : dash}
+            />
+          </div>
+        </div>
+        )}
+      </div>
+
+      <div className="card">
+        <div className="between" style={{ marginBottom: 0 }}>
+          <h3 className="section-title" style={{ marginBottom: 0 }}>타겟팅</h3>
+          {!editingTargeting && c.status !== "ended" && (
+            <button className="btn btn--ghost btn--sm" type="button" onClick={openTargetingEdit}>
+              <Icon name="edit" size={13} /> 수정
+            </button>
+          )}
+        </div>
+        <hr className="divider" />
+        {editingTargeting ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+            <div>
+              <div style={{ font: "600 12.5px/1.3 var(--w-font-sans)", color: "var(--w-fg-strong)", marginBottom: 10 }}>연령</div>
+              <AgeRange value={ageRange} onChange={setAgeRange} />
+            </div>
+            <div>
+              <div style={{ font: "600 12.5px/1.3 var(--w-font-sans)", color: "var(--w-fg-strong)", marginBottom: 8 }}>성별</div>
+              <div style={{ display: "flex", gap: 8 }}>
+                {[{ label: "모두", val: [] as number[] }, { label: "남성", val: [1] }, { label: "여성", val: [2] }].map(({ label, val }) => {
+                  const active = val.length === 0 ? genders.length === 0 : genders.length === 1 && genders[0] === val[0];
+                  return (
+                    <button key={label} type="button" onClick={() => setGenders(val)}
+                      style={{ padding: "6px 14px", borderRadius: 8, font: "600 12.5px/1 var(--w-font-sans)", cursor: "pointer",
+                        border: active ? "1.5px solid var(--w-primary-normal)" : "1.5px solid var(--w-line-alternative)",
+                        background: active ? "var(--w-primary-soft)" : "var(--w-bg-normal)",
+                        color: active ? "var(--w-primary-press)" : "var(--w-fg-neutral)" }}>
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div>
+              <div style={{ font: "600 12.5px/1.3 var(--w-font-sans)", color: "var(--w-fg-strong)", marginBottom: 8 }}>국가</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {COUNTRIES.map((ct) => {
+                  const on = targetCountries.includes(ct.code);
+                  return (
+                    <button key={ct.code} type="button" onClick={() => toggleCountry(ct.code)}
+                      style={{ padding: "5px 12px", borderRadius: 8, font: "600 12px/1 var(--w-font-sans)", cursor: "pointer",
+                        border: on ? "1.5px solid var(--w-primary-normal)" : "1.5px solid var(--w-line-alternative)",
+                        background: on ? "var(--w-primary-soft)" : "var(--w-bg-normal)",
+                        color: on ? "var(--w-primary-press)" : "var(--w-fg-neutral)" }}>
+                      {ct.label}
+                    </button>
+                  );
+                })}
+              </div>
+              {targetCountries.length === 0 && (
+                <div style={{ marginTop: 6, font: "500 12px/1.4 var(--w-font-sans)", color: "var(--w-status-negative)" }}>국가를 최소 1개 선택해주세요</div>
+              )}
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="btn btn--primary btn--sm" type="button" disabled={savingTargeting || targetCountries.length === 0} onClick={saveTargeting}>
+                {savingTargeting ? "저장 중…" : "저장"}
+              </button>
+              <button className="btn btn--ghost btn--sm" type="button" disabled={savingTargeting} onClick={() => setEditingTargeting(false)}>
+                취소
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "12px 24px", alignItems: "center" }}>
+            <ConfigRow label="연령" value={c.ageMin != null && c.ageMax != null ? `${c.ageMin}~${c.ageMax}세` : dash} />
+            <ConfigRow label="성별" value={genderLabel} />
+            <ConfigRow label="국가" value={c.countries?.length ? c.countries.join(", ") : dash} />
+          </div>
+        )}
+      </div>
+
+      <div className="card" style={{ marginTop: 16 }}>
+        <div className="between" style={{ marginBottom: 0 }}>
+          <h3 className="section-title" style={{ marginBottom: 0 }}>입찰 · 배치</h3>
+          {!editingBid && c.status !== "ended" && (
+            <button className="btn btn--ghost btn--sm" type="button" onClick={openBidEdit}>
+              <Icon name="edit" size={13} /> 수정
+            </button>
+          )}
+        </div>
+        <hr className="divider" />
+        {editingBid ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+            <div style={{ padding: "10px 14px", borderRadius: 8, background: "rgba(255,146,0,0.08)", border: "1px solid rgba(255,146,0,0.25)", display: "flex", alignItems: "center", gap: 8 }}>
+              <Icon name="warn" size={13} style={{ color: "var(--w-status-cautionary)", flex: "0 0 auto" }} />
+              <span style={{ font: "500 12px/1.4 var(--w-font-sans)", color: "var(--w-fg-neutral)" }}>입찰 전략·배치 변경은 성과 안정화 구간이 재시작될 수 있어요</span>
+            </div>
+            <div>
+              <div style={{ font: "600 12.5px/1.3 var(--w-font-sans)", color: "var(--w-fg-strong)", marginBottom: 8 }}>입찰 전략</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {([
+                  { val: "LOWEST_COST_WITHOUT_CAP", label: "최저 비용 (상한 없음)", desc: "Meta가 예산 내에서 가장 낮은 비용으로 결과를 최대화해요" },
+                  { val: "LOWEST_COST_WITH_BID_CAP", label: "최저 비용 (입찰 상한)", desc: "입찰 상한을 설정해 클릭당 최대 비용을 제어해요" },
+                  { val: "COST_CAP", label: "목표 비용", desc: "평균 비용이 목표 금액을 넘지 않도록 유지해요" },
+                ] as const).map(({ val, label, desc }) => (
+                  <button key={val} type="button" onClick={() => setBidStrategy(val)}
+                    style={{ textAlign: "left", padding: "10px 14px", borderRadius: 10, cursor: "pointer",
+                      border: bidStrategy === val ? "1.5px solid var(--w-primary-normal)" : "1.5px solid var(--w-line-alternative)",
+                      background: bidStrategy === val ? "var(--w-primary-soft)" : "var(--w-bg-normal)" }}>
+                    <div style={{ font: "600 13px/1.3 var(--w-font-sans)", color: bidStrategy === val ? "var(--w-primary-press)" : "var(--w-fg-strong)" }}>{label}</div>
+                    <div style={{ font: "500 12px/1.4 var(--w-font-sans)", color: "var(--w-fg-neutral)", marginTop: 3 }}>{desc}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+            {bidStrategy !== "LOWEST_COST_WITHOUT_CAP" && (
+              <div>
+                <div style={{ font: "600 12.5px/1.3 var(--w-font-sans)", color: "var(--w-fg-strong)", marginBottom: 6 }}>
+                  {bidStrategy === "COST_CAP" ? "목표 비용 (₩)" : "입찰 상한 (₩)"}
+                </div>
+                <input className="input" type="number" min={100} step={100} value={bidAmount}
+                  onChange={(e) => setBidAmount(e.target.value)} style={{ width: "100%", maxWidth: 220 }} />
+              </div>
+            )}
+            <div>
+              <div style={{ font: "600 12.5px/1.3 var(--w-font-sans)", color: "var(--w-fg-strong)", marginBottom: 8 }}>플랫폼</div>
+              <div style={{ display: "flex", gap: 8 }}>
+                {([{ val: "both", label: "FB + IG" }, { val: "facebook", label: "페이스북만" }, { val: "instagram", label: "인스타그램만" }] as const).map(({ val, label }) => (
+                  <button key={val} type="button" onClick={() => setEditPlatforms(val)}
+                    style={{ padding: "6px 14px", borderRadius: 8, font: "600 12.5px/1 var(--w-font-sans)", cursor: "pointer",
+                      border: editPlatforms === val ? "1.5px solid var(--w-primary-normal)" : "1.5px solid var(--w-line-alternative)",
+                      background: editPlatforms === val ? "var(--w-primary-soft)" : "var(--w-bg-normal)",
+                      color: editPlatforms === val ? "var(--w-primary-press)" : "var(--w-fg-neutral)" }}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <div style={{ font: "600 12.5px/1.3 var(--w-font-sans)", color: "var(--w-fg-strong)", marginBottom: 8 }}>배치</div>
+              <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+                {([{ val: "auto", label: "자동 (Advantage+)" }, { val: "manual", label: "수동" }] as const).map(({ val, label }) => (
+                  <button key={val} type="button" onClick={() => {
+                    setPlacementMode(val);
+                    if (val === "manual" && placementPositions.length === 0) {
+                      setPlacementPositions(editPlatforms === "facebook" ? ["facebook_feed"] : editPlatforms === "instagram" ? ["instagram_feed"] : ["facebook_feed", "instagram_feed"]);
+                    }
+                  }}
+                    style={{ padding: "6px 14px", borderRadius: 8, font: "600 12.5px/1 var(--w-font-sans)", cursor: "pointer",
+                      border: placementMode === val ? "1.5px solid var(--w-primary-normal)" : "1.5px solid var(--w-line-alternative)",
+                      background: placementMode === val ? "var(--w-primary-soft)" : "var(--w-bg-normal)",
+                      color: placementMode === val ? "var(--w-primary-press)" : "var(--w-fg-neutral)" }}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {placementMode === "manual" && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  {([
+                    { id: "facebook_feed", label: "Facebook 피드", platform: "facebook" },
+                    { id: "instagram_feed", label: "Instagram 피드", platform: "instagram" },
+                    { id: "instagram_stories", label: "Instagram 스토리", platform: "instagram" },
+                    { id: "audience_network", label: "Audience Network", platform: "both" },
+                    { id: "messenger", label: "Messenger", platform: "both" },
+                  ]).map(({ id, label, platform }) => {
+                    const enabled = editPlatforms === "both" || platform === "both" || platform === editPlatforms;
+                    const on = placementPositions.includes(id);
+                    return (
+                      <button key={id} type="button" disabled={!enabled} onClick={() => togglePosition(id)}
+                        style={{ padding: "5px 12px", borderRadius: 8, font: "600 12px/1 var(--w-font-sans)", cursor: enabled ? "pointer" : "not-allowed", opacity: enabled ? 1 : 0.4,
+                          border: on ? "1.5px solid var(--w-primary-normal)" : "1.5px solid var(--w-line-alternative)",
+                          background: on ? "var(--w-primary-soft)" : "var(--w-bg-normal)",
+                          color: on ? "var(--w-primary-press)" : "var(--w-fg-neutral)" }}>
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="btn btn--primary btn--sm" type="button" disabled={savingBid} onClick={saveBid}>
+                {savingBid ? "저장 중…" : "저장"}
+              </button>
+              <button className="btn btn--ghost btn--sm" type="button" disabled={savingBid} onClick={() => setEditingBid(false)}>
+                취소
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "12px 24px", alignItems: "center" }}>
+            <ConfigRow label="입찰 전략" value={
+              c.bidStrategy === "LOWEST_COST_WITH_BID_CAP" ? "최저 비용 (입찰 상한)"
+              : c.bidStrategy === "COST_CAP" ? "목표 비용"
+              : "최저 비용 (상한 없음)"
+            } />
+            {c.bidStrategy !== "LOWEST_COST_WITHOUT_CAP" && c.bidAmount != null && (
+              <ConfigRow label="입찰 금액" value={fmtKRW(c.bidAmount)} />
+            )}
+            <ConfigRow label="플랫폼" value={platformLabel} />
+            <ConfigRow label="배치" value={placementLabel} />
+          </div>
+        )}
+      </div>
+    </>
   );
 }
