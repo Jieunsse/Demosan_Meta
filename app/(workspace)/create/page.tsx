@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Badge } from "@shared/ui/primitives";
+import { Button } from "@shared/ui/Button";
 import { useSessionStorage } from "@shared/lib/storage/useSessionStorage";
 import { useApiMutation } from "@shared/lib/api/useApiMutation";
 import type { GenerateCreativeParams, GenerateCreativeResult } from "@/lib/gemini-creative";
@@ -20,7 +21,7 @@ import Stepper from "./_components/Stepper";
 import GoalIntro from "@widgets/goal-intro";
 import CreativeStep from "@widgets/creative-step";
 import LaunchStep from "@widgets/launch-step";
-import PerformanceStep from "@widgets/performance-step";
+import PostLaunchChecklist from "@widgets/post-launch-checklist";
 import { autoModeFromObjective } from "@features/switch-mode/objective-routing";
 
 const GRADIENTS = [
@@ -34,11 +35,11 @@ const DEMO_BRAND = "예) 20대 여성을 위한 비건 스킨케어 브랜드 '�
 const DEMO_TARGET = "타겟의 직업·나이·관심사·라이프스타일을 적어주세요";
 const DEMO_OUTCOME_HINT = "신제품 홍보 및 신제품 특별할인";
 
-const TITLES = ["AI로 소재를 만들어 봐요", "어떻게 집행할지 정해 봐요", "성과를 확인해 봐요"];
+const TITLES = ["AI로 소재를 만들어 봐요", "어떻게 집행할지 정해 봐요", "마무리 점검을 해봐요"];
 const SUBS = [
   "제품과 타겟 정보를 알려주세요. Gemini가 카피·헤드라인·타겟팅을 제안해 드려요.",
   "예산, 기간, 타겟을 확인하고 Meta에 광고를 집행하세요.",
-  "노출·클릭·CTR·지출을 한눈에 확인하고, 다음 단계를 결정하세요.",
+  "광고를 정상적으로 생성했어요. 결과를 받기 전에 최종적으로 점검해봐요.",
 ];
 
 export default function CreatePage() {
@@ -123,6 +124,8 @@ export default function CreatePage() {
   const [target, setTarget] = useSessionStorage("adflow_target", "");
   const [displayedHeadlines, setDisplayedHeadlines] = useState<string[] | null>(null);
   const [headlineIdx, setHeadlineIdx] = useState(0);
+  const [displayedPrimaryTexts, setDisplayedPrimaryTexts] = useState<[string, string, string] | null>(null);
+  const [primaryTextIdx, setPrimaryTextIdx] = useState(0);
   const [elapsed, setElapsed] = useState(0);
   const [savedId, setSavedId] = useState<string | null>(null);
   const generateMutation = useApiMutation<GenerateCreativeParams, GenerateCreativeResult>('/api/generate-creative');
@@ -183,10 +186,13 @@ export default function CreatePage() {
         onSuccess: (data) => {
           setDisplayedHeadlines(data.headlines);
           setHeadlineIdx(0);
+          setDisplayedPrimaryTexts(data.primaryTexts);
+          setPrimaryTextIdx(0);
           creative.dispatch({ type: "SET_HEADLINE", headline: data.headlines[0] });
           // PRD §5.4.2 (5) — STEP 02 디테일 A/B 시험 B안 풀로 사용. 재생성 시 후보 교체 → DetailKnobs 의 sync useEffect 가 B안 reset.
           creative.dispatch({ type: "SET_HEADLINE_CANDIDATES", candidates: data.headlines });
-          creative.dispatch({ type: "SET_PRIMARY_TEXT", primaryText: data.primaryText });
+          creative.dispatch({ type: "SET_PRIMARY_TEXT_CANDIDATES", candidates: data.primaryTexts });
+          creative.dispatch({ type: "SET_PRIMARY_TEXT", primaryText: data.primaryTexts[0] });
           creative.dispatch({ type: "SET_TARGETING", targeting: data.targeting });
           setElapsed(Math.round((Date.now() - startedAt) / 100) / 10);
         },
@@ -201,6 +207,11 @@ export default function CreatePage() {
   const handleSelectHeadline = (i: number) => {
     setHeadlineIdx(i);
     if (displayedHeadlines) creative.dispatch({ type: "SET_HEADLINE", headline: displayedHeadlines[i] });
+  };
+
+  const handleSelectPrimaryText = (i: number) => {
+    setPrimaryTextIdx(i);
+    if (displayedPrimaryTexts) creative.dispatch({ type: "SET_PRIMARY_TEXT", primaryText: displayedPrimaryTexts[i] });
   };
 
   const handleSaveToLibrary = () => {
@@ -233,6 +244,8 @@ export default function CreatePage() {
     generateMutation.reset();
     setDisplayedHeadlines(null);
     setHeadlineIdx(0);
+    setDisplayedPrimaryTexts(null);
+    setPrimaryTextIdx(0);
     setSavedId(null);
     setElapsed(0);
     setStep(0);
@@ -255,52 +268,14 @@ export default function CreatePage() {
   const showIntro = !introCompleted;
 
   return (
-    <div className="page" data-screen-label="광고 만들기">
-      {/* PRD §13.10.5 — /create 흐름 전체에 line-free 디자인. 카드는 shadow only, divider 숨김, input/textarea filled. */}
-      <style>{`
-        [data-screen-label="광고 만들기"] .card {
-          border: 0;
-          box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.05);
-        }
-        [data-screen-label="광고 만들기"] .divider { display: none; }
-        [data-screen-label="광고 만들기"] .input,
-        [data-screen-label="광고 만들기"] .textarea {
-          background: rgba(0,0,0,0.04);
-          border: 0;
-        }
-        [data-screen-label="광고 만들기"] .input:focus,
-        [data-screen-label="광고 만들기"] .textarea:focus {
-          background: rgba(0,0,0,0.06);
-          outline: 2px solid var(--w-primary-soft);
-          outline-offset: -2px;
-        }
-        [data-screen-label="광고 만들기"] .goal-card {
-          /* 비활성 카드 — 보더는 투명 placeholder (활성 시 violet 로 바뀌어도 size shift 없음) */
-          border: 1.5px solid transparent;
-          background: var(--w-bg-normal);
-          box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.05);
-        }
-        [data-screen-label="광고 만들기"] .goal-card:not(:disabled):hover {
-          transform: translateY(-2px);
-          box-shadow: 0 4px 10px rgba(0,0,0,0.06), 0 10px 24px rgba(0,0,0,0.08);
-        }
-        [data-screen-label="광고 만들기"] .goal-card--active {
-          /* 활성 카드 — violet 보더 + 미묘한 violet bg + 부드러운 후광 ring */
-          border-color: var(--w-accent-violet);
-          background: rgba(101,65,242,0.025);
-          box-shadow: 0 0 0 3px rgba(101,65,242,0.08), 0 6px 18px rgba(101,65,242,0.12);
-        }
-        [data-screen-label="광고 만들기"] .goal-card:not(:disabled):hover.goal-card--active {
-          box-shadow: 0 0 0 3px rgba(101,65,242,0.12), 0 8px 22px rgba(101,65,242,0.16);
-        }
-      `}</style>
-      <div className="page__head">
+    <div className="px-12 py-9 pb-16 max-w-[1280px] w-full mx-auto flex flex-col gap-7" data-screen-label="광고 만들기">
+      <div className="flex justify-between items-end gap-6">
         <div>
-          <span className="w-overline" style={{ color: "var(--w-fg-neutral)" }}>광고 만들기</span>
-          <h1 className="page__title" style={{ marginTop: 4 }}>
+          <span className="font-semibold text-[11px] leading-[1.45] tracking-[0.04em] uppercase text-[var(--w-fg-neutral)]">광고 만들기</span>
+          <h1 className="m-0 font-bold text-[28px] leading-[1.25] tracking-[-0.024em] text-[var(--w-fg-strong)]" style={{ marginTop: 4 }}>
             {showIntro ? "광고 목표를 골라주세요" : TITLES[step]}
           </h1>
-          <p className="page__sub">
+          <p className="font-medium text-[14px] leading-[1.5] tracking-[0.004em] text-[var(--w-fg-neutral)] mt-1.5 mb-0">
             {showIntro ? "어떤 광고를 만들지 먼저 결정해주세요. 카피·캠페인 설정이 자동으로 맞춰져요." : SUBS[step]}
           </p>
         </div>
@@ -310,24 +285,14 @@ export default function CreatePage() {
       </div>
 
       {prefillBanner && (
-        <div
-          className="callout"
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 12,
-            padding: 14,
-            marginBottom: 16,
-            background: "var(--w-primary-soft)",
-            borderRadius: 12,
-          }}
-        >
+        <div className="flex items-center gap-3 p-[14px] bg-[var(--w-primary-soft)] rounded-xl">
           <Icon name="sparkles" size={16} />
           <p style={{ flex: 1, font: "500 13px/1.5 var(--w-font-sans)", color: "var(--w-fg-strong)", margin: 0 }}>
             {prefillBanner}
           </p>
-          <button
-            className="btn btn--ghost btn--sm"
+          <Button
+            variant="ghost"
+            size="sm"
             type="button"
             onClick={() => {
               creative.dispatch({ type: "RESET" });
@@ -336,12 +301,15 @@ export default function CreatePage() {
             }}
           >
             지우고 새로 시작
-          </button>
+          </Button>
         </div>
       )}
 
       {showIntro ? (
-        <GoalIntro onNext={() => { setIntroCompleted(true); setStep(0); }} />
+        <GoalIntro onNext={() => {
+          setIntroCompleted(true);
+          setStep(creative.state.outcome === 'boost_post' ? 1 : 0);
+        }} />
       ) : (
         <>
           <Stepper step={step} setStep={setStep} completed={completed} stepValid={stepValid} />
@@ -360,6 +328,9 @@ export default function CreatePage() {
               headlines={displayedHeadlines}
               headlineIdx={headlineIdx}
               onSelectHeadline={handleSelectHeadline}
+              primaryTexts={displayedPrimaryTexts}
+              primaryTextIdx={primaryTextIdx}
+              onSelectPrimaryText={handleSelectPrimaryText}
               primaryText={creative.state.primaryText}
               setPrimaryText={(v: string) => creative.dispatch({ type: "SET_PRIMARY_TEXT", primaryText: v })}
               elapsed={elapsed}
@@ -385,7 +356,7 @@ export default function CreatePage() {
             />
           )}
 
-          {step === 2 && <PerformanceStep onRestart={handleRestart} />}
+          {step === 2 && <PostLaunchChecklist onRestart={handleRestart} />}
         </>
       )}
     </div>

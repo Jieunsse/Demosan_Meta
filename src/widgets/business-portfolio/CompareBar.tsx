@@ -1,6 +1,7 @@
 "use client";
 
 import Icon from "@shared/ui/Icon";
+import { Card } from "@shared/ui/Card";
 
 function fmtK(n: number): string {
   if (n >= 10000) return `${(n / 10000).toFixed(1)}만`;
@@ -21,14 +22,14 @@ export default function CompareBar({ ig, fb, onJumpInstagram, onJumpFacebook }: 
   const anyMock = ig.mock || fb.mock;
 
   return (
-    <div className="card" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 20, flexWrap: "wrap" }}>
+    <Card className="flex items-center justify-between gap-5 flex-wrap">
       <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
         <button
           type="button"
           onClick={onJumpInstagram}
           style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "none", border: "none", padding: 0, cursor: "pointer", font: "600 13.5px/1.3 var(--w-font-sans)", color: "var(--w-fg-strong)" }}
         >
-          <Icon name="image" size={15} />
+          <Icon name="instagram" size={15} />
           IG {ig.handle ? `@${ig.handle}` : ""} {fmtK(ig.followers)}
         </button>
         <span style={{ color: "var(--w-fg-alternative)" }}>·</span>
@@ -37,7 +38,7 @@ export default function CompareBar({ ig, fb, onJumpInstagram, onJumpFacebook }: 
           onClick={onJumpFacebook}
           style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "none", border: "none", padding: 0, cursor: "pointer", font: "600 13.5px/1.3 var(--w-font-sans)", color: "var(--w-fg-strong)" }}
         >
-          <Icon name="message" size={15} />
+          <Icon name="facebook" size={15} />
           FB {fb.name ?? ""} {fmtK(fb.followers)}
         </button>
         <span style={{ font: "500 13px/1.3 var(--w-font-sans)", color: "var(--w-fg-neutral)" }}>
@@ -53,10 +54,10 @@ export default function CompareBar({ ig, fb, onJumpInstagram, onJumpFacebook }: 
       </div>
 
       {anyMock && (
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 10px", borderRadius: 999, background: "var(--w-accent-violet-soft)", color: "var(--w-accent-violet)", font: "600 11.5px/1 var(--w-font-sans)" }}>
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[var(--w-accent-violet-soft)] text-[var(--w-accent-violet)] font-semibold text-[11.5px] leading-none">
           mock 포함
         </span>
       )}
-    </div>
+    </Card>
   );
 }

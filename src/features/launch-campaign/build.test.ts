@@ -17,6 +17,7 @@ const baseCreative: CreativeState = {
   outcomeHint: "",
   objective: "OUTCOME_TRAFFIC",
   headlineCandidates: null,
+  primaryTextCandidates: null,
   previousOutcome: null,
 };
 
@@ -28,6 +29,7 @@ const baseLaunch: LaunchState = {
   lookalikeEnabled: false,
   placements: { mode: "auto" },
   autoPauseGuardrailEnabled: false,
+  autoRelaunchEnabled: false,
   abTestEnabled: false,
   abTestAxis: null,
   abTestVariantB: null,

@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Icon from "@shared/ui/Icon";
+import { Button } from "@shared/ui/Button";
+import { Chip } from "@shared/ui/Chip";
 import { MOCK_CAMPAIGN_SUMMARIES } from "@/lib/mock-campaigns";
 import type { IconName } from "@shared/ui/Icon";
 
@@ -53,44 +55,41 @@ export default function AbTestNewPage() {
   };
 
   return (
-    <div className="page" data-screen-label="A/B 테스트 생성">
+    <div className="px-12 py-9 pb-16 max-w-[1280px] w-full mx-auto flex flex-col gap-7" data-screen-label="A/B 테스트 생성">
       {/* 헤더 */}
       <button
         type="button"
         onClick={goBack}
-        className="btn-link"
-        style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "var(--w-fg-neutral)", marginBottom: 4 }}
+        className="bg-transparent border-none p-0 cursor-pointer inline-flex items-center gap-1.5 font-semibold text-[12.5px] leading-none text-[var(--w-fg-neutral)] hover:underline mb-1"
       >
         <Icon name="arrow-left" size={13} /> {step === "method" ? "A/B 테스트" : STEP_LABELS[STEP_ORDER[stepIdx - 1]]}
       </button>
 
-      <div className="page__head" style={{ marginTop: 4, marginBottom: 24 }}>
+      <div className="flex justify-between items-end gap-6 mt-1 mb-6">
         <div>
-          <h1 className="page__title">새 A/B 테스트</h1>
-          <p className="page__sub">두 가지 소재를 비교해 더 효과적인 광고를 찾아요</p>
+          <h1 className="m-0 font-bold text-[28px] leading-[1.25] tracking-[-0.024em] text-[var(--w-fg-strong)]">새 A/B 테스트</h1>
+          <p className="font-medium text-[14px] leading-[1.5] tracking-[0.004em] text-[var(--w-fg-neutral)] mt-1.5 mb-0">두 가지 소재를 비교해 더 효과적인 광고를 찾아요</p>
         </div>
       </div>
 
       {/* 스텝 인디케이터 */}
-      <div style={{ display: "flex", alignItems: "center", gap: 0, marginBottom: 32 }}>
+      <div className="flex items-center gap-0 mb-8">
         {STEP_ORDER.map((s, i) => {
           const done = i < stepIdx;
           const active = i === stepIdx;
           return (
-            <div key={s} style={{ display: "flex", alignItems: "center", gap: 0 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div key={s} className="flex items-center gap-0">
+              <div className="flex items-center gap-2">
                 <div style={{
                   width: 28, height: 28, borderRadius: "50%", display: "grid", placeItems: "center",
                   background: done ? "var(--w-primary-normal)" : active ? "var(--w-primary-soft)" : "var(--w-bg-alternative)",
                   border: active ? "2px solid var(--w-primary-normal)" : done ? "none" : "2px solid var(--w-line-normal)",
                   color: done ? "#fff" : active ? "var(--w-primary-press)" : "var(--w-fg-alternative)",
-                  font: "700 12px/1 var(--w-font-sans)",
                   transition: "all 200ms",
-                }}>
+                }} className="font-bold text-[12px] leading-none">
                   {done ? <Icon name="check" size={13} /> : i + 1}
                 </div>
-                <span style={{
-                  font: "600 13px/1 var(--w-font-sans)",
+                <span className="font-semibold text-[13px] leading-none" style={{
                   color: active ? "var(--w-fg-strong)" : done ? "var(--w-primary-normal)" : "var(--w-fg-alternative)",
                 }}>
                   {STEP_LABELS[s]}
@@ -148,10 +147,10 @@ export default function AbTestNewPage() {
 function MethodStep({ onSelect }: { onSelect: (m: Method) => void }) {
   return (
     <div>
-      <div style={{ font: "600 14px/1.3 var(--w-font-sans)", color: "var(--w-fg-strong)", marginBottom: 14 }}>
+      <div className="font-semibold text-[14px] leading-[1.3] text-[var(--w-fg-strong)] mb-3.5">
         어떤 방식으로 A/B 테스트를 진행할까요?
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+      <div className="grid grid-cols-2 gap-4">
         <MethodCard
           icon="folder"
           title="기존에 올라가있는 광고로 진행"
@@ -180,26 +179,22 @@ function MethodCard({ icon, title, desc, tag, tagColor, onClick }: {
     <button
       type="button"
       onClick={onClick}
-      className="card"
-      style={{
-        textAlign: "left", cursor: "pointer", padding: "24px 20px",
-        display: "flex", flexDirection: "column", gap: 14,
-        border: "1.5px solid var(--w-line-alternative)",
-      }}
+      className="bg-[var(--w-bg-elevated)] border border-[var(--w-line-normal)] rounded-2xl text-left cursor-pointer transition-[border-color] duration-[160ms] flex flex-col gap-3.5 p-6 pr-5"
+      style={{ border: "1.5px solid var(--w-line-alternative)" }}
     >
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      <div className="flex items-center justify-between">
         <div style={{ width: 44, height: 44, borderRadius: 12, background: "var(--w-primary-soft)", color: "var(--w-primary-normal)", display: "grid", placeItems: "center" }}>
           <Icon name={icon} size={22} />
         </div>
-        <span style={{ font: "700 11.5px/1 var(--w-font-sans)", color: tagColor, background: `color-mix(in srgb, ${tagColor} 12%, transparent)`, padding: "4px 9px", borderRadius: 999, border: `1px solid color-mix(in srgb, ${tagColor} 30%, transparent)` }}>
+        <span className="font-bold text-[11.5px] leading-none" style={{ color: tagColor, background: `color-mix(in srgb, ${tagColor} 12%, transparent)`, padding: "4px 9px", borderRadius: 999, border: `1px solid color-mix(in srgb, ${tagColor} 30%, transparent)` }}>
           {tag}
         </span>
       </div>
       <div>
-        <div style={{ font: "700 15px/1.4 var(--w-font-sans)", color: "var(--w-fg-strong)", marginBottom: 6 }}>{title}</div>
-        <p style={{ font: "500 13px/1.6 var(--w-font-sans)", color: "var(--w-fg-neutral)", margin: 0 }}>{desc}</p>
+        <div className="font-bold text-[15px] leading-[1.4] text-[var(--w-fg-strong)] mb-1.5">{title}</div>
+        <p className="font-medium text-[13px] leading-[1.6] text-[var(--w-fg-neutral)] m-0">{desc}</p>
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 4, font: "600 13px/1 var(--w-font-sans)", color: "var(--w-primary-normal)", marginTop: "auto" }}>
+      <div className="flex items-center gap-1 font-semibold text-[13px] leading-none text-[var(--w-primary-normal)] mt-auto">
         선택하기 <Icon name="arrow-right" size={14} />
       </div>
     </button>
@@ -211,15 +206,15 @@ function MethodCard({ icon, title, desc, tag, tagColor, onClick }: {
 function TypeStep({ method, onSelect }: { method: Method; onSelect: (a: AxisType) => void }) {
   return (
     <div>
-      <div style={{ font: "600 14px/1.3 var(--w-font-sans)", color: "var(--w-fg-strong)", marginBottom: 4 }}>
+      <div className="font-semibold text-[14px] leading-[1.3] text-[var(--w-fg-strong)] mb-1">
         어떤 요소를 비교할까요?
       </div>
-      <p style={{ font: "500 13px/1.5 var(--w-font-sans)", color: "var(--w-fg-neutral)", margin: "0 0 20px" }}>
+      <p className="font-medium text-[13px] leading-[1.5] text-[var(--w-fg-neutral)] m-0 mb-5">
         {method === "new"
           ? "광고 만들기에서 해당 요소를 A안·B안으로 설정하게 돼요."
           : "기존 광고 두 개에서 비교할 요소를 선택해요."}
       </p>
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div className="flex flex-col gap-3">
         {AXIS_INFO.map((a) => (
           <AxisCard key={a.id} info={a} onClick={() => onSelect(a.id)} />
         ))}
@@ -233,22 +228,135 @@ function AxisCard({ info, onClick }: { info: typeof AXIS_INFO[0]; onClick: () =>
     <button
       type="button"
       onClick={onClick}
-      className="card"
-      style={{
-        textAlign: "left", cursor: "pointer", padding: "18px 20px",
-        display: "flex", alignItems: "center", gap: 16,
-        border: "1.5px solid var(--w-line-alternative)",
-      }}
+      className="bg-[var(--w-bg-elevated)] border border-[var(--w-line-normal)] rounded-2xl text-left cursor-pointer transition-[border-color] duration-[160ms] flex items-center gap-4 py-[18px] px-5"
+      style={{ border: "1.5px solid var(--w-line-alternative)" }}
     >
       <div style={{ width: 44, height: 44, borderRadius: 12, background: "var(--w-primary-soft)", color: "var(--w-primary-normal)", display: "grid", placeItems: "center", flex: "0 0 auto" }}>
         <Icon name={info.icon} size={22} />
       </div>
-      <div style={{ flex: 1 }}>
-        <div style={{ font: "700 15px/1.3 var(--w-font-sans)", color: "var(--w-fg-strong)", marginBottom: 4 }}>{info.label}</div>
-        <p style={{ font: "500 13px/1.5 var(--w-font-sans)", color: "var(--w-fg-neutral)", margin: 0 }}>{info.desc}</p>
+      <div className="flex-1">
+        <div className="font-bold text-[15px] leading-[1.3] text-[var(--w-fg-strong)] mb-1">{info.label}</div>
+        <p className="font-medium text-[13px] leading-[1.5] text-[var(--w-fg-neutral)] m-0">{info.desc}</p>
       </div>
       <Icon name="arrow-right" size={16} style={{ color: "var(--w-fg-alternative)", flex: "0 0 auto" }} />
     </button>
+  );
+}
+
+/* ─── AI 생성 패널 ───────────────────────────────────────── */
+
+type AiGenState = "idle" | "loading" | "done" | "error";
+
+function AiGeneratePanel({ axis, onSelect }: { axis: "headline" | "primary_text"; onSelect: (text: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [brief, setBrief] = useState("");
+  const [tone, setTone] = useState<"warm" | "pro" | "trendy">("warm");
+  const [genState, setGenState] = useState<AiGenState>("idle");
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [errMsg, setErrMsg] = useState("");
+
+  const TONE_LABELS = { warm: "감성적", pro: "전문적", trendy: "트렌디" } as const;
+
+  async function generate() {
+    if (!brief.trim()) return;
+    setGenState("loading");
+    setErrMsg("");
+    try {
+      const res = await fetch("/api/generate-creative", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ brand: brief, target: "광고 타겟 고객", tone, outcome: "traffic" }),
+      });
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      setSuggestions(axis === "headline" ? data.headlines : data.primaryTexts);
+      setGenState("done");
+    } catch {
+      setErrMsg("생성에 실패했어요. 잠시 후 다시 시도해주세요.");
+      setGenState("error");
+    }
+  }
+
+  return (
+    <div className="mt-2.5">
+      <Button
+        variant="ghost"
+        size="sm"
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex items-center gap-1.5 text-[var(--w-accent-violet)]"
+      >
+        <Icon name="sparkles" size={13} /> AI로 B안 생성
+      </Button>
+
+      {open && (
+        <div className="mt-2.5 p-[14px_16px] rounded-[10px] bg-[var(--w-primary-soft)] border border-[var(--w-primary-weak)]">
+          <div className="font-semibold text-[12.5px] leading-[1.3] text-[var(--w-fg-strong)] mb-2">
+            제품/서비스 한 줄 설명
+          </div>
+          <textarea
+            value={brief}
+            onChange={(e) => setBrief(e.target.value)}
+            placeholder="예) 20대 여성을 위한 비건 스킨케어 브랜드"
+            rows={2}
+            className="w-full bg-[var(--w-bg-elevated)] border border-[var(--w-line-normal)] rounded-xl px-3.5 py-3 font-medium text-[14px] leading-[1.5] text-[var(--w-fg-strong)] tracking-[0.004em] outline-none transition-[border-color,box-shadow] duration-[120ms] focus:border-[var(--w-primary-normal)] focus:shadow-[0_0_0_4px_rgba(0,102,255,0.14)] placeholder:text-[var(--w-fg-alternative)] resize-none"
+            style={{ padding: "8px 10px", borderRadius: 8, fontSize: 13 }}
+          />
+          <div className="flex gap-1.5 my-2.5">
+            {(["warm", "pro", "trendy"] as const).map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setTone(t)}
+                className={`px-3 py-1.5 rounded-full text-xs font-semibold cursor-pointer ${
+                  tone === t
+                    ? "bg-[var(--w-primary-soft)] text-[var(--w-primary-press)] border border-[var(--w-primary-normal)]"
+                    : "bg-[var(--w-bg-alternative)] text-[var(--w-fg-neutral)] border border-[var(--w-line-alternative)]"
+                }`}
+              >
+                {TONE_LABELS[t]}
+              </button>
+            ))}
+          </div>
+          <Button
+            variant="primary"
+            size="sm"
+            type="button"
+            disabled={!brief.trim() || genState === "loading"}
+            onClick={generate}
+            className="w-full"
+          >
+            {genState === "loading"
+              ? <><Icon name="spinner" size={13} spin /> 생성 중…</>
+              : <><Icon name="sparkles" size={13} /> 생성하기</>}
+          </Button>
+
+          {genState === "error" && (
+            <p className="font-medium text-[12px] leading-[1.3] text-[var(--w-status-negative)] mt-2 mb-0">{errMsg}</p>
+          )}
+
+          {genState === "done" && suggestions.length > 0 && (
+            <div className="mt-2.5">
+              <div className="font-semibold text-[12px] leading-[1.3] text-[var(--w-fg-neutral)] mb-1.5">
+                선택하면 B안에 입력돼요
+              </div>
+              <div className="flex flex-col gap-1.5">
+                {suggestions.map((s, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => { onSelect(s); setOpen(false); }}
+                    className="text-left py-2 px-3 rounded-lg border border-[var(--w-primary-weak)] bg-[var(--w-bg-elevated)] font-medium text-[13px] leading-[1.5] text-[var(--w-fg-strong)] cursor-pointer"
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -261,54 +369,92 @@ function ConfigStep({ method, axis, onBack }: { method: Method; axis: AxisType; 
   return <ExistingConfig axis={axis} />;
 }
 
-/* 새로 만들기 안내 */
+/* 새로 만들기 — A안/B안 직접 입력 + AI 생성 */
 function NewGuide({ axis }: { axis: AxisType }) {
   const router = useRouter();
   const axisInfo = AXIS_INFO.find((a) => a.id === axis)!;
-  const steps: string[] = {
-    headline: ["STEP 01에서 AI 카피 생성 → 헤드라인 후보 2개 이상 생성", "STEP 02 → 'A/B 시험으로 집행' 체크", "'헤드라인' 탭 선택 → B안 헤드라인 고르기", "STEP 03에서 집행 → 자동으로 A/B 등록"],
-    primary_text: ["STEP 01에서 카피 문구 작성", "STEP 02 → 'A/B 시험으로 집행' 체크", "'카피 문구' 탭 선택 → B안 문구 직접 입력", "STEP 03에서 집행 → 자동으로 A/B 등록"],
-    image: ["STEP 01에서 AI 이미지 3장 생성", "STEP 02 → 'A/B 시험으로 집행' 체크", "'이미지' 탭 선택 → A안·B안 이미지 선택", "STEP 03에서 집행 → 자동으로 A/B 등록"],
-  }[axis];
+  const [variantA, setVariantA] = useState("");
+  const [variantB, setVariantB] = useState("");
+
+  if (axis === "image") {
+    return (
+      <div>
+        <div className="flex items-center gap-2.5 mb-5">
+          <div style={{ width: 40, height: 40, borderRadius: 10, background: "var(--w-primary-soft)", color: "var(--w-primary-normal)", display: "grid", placeItems: "center" }}>
+            <Icon name={axisInfo.icon} size={20} />
+          </div>
+          <div>
+            <div className="font-bold text-[15px] leading-[1.3] text-[var(--w-fg-strong)]">이미지 A/B 테스트</div>
+            <div className="font-medium text-[12.5px] leading-[1.3] text-[var(--w-fg-neutral)] mt-0.5">광고 만들기에서 이미지를 선택한 뒤 설정할 수 있어요</div>
+          </div>
+        </div>
+        <div className="p-3 px-4 rounded-[10px] bg-[var(--w-primary-soft)] mb-4 font-medium text-[13px] leading-[1.5] text-[var(--w-primary-press)]">
+          STEP 01에서 AI 이미지 3장 생성 → STEP 02에서 "A/B 시험으로 집행" 체크 → 이미지 탭 선택 → A안·B안 고르기
+        </div>
+        <Button variant="primary" type="button" onClick={() => router.push("/create")} className="w-full">
+          <Icon name="sparkles" size={15} /> 광고 만들기로 이동
+        </Button>
+      </div>
+    );
+  }
+
+  const isHeadline = axis === "headline";
+  const aPlaceholder = isHeadline ? "현재 사용 중인 헤드라인을 입력해주세요" : "현재 사용 중인 광고 문구를 입력해주세요";
+  const bPlaceholder = isHeadline ? "비교할 헤드라인을 입력해주세요" : "비교할 광고 문구를 입력해주세요";
 
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
+      <div className="flex items-center gap-2.5 mb-5">
         <div style={{ width: 40, height: 40, borderRadius: 10, background: "var(--w-primary-soft)", color: "var(--w-primary-normal)", display: "grid", placeItems: "center" }}>
           <Icon name={axisInfo.icon} size={20} />
         </div>
         <div>
-          <div style={{ font: "700 15px/1.3 var(--w-font-sans)", color: "var(--w-fg-strong)" }}>{axisInfo.label} A/B 테스트</div>
-          <div style={{ font: "500 12.5px/1.3 var(--w-font-sans)", color: "var(--w-fg-neutral)", marginTop: 2 }}>새로 광고 만들면서 시작</div>
+          <div className="font-bold text-[15px] leading-[1.3] text-[var(--w-fg-strong)]">{axisInfo.label} A/B 테스트</div>
+          <div className="font-medium text-[12.5px] leading-[1.3] text-[var(--w-fg-neutral)] mt-0.5">A안과 B안을 입력하거나 AI로 생성해요</div>
         </div>
       </div>
 
-      <div className="card" style={{ marginBottom: 20 }}>
-        <h3 className="section-title">광고 만들기 진행 순서</h3>
-        <hr className="divider" />
-        <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-          {steps.map((s, i) => (
-            <div key={i} style={{ display: "flex", gap: 14, padding: "12px 0", borderBottom: i < steps.length - 1 ? "1px solid var(--w-line-alternative)" : "none" }}>
-              <div style={{
-                width: 24, height: 24, borderRadius: "50%", background: "var(--w-primary-soft)", color: "var(--w-primary-press)",
-                font: "700 11.5px/1 var(--w-font-sans)", display: "grid", placeItems: "center", flex: "0 0 auto",
-              }}>
-                {i + 1}
-              </div>
-              <span style={{ font: "500 13.5px/1.5 var(--w-font-sans)", color: "var(--w-fg-normal)", paddingTop: 2 }}>{s}</span>
-            </div>
-          ))}
+      {/* A안 */}
+      <div className="mb-3 p-[14px_16px] rounded-xl border-[1.5px] border-[var(--w-line-normal)] bg-[var(--w-bg-normal)]">
+        <div className="flex items-center gap-2 mb-2">
+          <span style={{ width: 22, height: 22, borderRadius: "50%", background: "var(--w-bg-alternative)", border: "1.5px solid var(--w-line-normal)", color: "var(--w-fg-neutral)", display: "grid", placeItems: "center" }} className="font-bold text-[11px] leading-none">A</span>
+          <span className="font-semibold text-[12.5px] leading-none text-[var(--w-fg-neutral)]">A안 — 기준 소재</span>
         </div>
+        {isHeadline ? (
+          <input type="text" value={variantA} onChange={(e) => setVariantA(e.target.value)} placeholder={aPlaceholder}
+            className="w-full bg-transparent border-none p-0 outline-none font-semibold text-[14px] leading-[1.4] text-[var(--w-fg-strong)]" />
+        ) : (
+          <textarea value={variantA} onChange={(e) => setVariantA(e.target.value)} placeholder={aPlaceholder} rows={3}
+            className="w-full bg-transparent border-none p-0 outline-none font-medium text-[13px] leading-[1.55] text-[var(--w-fg-strong)] resize-y" />
+        )}
       </div>
 
-      <button
-        className="btn btn--primary"
+      {/* B안 */}
+      <div className="p-[14px_16px] rounded-xl border-[1.5px] border-[var(--w-primary-normal)] bg-[var(--w-bg-normal)]">
+        <div className="flex items-center gap-2 mb-2">
+          <span style={{ width: 22, height: 22, borderRadius: "50%", background: "var(--w-primary-soft)", border: "1.5px solid var(--w-primary-normal)", color: "var(--w-primary-press)", display: "grid", placeItems: "center" }} className="font-bold text-[11px] leading-none">B</span>
+          <span className="font-semibold text-[12.5px] leading-none text-[var(--w-primary-press)]">B안 — 비교할 소재</span>
+        </div>
+        {isHeadline ? (
+          <input type="text" value={variantB} onChange={(e) => setVariantB(e.target.value)} placeholder={bPlaceholder}
+            className="w-full bg-transparent border-none p-0 outline-none font-semibold text-[14px] leading-[1.4] text-[var(--w-fg-strong)]" />
+        ) : (
+          <textarea value={variantB} onChange={(e) => setVariantB(e.target.value)} placeholder={bPlaceholder} rows={3}
+            className="w-full bg-transparent border-none p-0 outline-none font-medium text-[13px] leading-[1.55] text-[var(--w-fg-strong)] resize-y" />
+        )}
+      </div>
+      <AiGeneratePanel axis={axis} onSelect={setVariantB} />
+
+      <Button
+        variant="primary"
         type="button"
-        onClick={() => router.push("/create")}
-        style={{ width: "100%" }}
+        disabled={!variantA.trim() || !variantB.trim()}
+        onClick={() => router.push("/ab-tests")}
+        className="w-full"
+        title={!variantA.trim() || !variantB.trim() ? "A안과 B안을 모두 입력해주세요" : undefined}
       >
-        <Icon name="sparkles" size={15} /> 광고 만들기로 이동
-      </button>
+        <Icon name="chart" size={14} /> A/B 테스트 시작
+      </Button>
     </div>
   );
 }
@@ -339,26 +485,25 @@ function ExistingConfig({ axis }: { axis: AxisType }) {
   );
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+    <div className="flex flex-col gap-5">
       {/* 축 뱃지 */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      <div className="flex items-center gap-2.5">
         <div style={{ width: 36, height: 36, borderRadius: 10, background: "var(--w-primary-soft)", color: "var(--w-primary-normal)", display: "grid", placeItems: "center" }}>
           <Icon name={axisInfo.icon} size={18} />
         </div>
         <div>
-          <div style={{ font: "700 14px/1.3 var(--w-font-sans)", color: "var(--w-fg-strong)" }}>{axisInfo.label} 비교</div>
-          <div style={{ font: "500 12.5px/1.3 var(--w-font-sans)", color: "var(--w-fg-neutral)", marginTop: 2 }}>{axisInfo.desc}</div>
+          <div className="font-bold text-[14px] leading-[1.3] text-[var(--w-fg-strong)]">{axisInfo.label} 비교</div>
+          <div className="font-medium text-[12.5px] leading-[1.3] text-[var(--w-fg-neutral)] mt-0.5">{axisInfo.desc}</div>
         </div>
       </div>
 
       {/* 캠페인 선택 */}
       <div>
-        <div style={{ font: "600 13px/1.3 var(--w-font-sans)", color: "var(--w-fg-strong)", marginBottom: 8 }}>기준 캠페인 선택</div>
+        <div className="font-semibold text-[13px] leading-[1.3] text-[var(--w-fg-strong)] mb-2">기준 캠페인 선택</div>
         <select
-          className="input"
           value={campaignId}
           onChange={(e) => handleCampaignSelect(e.target.value)}
-          style={{ width: "100%" }}
+          className="w-full bg-[var(--w-bg-elevated)] border border-[var(--w-line-normal)] rounded-xl px-3.5 py-3 font-medium text-[14px] leading-[1.5] text-[var(--w-fg-strong)] tracking-[0.004em] outline-none transition-[border-color,box-shadow] duration-[120ms] focus:border-[var(--w-primary-normal)] focus:shadow-[0_0_0_4px_rgba(0,102,255,0.14)] placeholder:text-[var(--w-fg-alternative)] appearance-none"
         >
           <option value="">캠페인을 선택해주세요</option>
           {MOCK_CAMPAIGN_SUMMARIES.map((c) => (
@@ -366,12 +511,14 @@ function ExistingConfig({ axis }: { axis: AxisType }) {
           ))}
         </select>
         {campaign && (
-          <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 6 }}>
-            <span className={`chip chip--${campaign.status === "live" ? "live" : campaign.status === "paused" ? "paused" : "neutral"}`}>
-              <span className="chip__dot" />
+          <div className="mt-2 flex items-center gap-1.5">
+            <Chip
+              variant={campaign.status === "live" ? "live" : campaign.status === "paused" ? "paused" : "neutral"}
+              dot
+            >
               {campaign.status === "live" ? "게재 중" : campaign.status === "paused" ? "일시정지" : campaign.status}
-            </span>
-            <span style={{ font: "500 12px/1 var(--w-font-sans)", color: "var(--w-fg-neutral)" }}>{campaign.goal ?? "—"}</span>
+            </Chip>
+            <span className="font-medium text-[12px] leading-none text-[var(--w-fg-neutral)]">{campaign.goal ?? "—"}</span>
           </div>
         )}
       </div>
@@ -397,32 +544,32 @@ function ExistingConfig({ axis }: { axis: AxisType }) {
       )}
 
       {/* 안내 */}
-      <div style={{ padding: "10px 14px", borderRadius: 8, background: "rgba(255,146,0,0.08)", border: "1px solid rgba(255,146,0,0.22)", display: "flex", alignItems: "flex-start", gap: 8 }}>
+      <div className="py-2.5 px-3.5 rounded-lg flex items-start gap-2" style={{ background: "rgba(255,146,0,0.08)", border: "1px solid rgba(255,146,0,0.22)" }}>
         <Icon name="info" size={14} style={{ color: "var(--w-status-cautionary)", flex: "0 0 auto", marginTop: 1 }} />
-        <span style={{ font: "500 12.5px/1.5 var(--w-font-sans)", color: "var(--w-fg-neutral)" }}>
+        <span className="font-medium text-[12.5px] leading-[1.5] text-[var(--w-fg-neutral)]">
           실제 광고 집행은 Meta 광고 관리자에서 이루어져요. AdFlow는 성과 데이터를 가져와 결과를 보여줘요.
         </span>
       </div>
 
       {/* 액션 */}
-      <div style={{ display: "flex", gap: 10 }}>
-        <button
-          className="btn btn--primary"
+      <div className="flex gap-2.5">
+        <Button
+          variant="primary"
           type="button"
           disabled={!canSubmit}
-          style={{ flex: 1 }}
+          className="flex-1"
           title={canSubmit ? undefined : "캠페인과 A안·B안을 모두 입력해주세요"}
           onClick={() => router.push("/ab-tests")}
         >
           <Icon name="chart" size={14} /> A/B 테스트 시작
-        </button>
-        <button
-          className="btn btn--secondary"
+        </Button>
+        <Button
+          variant="secondary"
           type="button"
           onClick={() => router.push("/ab-tests")}
         >
           취소
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -436,23 +583,29 @@ function TextVariants({ axis, variantA, variantB, onChangeA, onChangeB, locked }
   const placeholder = isHeadline ? "헤드라인 문구를 입력해주세요" : "카피 문구를 입력해주세요";
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+    <div className="flex flex-col gap-3">
       {/* A안 */}
-      <div style={{ padding: "14px 16px", borderRadius: 12, border: "1.5px solid var(--w-line-normal)", background: locked ? "var(--w-bg-alternative)" : "var(--w-bg-normal)", opacity: locked ? 0.55 : 1 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-          <span style={{ width: 22, height: 22, borderRadius: "50%", background: "var(--w-bg-alternative)", border: "1.5px solid var(--w-line-normal)", font: "700 11px/1 var(--w-font-sans)", color: "var(--w-fg-neutral)", display: "grid", placeItems: "center" }}>A</span>
-          <span style={{ font: "600 12.5px/1 var(--w-font-sans)", color: "var(--w-fg-neutral)" }}>A안 {locked ? "" : "— 현재 광고에서 자동으로 가져왔어요"}</span>
-          {!locked && variantA && <span className="chip chip--neutral" style={{ marginLeft: "auto", fontSize: 11 }}>자동 채움</span>}
+      <div
+        className="p-[14px_16px] rounded-xl border-[1.5px]"
+        style={{
+          border: "1.5px solid var(--w-line-normal)",
+          background: locked ? "var(--w-bg-alternative)" : "var(--w-bg-normal)",
+          opacity: locked ? 0.55 : 1,
+        }}
+      >
+        <div className="flex items-center gap-2 mb-2">
+          <span style={{ width: 22, height: 22, borderRadius: "50%", background: "var(--w-bg-alternative)", border: "1.5px solid var(--w-line-normal)", color: "var(--w-fg-neutral)", display: "grid", placeItems: "center" }} className="font-bold text-[11px] leading-none">A</span>
+          <span className="font-semibold text-[12.5px] leading-none text-[var(--w-fg-neutral)]">A안 {locked ? "" : "— 현재 광고에서 자동으로 가져왔어요"}</span>
+          {!locked && variantA && <Chip variant="neutral" className="ml-auto text-[11px]">자동 채움</Chip>}
         </div>
         {isHeadline ? (
           <input
             type="text"
-            className="input"
             value={variantA}
             onChange={(e) => onChangeA(e.target.value)}
             placeholder={locked ? "캠페인을 먼저 선택해주세요" : placeholder}
             disabled={locked}
-            style={{ width: "100%", background: "transparent", border: "none", padding: 0, font: "600 14px/1.4 var(--w-font-sans)", color: "var(--w-fg-strong)", outline: "none" }}
+            className="w-full bg-transparent border-none p-0 outline-none font-semibold text-[14px] leading-[1.4] text-[var(--w-fg-strong)]"
           />
         ) : (
           <textarea
@@ -461,26 +614,32 @@ function TextVariants({ axis, variantA, variantB, onChangeA, onChangeB, locked }
             placeholder={locked ? "캠페인을 먼저 선택해주세요" : placeholder}
             disabled={locked}
             rows={3}
-            style={{ width: "100%", background: "transparent", border: "none", padding: 0, font: "500 13px/1.55 var(--w-font-sans)", color: "var(--w-fg-strong)", outline: "none", resize: "vertical" }}
+            className="w-full bg-transparent border-none p-0 outline-none font-medium text-[13px] leading-[1.55] text-[var(--w-fg-strong)] resize-y"
           />
         )}
       </div>
 
       {/* B안 */}
-      <div style={{ padding: "14px 16px", borderRadius: 12, border: "1.5px solid var(--w-primary-normal)", background: locked ? "var(--w-bg-alternative)" : "var(--w-bg-normal)", opacity: locked ? 0.55 : 1 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-          <span style={{ width: 22, height: 22, borderRadius: "50%", background: "var(--w-primary-soft)", border: "1.5px solid var(--w-primary-normal)", font: "700 11px/1 var(--w-font-sans)", color: "var(--w-primary-press)", display: "grid", placeItems: "center" }}>B</span>
-          <span style={{ font: "600 12.5px/1 var(--w-font-sans)", color: "var(--w-primary-press)" }}>B안 — 비교할 내용을 입력해주세요</span>
+      <div
+        className="p-[14px_16px] rounded-xl border-[1.5px]"
+        style={{
+          border: "1.5px solid var(--w-primary-normal)",
+          background: locked ? "var(--w-bg-alternative)" : "var(--w-bg-normal)",
+          opacity: locked ? 0.55 : 1,
+        }}
+      >
+        <div className="flex items-center gap-2 mb-2">
+          <span style={{ width: 22, height: 22, borderRadius: "50%", background: "var(--w-primary-soft)", border: "1.5px solid var(--w-primary-normal)", color: "var(--w-primary-press)", display: "grid", placeItems: "center" }} className="font-bold text-[11px] leading-none">B</span>
+          <span className="font-semibold text-[12.5px] leading-none text-[var(--w-primary-press)]">B안 — 비교할 내용을 입력해주세요</span>
         </div>
         {isHeadline ? (
           <input
             type="text"
-            className="input"
             value={variantB}
             onChange={(e) => onChangeB(e.target.value)}
             placeholder={locked ? "캠페인을 먼저 선택해주세요" : placeholder}
             disabled={locked}
-            style={{ width: "100%", background: "transparent", border: "none", padding: 0, font: "600 14px/1.4 var(--w-font-sans)", color: "var(--w-fg-strong)", outline: "none" }}
+            className="w-full bg-transparent border-none p-0 outline-none font-semibold text-[14px] leading-[1.4] text-[var(--w-fg-strong)]"
           />
         ) : (
           <textarea
@@ -489,10 +648,11 @@ function TextVariants({ axis, variantA, variantB, onChangeA, onChangeB, locked }
             placeholder={locked ? "캠페인을 먼저 선택해주세요" : placeholder}
             disabled={locked}
             rows={3}
-            style={{ width: "100%", background: "transparent", border: "none", padding: 0, font: "500 13px/1.55 var(--w-font-sans)", color: "var(--w-fg-strong)", outline: "none", resize: "vertical" }}
+            className="w-full bg-transparent border-none p-0 outline-none font-medium text-[13px] leading-[1.55] text-[var(--w-fg-strong)] resize-y"
           />
         )}
       </div>
+      {!locked && <AiGeneratePanel axis={axis as "headline" | "primary_text"} onSelect={onChangeB} />}
     </div>
   );
 }
@@ -502,7 +662,7 @@ function ImageVariants({ imageAUrl, imageBUrl, onChangeA, onChangeB, locked }: {
   onChangeA: (v: string) => void; onChangeB: (v: string) => void; locked: boolean;
 }) {
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, opacity: locked ? 0.55 : 1 }}>
+    <div className="grid grid-cols-2 gap-4" style={{ opacity: locked ? 0.55 : 1 }}>
       <ImageVariantBox
         label="A"
         labelColor={{ bg: "var(--w-bg-alternative)", border: "var(--w-line-normal)", text: "var(--w-fg-neutral)", accent: "var(--w-line-normal)" }}
@@ -532,13 +692,13 @@ function ImageVariantBox({ label, labelColor, url, placeholder, onChange, locked
   locked: boolean;
 }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-        <span style={{ width: 22, height: 22, borderRadius: "50%", background: labelColor.bg, border: `1.5px solid ${labelColor.border}`, font: "700 11px/1 var(--w-font-sans)", color: labelColor.text, display: "grid", placeItems: "center" }}>{label}</span>
-        <span style={{ font: "600 12.5px/1 var(--w-font-sans)", color: labelColor.text }}>{label}안</span>
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-1.5">
+        <span style={{ width: 22, height: 22, borderRadius: "50%", background: labelColor.bg, border: `1.5px solid ${labelColor.border}`, color: labelColor.text, display: "grid", placeItems: "center" }} className="font-bold text-[11px] leading-none">{label}</span>
+        <span className="font-semibold text-[12.5px] leading-none" style={{ color: labelColor.text }}>{label}안</span>
       </div>
       {url ? (
-        <div style={{ position: "relative" }}>
+        <div className="relative">
           <img src={url} alt={`${label}안`} style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 10, border: `2px solid ${labelColor.accent}` }} />
           <button
             type="button"
@@ -556,7 +716,7 @@ function ImageVariantBox({ label, labelColor, url, placeholder, onChange, locked
           alignItems: "center", justifyContent: "center", gap: 8, cursor: locked ? "not-allowed" : "pointer",
         }}>
           <Icon name="upload" size={22} style={{ color: locked ? "var(--w-fg-alternative)" : labelColor.text }} />
-          <span style={{ font: "500 12px/1.4 var(--w-font-sans)", color: "var(--w-fg-neutral)", textAlign: "center", padding: "0 8px" }}>
+          <span className="font-medium text-[12px] leading-[1.4] text-[var(--w-fg-neutral)] text-center px-2">
             {locked ? "캠페인을 먼저\n선택해주세요" : "이미지 URL 입력\n또는 파일 업로드"}
           </span>
           <input
@@ -572,10 +732,9 @@ function ImageVariantBox({ label, labelColor, url, placeholder, onChange, locked
       {!locked && !url && (
         <input
           type="text"
-          className="input"
           placeholder="또는 이미지 URL 붙여넣기"
           onChange={(e) => e.target.value && onChange(e.target.value)}
-          style={{ fontSize: 12 }}
+          className="w-full bg-[var(--w-bg-elevated)] border border-[var(--w-line-normal)] rounded-xl px-3.5 py-3 font-medium text-[14px] leading-[1.5] text-[var(--w-fg-strong)] tracking-[0.004em] outline-none transition-[border-color,box-shadow] duration-[120ms] focus:border-[var(--w-primary-normal)] focus:shadow-[0_0_0_4px_rgba(0,102,255,0.14)] placeholder:text-[var(--w-fg-alternative)] text-[12px]"
         />
       )}
     </div>
