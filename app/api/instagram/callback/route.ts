@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
   const clientSecret = process.env.INSTAGRAM_CLIENT_SECRET
   if (!clientId || !clientSecret) return fail("no_credentials")
 
-  const redirectUri = `${req.nextUrl.origin}/api/instagram/callback`
+  const redirectUri = process.env.INSTAGRAM_REDIRECT_URI ?? `${req.nextUrl.origin}/api/instagram/callback`
 
   try {
     // 단기 토큰 교환

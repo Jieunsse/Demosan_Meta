@@ -8,8 +8,7 @@ export async function GET(req: NextRequest) {
   if (!clientId) return NextResponse.json({ error: "Instagram credentials missing" }, { status: 503 })
 
   const state = randomBytes(16).toString("hex")
-  const origin = req.nextUrl.origin
-  const redirectUri = `${origin}/api/instagram/callback`
+  const redirectUri = process.env.INSTAGRAM_REDIRECT_URI ?? `${req.nextUrl.origin}/api/instagram/callback`
 
   const params = new URLSearchParams({
     force_reauth: "true",
