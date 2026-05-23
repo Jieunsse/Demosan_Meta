@@ -1,4 +1,4 @@
-const GRAPH = "https://graph.facebook.com/v20.0"
+import { GRAPH, getPageToken, getIgUserId } from "./instagram-graph"
 
 export type IgConversationSummary = {
   id: string
@@ -92,26 +92,6 @@ export const IG_THREAD_MOCK_DEFAULT: IgThread = { ...MOCK_THREADS.c1, mock: true
 export function getMockThread(conversationId: string): IgThread {
   const t = MOCK_THREADS[conversationId] ?? MOCK_THREADS.c1
   return { ...t, mock: true }
-}
-
-async function getPageToken(pageId: string, userToken: string): Promise<string | null> {
-  try {
-    const res = await fetch(`${GRAPH}/${pageId}?fields=access_token&access_token=${userToken}`)
-    const data = await res.json() as { access_token?: string }
-    return data.access_token ?? null
-  } catch {
-    return null
-  }
-}
-
-async function getIgUserId(pageId: string, pageToken: string): Promise<string | null> {
-  try {
-    const res = await fetch(`${GRAPH}/${pageId}?fields=instagram_business_account&access_token=${pageToken}`)
-    const data = await res.json() as { instagram_business_account?: { id: string } }
-    return data.instagram_business_account?.id ?? null
-  } catch {
-    return null
-  }
 }
 
 async function fetchParticipantPicture(igsid: string, token: string): Promise<string | undefined> {
