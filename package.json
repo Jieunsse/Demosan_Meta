@@ -5,6 +5,7 @@
   "description": "axhub 위에서 바로 굴러가는 Next.js 16 + React 19 + Tailwind 템플릿",
   "scripts": {
     "dev": "next dev --turbopack",
+    "https-dev": "next dev --turbopack --experimental-https",
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",

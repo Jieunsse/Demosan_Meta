@@ -3,12 +3,14 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import Icon, { type IconName } from "@shared/ui/Icon";
 import { useTheme, type ThemeChoice } from "@shared/lib/useTheme";
 import NotificationBell from "@shared/ui/NotificationBell";
 import LogoutButton from "@shared/ui/LogoutButton";
 import { fetchCampaigns } from "@entities/campaign/api";
+import { cn } from "@shared/lib/cn";
 
 interface NavItem {
   href: string;
@@ -24,14 +26,7 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
   {
     label: "메인",
     items: [
-      {
-        href: "/dashboard",
-        label: "대시보드",
-        icon: "grid",
-        children: [
-          { href: "/dashboard/business-portfolio", label: "비즈니스 포트폴리오", icon: "image" },
-        ],
-      },
+      { href: "/dashboard", label: "대시보드", icon: "grid" },
       { href: "/create", label: "광고 만들기", icon: "sparkles", chip: "AI" },
     ],
   },
@@ -42,7 +37,24 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
       { href: "/ab-tests", label: "A/B 테스트", icon: "chart" },
       { href: "/approvals", label: "승인 대기", icon: "clock", countVariant: "warn" },
       { href: "/library", label: "소재 라이브러리", icon: "folder" },
-      { href: "/posts", label: "Instagram 게시", icon: "image" },
+    ],
+  },
+  {
+    label: "채널 관리",
+    items: [
+      {
+        href: "/instagram",
+        label: "Instagram",
+        icon: "instagram",
+        children: [
+          { href: "/instagram", label: "인사이트", icon: "chart" },
+          { href: "/instagram/posts", label: "게시", icon: "image" },
+          { href: "/instagram/stories", label: "스토리", icon: "play" },
+          { href: "/instagram/partnerships", label: "파트너십", icon: "users" },
+          { href: "/instagram/messages", label: "메시지", icon: "message" },
+        ],
+      },
+      { href: "/facebook", label: "Facebook", icon: "facebook", chip: "Beta" },
     ],
   },
   {
@@ -66,37 +78,31 @@ const COUNT_BASE =
   "ml-auto font-semibold text-[11px] leading-none [font-family:var(--w-font-mono)] px-[7px] py-[3px] rounded-full";
 
 function countClass(variant: "warn" | "primary" | undefined, active: boolean) {
-  if (variant === "warn") {
-    return `${COUNT_BASE} text-[#b06700] bg-[rgba(255,146,0,0.14)] dark:text-[#ffb24d] dark:bg-[rgba(255,146,0,0.18)]`;
-  }
-  if (variant === "primary" || active) {
-    return `${COUNT_BASE} text-[var(--w-primary-press)] bg-[rgba(0,102,255,0.10)]`;
-  }
-  return `${COUNT_BASE} text-[var(--w-fg-alternative)] bg-[var(--w-bg-alternative)]`;
+  return cn(COUNT_BASE, {
+    "text-[#b06700] bg-[rgba(255,146,0,0.14)] dark:text-[#ffb24d] dark:bg-[rgba(255,146,0,0.18)]":
+      variant === "warn",
+    "text-[var(--w-primary-press)] bg-[rgba(0,102,255,0.10)]":
+      variant === "primary" || active,
+    "text-[var(--w-fg-alternative)] bg-[var(--w-bg-alternative)]":
+      variant !== "warn" && variant !== "primary" && !active,
+  });
 }
 
-function linkClass(active: boolean, isSub = false) {
-  const base = [
+function linkClass(active: boolean, isSub = false, isParent = false) {
+  return cn(
     "flex items-center gap-[11px] rounded-lg",
     "font-semibold leading-none tracking-[-0.003em]",
     "cursor-pointer border-none text-left",
     "transition-[background,color] duration-[120ms]",
     isSub ? "h-[34px] pl-9 pr-3 text-[12.5px]" : "h-[38px] px-3 text-[13.5px]",
-  ];
-  if (active) {
-    base.push("bg-[var(--w-primary-soft)] text-[var(--w-primary-press)]");
-  } else if (isSub) {
-    base.push(
-      "bg-transparent text-[var(--w-fg-neutral)]",
-      "hover:bg-[var(--w-bg-neutral)] hover:text-[var(--w-fg-strong)]"
-    );
-  } else {
-    base.push(
-      "bg-transparent text-[#121212] dark:text-[var(--w-fg-neutral)]",
-      "hover:bg-[var(--w-bg-neutral)] hover:text-[var(--w-fg-strong)]"
-    );
-  }
-  return base.join(" ");
+    active
+      ? isParent
+        ? "bg-transparent text-[var(--w-primary-press)] hover:bg-[var(--w-bg-neutral)]"
+        : "bg-[var(--w-primary-soft)] text-[var(--w-primary-press)]"
+      : isSub
+        ? "bg-transparent text-[var(--w-fg-neutral)] hover:bg-[var(--w-bg-neutral)] hover:text-[var(--w-fg-strong)]"
+        : "bg-transparent text-[#121212] dark:text-[var(--w-fg-neutral)] hover:bg-[var(--w-bg-neutral)] hover:text-[var(--w-fg-strong)]"
+  );
 }
 
 export default function Sidebar() {
@@ -110,6 +116,40 @@ export default function Sidebar() {
   const adAccountName = session?.adAccountName;
   const pageName = session?.pageName;
   const connected = !!(adAccountName && pageName);
+
+  const [openItems, setOpenItems] = useState<Set<string>>(() => {
+    const open = new Set<string>();
+    for (const group of NAV_GROUPS) {
+      for (const item of group.items) {
+        if (item.children?.some((c) => pathname === c.href || pathname.startsWith(c.href + "/"))) {
+          open.add(item.href);
+        }
+      }
+    }
+    return open;
+  });
+
+  useEffect(() => {
+    for (const group of NAV_GROUPS) {
+      for (const item of group.items) {
+        if (item.children?.some((c) => pathname === c.href || pathname.startsWith(c.href + "/"))) {
+          setOpenItems((prev) => {
+            if (prev.has(item.href)) return prev;
+            return new Set([...prev, item.href]);
+          });
+        }
+      }
+    }
+  }, [pathname]);
+
+  function toggleItem(href: string) {
+    setOpenItems((prev) => {
+      const next = new Set(prev);
+      if (next.has(href)) next.delete(href);
+      else next.add(href);
+      return next;
+    });
+  }
 
   // /approvals 배지 — review + issue 캠페인 합. 같은 queryKey 로 /campaigns·/approvals 페이지와 캐시 공유.
   // 광고 계정 연결 전(=session 없거나 미연결)엔 fetch 안 함 (401 무한 호출 회피).
@@ -146,34 +186,59 @@ export default function Sidebar() {
         {NAV_GROUPS.map((group, gi) => (
           <div key={group.label}>
             <div
-              className={`font-semibold text-[10.5px] leading-none uppercase tracking-[0.08em] text-[var(--w-fg-alternative)] px-3 pb-1.5 ${gi === 0 ? "pt-3.5" : "pt-[18px]"}`}
+              className={cn(
+                "font-semibold text-[10.5px] leading-none uppercase tracking-[0.08em] text-[var(--w-fg-alternative)] px-3 pb-1.5",
+                gi === 0 ? "pt-3.5" : "pt-[18px]"
+              )}
             >
               {group.label}
             </div>
             {group.items.map((it) => {
               const hasChildren = !!it.children?.length;
-              const active = hasChildren
-                ? pathname === it.href
-                : pathname === it.href || pathname.startsWith(it.href + "/");
+              const active = pathname === it.href || pathname.startsWith(it.href + "/");
               const liveCount = it.href === "/approvals" ? approvalsCount : it.count;
+              const isOpen = hasChildren && openItems.has(it.href);
               return (
                 <div key={it.href}>
-                  <Link href={it.href} className={linkClass(active)}>
-                    <span className="w-[18px] h-[18px] grid place-items-center">
-                      <Icon name={it.icon} size={18} />
-                    </span>
-                    <span>{it.label}</span>
-                    {it.chip && (
-                      <span className={countClass(undefined, active)}>{it.chip}</span>
-                    )}
-                    {liveCount != null && liveCount > 0 && (
-                      <span className={countClass(it.countVariant, active)}>{liveCount}</span>
-                    )}
-                  </Link>
-                  {hasChildren &&
-                    it.children!.map((child) => {
-                      const childActive =
-                        pathname === child.href || pathname.startsWith(child.href + "/");
+                  {hasChildren ? (
+                    <button
+                      type="button"
+                      onClick={() => toggleItem(it.href)}
+                      className={cn(linkClass(active, false, true), "w-full")}
+                    >
+                      <span className="w-[18px] h-[18px] grid place-items-center">
+                        <Icon name={it.icon} size={18} />
+                      </span>
+                      <span>{it.label}</span>
+                      {it.chip && (
+                        <span className={countClass(undefined, active)}>{it.chip}</span>
+                      )}
+                      <span className={cn("ml-auto transition-transform duration-200", isOpen && "rotate-180")}>
+                        <Icon name="chev-down" size={14} />
+                      </span>
+                    </button>
+                  ) : (
+                    <Link href={it.href} className={linkClass(active)}>
+                      <span className="w-[18px] h-[18px] grid place-items-center">
+                        <Icon name={it.icon} size={18} />
+                      </span>
+                      <span>{it.label}</span>
+                      {it.chip && (
+                        <span className={countClass(undefined, active)}>{it.chip}</span>
+                      )}
+                      {liveCount != null && liveCount > 0 && (
+                        <span className={countClass(it.countVariant, active)}>{liveCount}</span>
+                      )}
+                    </Link>
+                  )}
+                  {hasChildren && isOpen && (() => {
+                    const bestMatch = it.children!.reduce<NavItem | null>((best, c) => {
+                      const matches = pathname === c.href || pathname.startsWith(c.href + "/");
+                      if (!matches) return best;
+                      return !best || c.href.length > best.href.length ? c : best;
+                    }, null);
+                    return it.children!.map((child) => {
+                      const childActive = child.href === bestMatch?.href;
                       return (
                         <Link key={child.href} href={child.href} className={linkClass(childActive, true)}>
                           <span className="w-4 h-4 grid place-items-center">
@@ -182,7 +247,8 @@ export default function Sidebar() {
                           <span>{child.label}</span>
                         </Link>
                       );
-                    })}
+                    });
+                  })()}
                 </div>
               );
             })}
@@ -227,11 +293,12 @@ export default function Sidebar() {
             <button
               key={b.id}
               onClick={() => setTheme(b.id)}
-              className={`flex-1 h-7 border-none rounded-full font-semibold text-xs leading-none cursor-pointer flex items-center justify-center gap-1.5 transition-[background,color] duration-[160ms] ${
+              className={cn(
+                "flex-1 h-7 border-none rounded-full font-semibold text-xs leading-none cursor-pointer flex items-center justify-center gap-1.5 transition-[background,color] duration-[160ms]",
                 theme === b.id
                   ? "bg-[var(--w-bg-elevated)] text-[var(--w-fg-strong)] shadow-[0_1px_2px_rgba(23,23,23,0.08)]"
                   : "bg-transparent text-[var(--w-fg-neutral)]"
-              }`}
+              )}
               title={b.label}
               type="button"
             >
@@ -255,11 +322,12 @@ export default function Sidebar() {
               </div>
               {userRole && (
                 <div
-                  className={`inline-flex items-center px-[7px] py-0.5 rounded-[20px] font-semibold text-[10px] leading-[1.4] mt-1 ${
+                  className={cn(
+                    "inline-flex items-center px-[7px] py-0.5 rounded-[20px] font-semibold text-[10px] leading-[1.4] mt-1",
                     userRole === "팀장"
                       ? "bg-[rgba(0,102,255,0.12)] text-[var(--w-primary-normal)]"
                       : "bg-[var(--w-bg-neutral)] text-[var(--w-fg-neutral)]"
-                  }`}
+                  )}
                 >
                   {userRole}
                 </div>

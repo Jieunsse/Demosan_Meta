@@ -1,4 +1,4 @@
-const GRAPH = "https://graph.facebook.com/v20.0"
+import { GRAPH, getPageToken, getIgUserId } from "./instagram-graph"
 
 export type IgComment = {
   id: string
@@ -30,20 +30,6 @@ export const IG_COMMENTS_MOCK: Record<string, IgComment[]> = {
 
 export function getMockComments(mediaId: string): IgComment[] {
   return IG_COMMENTS_MOCK[mediaId] ?? IG_COMMENTS_MOCK.default
-}
-
-async function getPageToken(pageId: string, userToken: string): Promise<string | null> {
-  const res = await fetch(`${GRAPH}/${pageId}?fields=access_token&access_token=${userToken}`)
-  if (!res.ok) return null
-  const data = await res.json() as { access_token?: string }
-  return data.access_token ?? null
-}
-
-async function getIgUserId(pageId: string, pageToken: string): Promise<string | null> {
-  const res = await fetch(`${GRAPH}/${pageId}?fields=instagram_business_account&access_token=${pageToken}`)
-  if (!res.ok) return null
-  const data = await res.json() as { instagram_business_account?: { id: string } }
-  return data.instagram_business_account?.id ?? null
 }
 
 async function resolveIgToken(opts: {

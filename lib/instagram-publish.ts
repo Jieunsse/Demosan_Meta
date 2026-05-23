@@ -1,4 +1,5 @@
-const GRAPH = "https://graph.facebook.com/v20.0"
+import { GRAPH, getPageToken, getIgUserId } from "./instagram-graph"
+
 const STATUS_POLL_INTERVAL_MS = 1500
 const STATUS_POLL_MAX = 8
 
@@ -41,20 +42,6 @@ const RECENT_MEDIA_MOCK: RecentMediaItem[] = [
     timestamp: "2026-05-20T09:10:00Z",
   },
 ]
-
-async function getPageToken(pageId: string, userToken: string): Promise<string | null> {
-  const res = await fetch(`${GRAPH}/${pageId}?fields=access_token&access_token=${userToken}`)
-  if (!res.ok) return null
-  const data = await res.json() as { access_token?: string }
-  return data.access_token ?? null
-}
-
-async function getIgUserId(pageId: string, pageToken: string): Promise<string | null> {
-  const res = await fetch(`${GRAPH}/${pageId}?fields=instagram_business_account&access_token=${pageToken}`)
-  if (!res.ok) return null
-  const data = await res.json() as { instagram_business_account?: { id: string } }
-  return data.instagram_business_account?.id ?? null
-}
 
 // Page token 경유 IG id/token 해석. igAccessToken 이 있으면 그대로 쓰고, 없을 때만 호출.
 async function resolveIgCreds(opts: {

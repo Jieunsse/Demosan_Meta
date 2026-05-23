@@ -3,18 +3,18 @@
 
 import type { Insights } from "@entities/insights/types";
 import type { KpiTarget, WinnerEvidence } from "@entities/insights/winner-types";
+import {
+  MIN_IMPRESSIONS,
+  MIN_DAYS,
+  GOOD_CTR_PCT,
+  HIGH_CPC_KRW,
+  HIGH_FREQUENCY,
+  HIGH_CPM_KRW,
+  GOOD_ENGAGEMENT_RATE,
+} from "@entities/insights/thresholds";
 import type { MetaObjectiveParam } from "./meta-ads";
 
 export type { KpiTarget, WinnerEvidence };
-
-// Mirrors constants in src/entities/insights/optimization.ts.
-const MIN_IMPRESSIONS = 1_000;
-const MIN_DAYS = 3;
-const GOOD_CTR_PCT = 2.0;
-const HIGH_CPC_KRW = 2000;
-const HIGH_FREQUENCY = 3.0;
-const HIGH_CPM_KRW = 8000;
-const GOOD_ENGAGEMENT_RATE = 2.5;
 
 function readKpi(ins: Insights, kpi: string): number {
   switch (kpi) {

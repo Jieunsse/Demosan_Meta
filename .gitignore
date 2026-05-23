@@ -52,3 +52,5 @@ next-env.d.ts
 /public/uploads/
 # axhub quality state (local-only)
 .axhub-state/
+
+certificates

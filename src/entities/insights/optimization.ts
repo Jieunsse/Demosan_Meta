@@ -214,25 +214,29 @@ export type Suggestion =
       detail: string[];
     };
 
-const MIN_IMPRESSIONS_FOR_JUDGEMENT = 1000; // below this = insufficient data, defer judgement
-const LOW_CTR_PCT = 0.8;                     // traffic-objective underperformance threshold
-const GOOD_CTR_PCT = 2.0;                    // traffic-objective good performance, suggests scaling
-const HIGH_CPC_KRW = 2000;                   // CPC above this triggers an inefficiency warning
+import {
+  MIN_IMPRESSIONS,
+  MIN_DAYS as AUTOMATION_MIN_DAYS,
+  GOOD_CTR_PCT,
+  HIGH_CPC_KRW,
+  HIGH_FREQUENCY,
+  HIGH_CPM_KRW,
+  GOOD_ENGAGEMENT_RATE,
+} from "./thresholds";
+
+const MIN_IMPRESSIONS_FOR_JUDGEMENT = MIN_IMPRESSIONS;
+const LOW_CTR_PCT = 0.8;
 const BUDGET_BUMP_RATIO = 1.3;               // +30% bump — small enough to avoid re-entering Meta's learning phase
 const MAX_SUGGESTED_DAILY_BUDGET = 1_000_000;
 
 const AUTOMATION_MIN_IMPRESSIONS = 10_000;
 const AUTOMATION_MIN_CLICKS = 50;  // near Meta's ~50-event learning phase exit
-const AUTOMATION_MIN_DAYS = 3;
 
 const won = (n: number) => `₩${Math.round(n).toLocaleString("ko-KR")}`;
 const pct = (n: number) => `${n.toFixed(2)}%`;
 
 const LOW_REACH_REL_GROWTH = 0.05;   // daily reach growth below 5% = stagnant
-const HIGH_FREQUENCY = 3.0;          // above 3 impressions/person = ad fatigue
-const HIGH_CPM_KRW = 8000;           // CPM above this is expensive for awareness
 const LOW_ENGAGEMENT_RATE = 0.5;     // reactions/impressions below 0.5% = underperforming
-const GOOD_ENGAGEMENT_RATE = 2.5;    // above 2.5% = good, suggests scaling
 
 export function suggestOptimizations(
   ins: OptimizationInsights,

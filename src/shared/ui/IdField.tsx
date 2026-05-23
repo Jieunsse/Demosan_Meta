@@ -4,6 +4,7 @@ import { useState } from "react";
 import { maskId } from "@shared/lib/format";
 import { useToast } from "@shared/ui/Toast";
 import Icon from "@shared/ui/Icon";
+import { cn } from "@shared/lib/cn";
 
 type Props = {
   label: string;
@@ -15,6 +16,10 @@ export default function IdField({ label, id, desc }: Props) {
   const showToast = useToast();
   const [revealed, setRevealed] = useState(false);
   const valid = !!id && id !== "—";
+  const iconBtnClass = cn(
+    "w-7 h-7 rounded-lg grid place-items-center border-none bg-transparent cursor-pointer",
+    "text-[var(--w-fg-neutral)] hover:bg-[var(--w-bg-neutral)] transition-colors duration-[120ms]"
+  );
   const display = !valid ? "—" : revealed ? id : maskId(id);
 
   const handleCopy = async () => {
@@ -36,7 +41,7 @@ export default function IdField({ label, id, desc }: Props) {
           <div className="flex items-center gap-0.5 flex-none">
             <button
               type="button"
-              className="w-7 h-7 rounded-lg grid place-items-center text-[var(--w-fg-neutral)] hover:bg-[var(--w-bg-neutral)] transition-colors duration-[120ms] border-none bg-transparent cursor-pointer"
+              className={iconBtnClass}
               onClick={() => setRevealed((v) => !v)}
               aria-label={revealed ? "ID 숨기기" : "ID 확인하기"}
               title={revealed ? "숨기기" : "확인하기"}
@@ -45,7 +50,7 @@ export default function IdField({ label, id, desc }: Props) {
             </button>
             <button
               type="button"
-              className="w-7 h-7 rounded-lg grid place-items-center text-[var(--w-fg-neutral)] hover:bg-[var(--w-bg-neutral)] transition-colors duration-[120ms] border-none bg-transparent cursor-pointer"
+              className={iconBtnClass}
               onClick={handleCopy}
               aria-label="ID 복사"
               title="ID 복사"

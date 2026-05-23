@@ -1,4 +1,4 @@
-const GRAPH = "https://graph.facebook.com/v20.0"
+import { GRAPH, getPageToken, getIgUserId } from "./instagram-graph"
 
 export type IgPost = {
   id: string
@@ -50,26 +50,6 @@ export const IG_MOCK_POOR: IgAccountInsights = {
     { id: "ip4", mediaUrl: "https://picsum.photos/seed/ip4/200/200", caption: "브랜드 소개", likeCount: 12, commentCount: 0, savedCount: 2, timestamp: "2026-04-28T10:00:00Z" },
     { id: "ip5", mediaUrl: "https://picsum.photos/seed/ip5/200/200", caption: "5월 프로모션", likeCount: 21, commentCount: 1, savedCount: 1, timestamp: "2026-04-22T13:00:00Z" },
   ],
-}
-
-async function getPageToken(pageId: string, userToken: string): Promise<string | null> {
-  try {
-    const res = await fetch(`${GRAPH}/${pageId}?fields=access_token&access_token=${userToken}`)
-    const data = await res.json() as { access_token?: string }
-    return data.access_token ?? null
-  } catch {
-    return null
-  }
-}
-
-async function getIgUserId(pageId: string, pageToken: string): Promise<string | null> {
-  try {
-    const res = await fetch(`${GRAPH}/${pageId}?fields=instagram_business_account&access_token=${pageToken}`)
-    const data = await res.json() as { instagram_business_account?: { id: string } }
-    return data.instagram_business_account?.id ?? null
-  } catch {
-    return null
-  }
 }
 
 export type IgInsightsDebug = {
