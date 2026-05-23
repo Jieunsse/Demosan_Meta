@@ -5,6 +5,7 @@
 
 import { useRef } from "react";
 import Icon from "@shared/ui/Icon";
+import { cn } from "@shared/lib/cn";
 import { Button } from "@shared/ui/Button";
 import { useToast } from "@shared/ui/Toast";
 import { CTAS } from "@entities/creative/options";
@@ -54,7 +55,10 @@ export default function CreativePreview() {
           {!imageDataUrl && <Icon name="image" size={22} />}
         </div>
         <div className="flex-1 min-w-0">
-          <div className={`font-semibold text-[14px] leading-[1.4] ${hasCreative ? "text-[var(--w-fg-strong)]" : "text-[var(--w-fg-alternative)]"}`}>
+          <div className={cn(
+            "font-semibold text-[14px] leading-[1.4]",
+            hasCreative ? "text-[var(--w-fg-strong)]" : "text-[var(--w-fg-alternative)]"
+          )}>
             {hasCreative ? headline : "STEP 01에서 AI 소재를 먼저 만들어 주세요"}
           </div>
           <div className="font-medium text-[12px] leading-none text-[var(--w-fg-neutral)] mt-1.5">CTA · {ctaLabel}</div>

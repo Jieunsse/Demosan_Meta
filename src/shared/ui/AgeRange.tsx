@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef } from "react";
+import { cn } from "@shared/lib/cn";
 
 // Dual-thumb age slider — ported from the design bundle's primitives.jsx.
 export default function AgeRange({
@@ -17,6 +18,11 @@ export default function AgeRange({
   const [lo, hi] = value;
   const trackRef = useRef<HTMLDivElement>(null);
   const pct = (v: number) => ((v - min) / (max - min)) * 100;
+  const thumbClass = cn(
+    "absolute top-1/2 -translate-x-1/2 -translate-y-1/2",
+    "w-[22px] h-[22px] bg-white border-2 border-[var(--w-primary-normal)] rounded-full",
+    "shadow-[0_2px_6px_rgba(0,0,0,0.12)] cursor-grab active:cursor-grabbing"
+  );
 
   function start(which: "lo" | "hi", e: React.MouseEvent | React.TouchEvent) {
     e.preventDefault();
@@ -47,7 +53,7 @@ export default function AgeRange({
         <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-1 rounded-full bg-[var(--w-bg-neutral)]" />
         <div className="absolute top-1/2 -translate-y-1/2 h-1 rounded-full bg-[var(--w-primary-normal)]" style={{ left: pct(lo) + "%", right: 100 - pct(hi) + "%" }} />
         <div
-          className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 w-[22px] h-[22px] bg-white border-2 border-[var(--w-primary-normal)] rounded-full shadow-[0_2px_6px_rgba(0,0,0,0.12)] cursor-grab active:cursor-grabbing"
+          className={thumbClass}
           style={{ left: pct(lo) + "%" }}
           role="slider"
           aria-label="최소 연령"
@@ -58,7 +64,7 @@ export default function AgeRange({
           onTouchStart={(e) => start("lo", e)}
         />
         <div
-          className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 w-[22px] h-[22px] bg-white border-2 border-[var(--w-primary-normal)] rounded-full shadow-[0_2px_6px_rgba(0,0,0,0.12)] cursor-grab active:cursor-grabbing"
+          className={thumbClass}
           style={{ left: pct(hi) + "%" }}
           role="slider"
           aria-label="최대 연령"

@@ -10,9 +10,10 @@ import CompareBar from "./CompareBar";
 import Messages from "./Messages";
 import Stories from "./Stories";
 import PromotedContent from "./PromotedContent";
+import Partnerships from "./Partnerships";
 
 export type PortfolioTab = "instagram" | "facebook";
-export type IgView = "insights" | "messages" | "stories" | "promoted";
+export type IgView = "insights" | "messages" | "stories" | "promoted" | "partnerships";
 
 type Scenario = "good" | "poor";
 
@@ -73,6 +74,15 @@ export type PortfolioTabsProps = {
   onIgViewChange: (v: IgView) => void;
 };
 
+function tabBtn(active: boolean) {
+  return cn(
+    "border-none px-3.5 py-2 rounded-lg font-semibold text-[12.5px] leading-none cursor-pointer transition-[background,color] duration-[120ms]",
+    active
+      ? "bg-[var(--w-bg-elevated)] text-[var(--w-fg-strong)] shadow-[0_1px_2px_rgba(23,23,23,0.08)]"
+      : "bg-transparent text-[var(--w-fg-neutral)]"
+  );
+}
+
 export default function PortfolioTabs({ ig, fb, activeTab, onTabChange, igView, onIgViewChange }: PortfolioTabsProps) {
   const [igScenario, setIgScenario] = useState<Scenario>("good");
   const [fbScenario, setFbScenario] = useState<Scenario>("good");
@@ -108,24 +118,14 @@ export default function PortfolioTabs({ ig, fb, activeTab, onTabChange, igView, 
           role="tab"
           aria-selected={activeTab === "instagram"}
           onClick={() => onTabChange("instagram")}
-          className={cn(
-            "border-none px-3.5 py-2 rounded-lg font-semibold text-[12.5px] leading-none cursor-pointer transition-[background,color] duration-[120ms]",
-            activeTab === "instagram"
-              ? "bg-[var(--w-bg-elevated)] text-[var(--w-fg-strong)] shadow-[0_1px_2px_rgba(23,23,23,0.08)]"
-              : "bg-transparent text-[var(--w-fg-neutral)]"
-          )}
+          className={tabBtn(activeTab === "instagram")}
         >Instagram</button>
         <button
           type="button"
           role="tab"
           aria-selected={activeTab === "facebook"}
           onClick={() => onTabChange("facebook")}
-          className={cn(
-            "border-none px-3.5 py-2 rounded-lg font-semibold text-[12.5px] leading-none cursor-pointer transition-[background,color] duration-[120ms]",
-            activeTab === "facebook"
-              ? "bg-[var(--w-bg-elevated)] text-[var(--w-fg-strong)] shadow-[0_1px_2px_rgba(23,23,23,0.08)]"
-              : "bg-transparent text-[var(--w-fg-neutral)]"
-          )}
+          className={tabBtn(activeTab === "facebook")}
         >Facebook</button>
       </div>
 
@@ -137,49 +137,36 @@ export default function PortfolioTabs({ ig, fb, activeTab, onTabChange, igView, 
               role="tab"
               aria-selected={igView === "insights"}
               onClick={() => onIgViewChange("insights")}
-              className={cn(
-                "border-none px-3.5 py-2 rounded-lg font-semibold text-[12.5px] leading-none cursor-pointer transition-[background,color] duration-[120ms]",
-                igView === "insights"
-                  ? "bg-[var(--w-bg-elevated)] text-[var(--w-fg-strong)] shadow-[0_1px_2px_rgba(23,23,23,0.08)]"
-                  : "bg-transparent text-[var(--w-fg-neutral)]"
-              )}
+              className={tabBtn(igView === "insights")}
             >인사이트</button>
             <button
               type="button"
               role="tab"
               aria-selected={igView === "messages"}
               onClick={() => onIgViewChange("messages")}
-              className={cn(
-                "border-none px-3.5 py-2 rounded-lg font-semibold text-[12.5px] leading-none cursor-pointer transition-[background,color] duration-[120ms]",
-                igView === "messages"
-                  ? "bg-[var(--w-bg-elevated)] text-[var(--w-fg-strong)] shadow-[0_1px_2px_rgba(23,23,23,0.08)]"
-                  : "bg-transparent text-[var(--w-fg-neutral)]"
-              )}
+              className={tabBtn(igView === "messages")}
             >메시지</button>
             <button
               type="button"
               role="tab"
               aria-selected={igView === "stories"}
               onClick={() => onIgViewChange("stories")}
-              className={cn(
-                "border-none px-3.5 py-2 rounded-lg font-semibold text-[12.5px] leading-none cursor-pointer transition-[background,color] duration-[120ms]",
-                igView === "stories"
-                  ? "bg-[var(--w-bg-elevated)] text-[var(--w-fg-strong)] shadow-[0_1px_2px_rgba(23,23,23,0.08)]"
-                  : "bg-transparent text-[var(--w-fg-neutral)]"
-              )}
+              className={tabBtn(igView === "stories")}
             >스토리</button>
             <button
               type="button"
               role="tab"
               aria-selected={igView === "promoted"}
               onClick={() => onIgViewChange("promoted")}
-              className={cn(
-                "border-none px-3.5 py-2 rounded-lg font-semibold text-[12.5px] leading-none cursor-pointer transition-[background,color] duration-[120ms]",
-                igView === "promoted"
-                  ? "bg-[var(--w-bg-elevated)] text-[var(--w-fg-strong)] shadow-[0_1px_2px_rgba(23,23,23,0.08)]"
-                  : "bg-transparent text-[var(--w-fg-neutral)]"
-              )}
+              className={tabBtn(igView === "promoted")}
             >콘텐츠 홍보</button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={igView === "partnerships"}
+              onClick={() => onIgViewChange("partnerships")}
+              className={tabBtn(igView === "partnerships")}
+            >파트너십</button>
           </div>
           {igView === "insights" ? (
             <ChannelInsights
@@ -196,6 +183,8 @@ export default function PortfolioTabs({ ig, fb, activeTab, onTabChange, igView, 
             <Messages />
           ) : igView === "promoted" ? (
             <PromotedContent />
+          ) : igView === "partnerships" ? (
+            <Partnerships />
           ) : (
             <Stories />
           )}

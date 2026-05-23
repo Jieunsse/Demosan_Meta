@@ -9,6 +9,7 @@ import { useTheme, type ThemeChoice } from "@shared/lib/useTheme";
 import NotificationBell from "@shared/ui/NotificationBell";
 import LogoutButton from "@shared/ui/LogoutButton";
 import { fetchCampaigns } from "@entities/campaign/api";
+import { cn } from "@shared/lib/cn";
 
 interface NavItem {
   href: string;
@@ -66,37 +67,29 @@ const COUNT_BASE =
   "ml-auto font-semibold text-[11px] leading-none [font-family:var(--w-font-mono)] px-[7px] py-[3px] rounded-full";
 
 function countClass(variant: "warn" | "primary" | undefined, active: boolean) {
-  if (variant === "warn") {
-    return `${COUNT_BASE} text-[#b06700] bg-[rgba(255,146,0,0.14)] dark:text-[#ffb24d] dark:bg-[rgba(255,146,0,0.18)]`;
-  }
-  if (variant === "primary" || active) {
-    return `${COUNT_BASE} text-[var(--w-primary-press)] bg-[rgba(0,102,255,0.10)]`;
-  }
-  return `${COUNT_BASE} text-[var(--w-fg-alternative)] bg-[var(--w-bg-alternative)]`;
+  return cn(COUNT_BASE, {
+    "text-[#b06700] bg-[rgba(255,146,0,0.14)] dark:text-[#ffb24d] dark:bg-[rgba(255,146,0,0.18)]":
+      variant === "warn",
+    "text-[var(--w-primary-press)] bg-[rgba(0,102,255,0.10)]":
+      variant === "primary" || active,
+    "text-[var(--w-fg-alternative)] bg-[var(--w-bg-alternative)]":
+      variant !== "warn" && variant !== "primary" && !active,
+  });
 }
 
 function linkClass(active: boolean, isSub = false) {
-  const base = [
+  return cn(
     "flex items-center gap-[11px] rounded-lg",
     "font-semibold leading-none tracking-[-0.003em]",
     "cursor-pointer border-none text-left",
     "transition-[background,color] duration-[120ms]",
     isSub ? "h-[34px] pl-9 pr-3 text-[12.5px]" : "h-[38px] px-3 text-[13.5px]",
-  ];
-  if (active) {
-    base.push("bg-[var(--w-primary-soft)] text-[var(--w-primary-press)]");
-  } else if (isSub) {
-    base.push(
-      "bg-transparent text-[var(--w-fg-neutral)]",
-      "hover:bg-[var(--w-bg-neutral)] hover:text-[var(--w-fg-strong)]"
-    );
-  } else {
-    base.push(
-      "bg-transparent text-[#121212] dark:text-[var(--w-fg-neutral)]",
-      "hover:bg-[var(--w-bg-neutral)] hover:text-[var(--w-fg-strong)]"
-    );
-  }
-  return base.join(" ");
+    active
+      ? "bg-[var(--w-primary-soft)] text-[var(--w-primary-press)]"
+      : isSub
+        ? "bg-transparent text-[var(--w-fg-neutral)] hover:bg-[var(--w-bg-neutral)] hover:text-[var(--w-fg-strong)]"
+        : "bg-transparent text-[#121212] dark:text-[var(--w-fg-neutral)] hover:bg-[var(--w-bg-neutral)] hover:text-[var(--w-fg-strong)]"
+  );
 }
 
 export default function Sidebar() {
@@ -146,7 +139,10 @@ export default function Sidebar() {
         {NAV_GROUPS.map((group, gi) => (
           <div key={group.label}>
             <div
-              className={`font-semibold text-[10.5px] leading-none uppercase tracking-[0.08em] text-[var(--w-fg-alternative)] px-3 pb-1.5 ${gi === 0 ? "pt-3.5" : "pt-[18px]"}`}
+              className={cn(
+                "font-semibold text-[10.5px] leading-none uppercase tracking-[0.08em] text-[var(--w-fg-alternative)] px-3 pb-1.5",
+                gi === 0 ? "pt-3.5" : "pt-[18px]"
+              )}
             >
               {group.label}
             </div>
@@ -227,11 +223,12 @@ export default function Sidebar() {
             <button
               key={b.id}
               onClick={() => setTheme(b.id)}
-              className={`flex-1 h-7 border-none rounded-full font-semibold text-xs leading-none cursor-pointer flex items-center justify-center gap-1.5 transition-[background,color] duration-[160ms] ${
+              className={cn(
+                "flex-1 h-7 border-none rounded-full font-semibold text-xs leading-none cursor-pointer flex items-center justify-center gap-1.5 transition-[background,color] duration-[160ms]",
                 theme === b.id
                   ? "bg-[var(--w-bg-elevated)] text-[var(--w-fg-strong)] shadow-[0_1px_2px_rgba(23,23,23,0.08)]"
                   : "bg-transparent text-[var(--w-fg-neutral)]"
-              }`}
+              )}
               title={b.label}
               type="button"
             >
@@ -255,11 +252,12 @@ export default function Sidebar() {
               </div>
               {userRole && (
                 <div
-                  className={`inline-flex items-center px-[7px] py-0.5 rounded-[20px] font-semibold text-[10px] leading-[1.4] mt-1 ${
+                  className={cn(
+                    "inline-flex items-center px-[7px] py-0.5 rounded-[20px] font-semibold text-[10px] leading-[1.4] mt-1",
                     userRole === "팀장"
                       ? "bg-[rgba(0,102,255,0.12)] text-[var(--w-primary-normal)]"
                       : "bg-[var(--w-bg-neutral)] text-[var(--w-fg-neutral)]"
-                  }`}
+                  )}
                 >
                   {userRole}
                 </div>

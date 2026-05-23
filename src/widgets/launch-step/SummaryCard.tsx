@@ -6,6 +6,7 @@
 import { useSession } from "next-auth/react";
 import Icon from "@shared/ui/Icon";
 import { Card } from "@shared/ui/Card";
+import { cn } from "@shared/lib/cn";
 import { Badge } from "@shared/ui/primitives";
 import { fmtKRW } from "@shared/lib/format";
 import { OBJECTIVES_PHASE1, OBJECTIVES_PHASE2 } from "@entities/creative/options";
@@ -106,7 +107,10 @@ function SumRow({ label, value, sub }: { label: string; value: string; sub?: str
 function CheckRow({ on, children }: { on: boolean; children: React.ReactNode }) {
   return (
     <div className="flex items-center gap-2.5 font-medium text-[13px] leading-[1.4] text-[var(--w-fg-normal)]">
-      <span className={`w-[18px] h-[18px] rounded-full grid place-items-center text-[11px] ${on ? "bg-[var(--w-primary-soft)] text-[var(--w-primary-press)]" : "bg-[var(--w-bg-alternative)] text-[var(--w-fg-alternative)]"}`}>
+      <span className={cn(
+        "w-[18px] h-[18px] rounded-full grid place-items-center text-[11px]",
+        on ? "bg-[var(--w-primary-soft)] text-[var(--w-primary-press)]" : "bg-[var(--w-bg-alternative)] text-[var(--w-fg-alternative)]"
+      )}>
         {on ? <Icon name="check" size={11} /> : ""}
       </span>
       <span>{children}</span>

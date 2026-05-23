@@ -4,6 +4,7 @@
 
 import Icon from "@shared/ui/Icon";
 import { Card } from "@shared/ui/Card";
+import { cn } from "@shared/lib/cn";
 import DualChart, { ChartLegend } from "@shared/ui/DualChart";
 import { fmt, fmtKRW, shortDate } from "@shared/lib/format";
 import type { Insights } from "@entities/insights/types";
@@ -15,6 +16,15 @@ interface Props {
   ctrs: number[];
   exampleMode: boolean;
 }
+
+const thBase = cn(
+  "px-[14px] py-3 font-semibold text-[11px] leading-none tracking-[0.06em] uppercase",
+  "text-[var(--w-fg-neutral)] border-b border-[var(--w-line-alternative)] bg-[var(--w-bg-alternative)]"
+);
+const tdBase = cn(
+  "px-[14px] py-[14px] border-b border-[var(--w-line-alternative)] align-middle group-hover:bg-[var(--w-bg-neutral)]",
+  "text-right font-[500_13px/1] font-mono text-[var(--w-fg-strong)]"
+);
 
 export default function DailyTrend({ data, labels, clicks, ctrs, exampleMode }: Props) {
   return (
@@ -41,11 +51,11 @@ export default function DailyTrend({ data, labels, clicks, ctrs, exampleMode }: 
         <table className="w-full border-collapse">
           <thead>
             <tr>
-              <th className="text-left px-[14px] py-3 font-semibold text-[11px] leading-none tracking-[0.06em] uppercase text-[var(--w-fg-neutral)] border-b border-[var(--w-line-alternative)] bg-[var(--w-bg-alternative)]">날짜</th>
-              <th className="text-right px-[14px] py-3 font-semibold text-[11px] leading-none tracking-[0.06em] uppercase text-[var(--w-fg-neutral)] border-b border-[var(--w-line-alternative)] bg-[var(--w-bg-alternative)]">클릭</th>
-              <th className="text-right px-[14px] py-3 font-semibold text-[11px] leading-none tracking-[0.06em] uppercase text-[var(--w-fg-neutral)] border-b border-[var(--w-line-alternative)] bg-[var(--w-bg-alternative)]">CTR</th>
-              <th className="text-right px-[14px] py-3 font-semibold text-[11px] leading-none tracking-[0.06em] uppercase text-[var(--w-fg-neutral)] border-b border-[var(--w-line-alternative)] bg-[var(--w-bg-alternative)]">지출</th>
-              <th className="w-24 text-right px-[14px] py-3 font-semibold text-[11px] leading-none tracking-[0.06em] uppercase text-[var(--w-fg-neutral)] border-b border-[var(--w-line-alternative)] bg-[var(--w-bg-alternative)]">전일 대비</th>
+              <th className={cn(thBase, "text-left")}>날짜</th>
+              <th className={cn(thBase, "text-right")}>클릭</th>
+              <th className={cn(thBase, "text-right")}>CTR</th>
+              <th className={cn(thBase, "text-right")}>지출</th>
+              <th className={cn(thBase, "w-24 text-right")}>전일 대비</th>
             </tr>
           </thead>
           <tbody>
@@ -56,11 +66,11 @@ export default function DailyTrend({ data, labels, clicks, ctrs, exampleMode }: 
               const flat = delta != null && Math.abs(delta) < 0.01;
               return (
                 <tr key={i} className="group">
-                  <td className="px-[14px] py-[14px] border-b border-[var(--w-line-alternative)] font-medium text-[13px] leading-[1.4] text-[var(--w-fg-strong)] align-middle group-hover:bg-[var(--w-bg-neutral)] font-semibold">{shortDate(row.date)}</td>
-                  <td className="px-[14px] py-[14px] border-b border-[var(--w-line-alternative)] align-middle group-hover:bg-[var(--w-bg-neutral)] text-right font-[500_13px/1] font-mono text-[var(--w-fg-strong)]">{fmt(row.clicks)}</td>
-                  <td className="px-[14px] py-[14px] border-b border-[var(--w-line-alternative)] align-middle group-hover:bg-[var(--w-bg-neutral)] text-right font-[500_13px/1] font-mono text-[var(--w-fg-strong)]">{row.ctr.toFixed(2)}%</td>
-                  <td className="px-[14px] py-[14px] border-b border-[var(--w-line-alternative)] align-middle group-hover:bg-[var(--w-bg-neutral)] text-right font-[500_13px/1] font-mono text-[var(--w-fg-strong)]">{fmtKRW(row.spend)}</td>
-                  <td className="px-[14px] py-[14px] border-b border-[var(--w-line-alternative)] align-middle group-hover:bg-[var(--w-bg-neutral)] text-right font-[500_13px/1] font-mono text-[var(--w-fg-strong)]">
+                  <td className={cn(tdBase, "text-left font-semibold text-[13px] leading-[1.4]")}>{shortDate(row.date)}</td>
+                  <td className={tdBase}>{fmt(row.clicks)}</td>
+                  <td className={tdBase}>{row.ctr.toFixed(2)}%</td>
+                  <td className={tdBase}>{fmtKRW(row.spend)}</td>
+                  <td className={tdBase}>
                     {delta == null ? (
                       <span className="text-[var(--w-fg-alternative)]">—</span>
                     ) : flat ? (
