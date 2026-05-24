@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useSession } from "next-auth/react";
 import Image from "next/image";
 import Icon from "@shared/ui/Icon";
 import { Button } from "@shared/ui/Button";
@@ -40,7 +41,6 @@ const SAMPLES = [
   "https://picsum.photos/seed/adflow-feed-4/1080/1080",
 ];
 
-const HANDLE = "adflow_brand";
 
 function isHttpUrl(s: string): boolean {
   return /^https?:\/\/\S+$/i.test(s.trim());
@@ -64,6 +64,9 @@ function tokenizeCaption(s: string): CaptionToken[] {
 
 export default function PostsPage() {
   const showToast = useToast();
+  const { data: session } = useSession();
+  const handle = session?.igUsername ?? "instagram";
+  const [igPicture, setIgPicture] = useState<string | null>(null);
   const [imageUrl, setImageUrl] = useState("");
   const [caption, setCaption] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -105,6 +108,13 @@ export default function PostsPage() {
   useEffect(() => {
     loadRecent();
   }, [loadRecent]);
+
+  useEffect(() => {
+    fetch("/api/connect/profile-pictures")
+      .then(r => r.ok ? r.json() : null)
+      .then((data: { igPicture?: string | null } | null) => { if (data?.igPicture) setIgPicture(data.igPicture); })
+      .catch(() => null);
+  }, []);
 
   useEffect(() => {
     setPreviewBroken(false);
@@ -428,7 +438,7 @@ export default function PostsPage() {
             )}
           </div>
 
-          <FeedPreview imageUrl={imageUrl} caption={caption} handle={HANDLE} broken={previewBroken} />
+          <FeedPreview imageUrl={imageUrl} caption={caption} handle={handle} profilePicture={igPicture} broken={previewBroken} />
         </form>
       </Card>
 
@@ -578,11 +588,13 @@ function FeedPreview({
   imageUrl,
   caption,
   handle,
+  profilePicture,
   broken,
 }: {
   imageUrl: string;
   caption: string;
   handle: string;
+  profilePicture?: string | null;
   broken: boolean;
 }) {
   const tokens = tokenizeCaption(caption);
@@ -596,8 +608,12 @@ function FeedPreview({
       <div className="rounded-[14px] border border-[var(--w-line-normal)] bg-[var(--w-bg-elevated)] overflow-hidden">
         <div className="flex items-center gap-2.5 px-3 py-2.5">
           <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-[#feda75] via-[#fa7e1e] to-[#d62976] p-[2px] shrink-0">
-            <div className="w-full h-full rounded-full bg-[var(--w-bg-elevated)] grid place-items-center">
-              <span className="text-[10px] font-bold text-[var(--w-fg-strong)]">{handle[0].toUpperCase()}</span>
+            <div className="w-full h-full rounded-full bg-[var(--w-bg-elevated)] overflow-hidden grid place-items-center">
+              {profilePicture ? (
+                <Image src={profilePicture} alt="" width={30} height={30} className="w-full h-full object-cover rounded-full" unoptimized />
+              ) : (
+                <span className="text-[10px] font-bold text-[var(--w-fg-strong)]">{handle[0].toUpperCase()}</span>
+              )}
             </div>
           </div>
           <div className="min-w-0 flex-1">
