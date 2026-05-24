@@ -51,7 +51,7 @@ function AlertCard({ alert, showCta }: { alert: BillingAlert; showCta: boolean }
       </div>
       {showCta && (
         <Link href="/billing" className={buttonVariants({ variant: "primary", size: "sm" })}>
-          청구 및 결제로 가기 <Icon name="arrow-right" size={14} />
+          <span style={{ color: "#fff" }}>청구 및 결제로 가기</span>
         </Link>
       )}
     </Card>
