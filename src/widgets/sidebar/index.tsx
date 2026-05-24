@@ -206,7 +206,10 @@ export default function Sidebar() {
                       onClick={() => toggleItem(it.href)}
                       className={cn(linkClass(active, false, true), "w-full")}
                     >
-                      <span className="w-[18px] h-[18px] grid place-items-center">
+                      <span
+                        className="w-[18px] h-[18px] grid place-items-center"
+                        style={active && it.icon === "instagram" ? { color: "#E1306C" } : undefined}
+                      >
                         <Icon name={it.icon} size={18} />
                       </span>
                       <span>{it.label}</span>
@@ -219,7 +222,10 @@ export default function Sidebar() {
                     </button>
                   ) : (
                     <Link href={it.href} className={linkClass(active)}>
-                      <span className="w-[18px] h-[18px] grid place-items-center">
+                      <span
+                        className="w-[18px] h-[18px] grid place-items-center"
+                        style={active && it.icon === "facebook" ? { color: "#1877F2" } : undefined}
+                      >
                         <Icon name={it.icon} size={18} />
                       </span>
                       <span>{it.label}</span>
