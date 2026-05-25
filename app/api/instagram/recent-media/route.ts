@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
-import { getRecentMedia } from "@/lib/instagram-publish"
+import { getRecentMedia, RECENT_MEDIA_MOCK } from "@/lib/instagram-publish"
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions)
@@ -9,6 +9,8 @@ export async function GET(req: NextRequest) {
 
   const limitParam = req.nextUrl.searchParams.get("limit")
   const limit = limitParam ? Math.min(parseInt(limitParam, 10) || 5, 50) : 5
+
+  if (session.browseMode) return NextResponse.json({ ok: true, items: RECENT_MEDIA_MOCK, mock: true })
 
   const result = await getRecentMedia({
     igUserId: session.igUserId,
