@@ -82,7 +82,7 @@ async function fetchStoriesWithToken(igUserId: string, token: string): Promise<I
   const listRes = await fetch(
     `${GRAPH}/${igUserId}/stories?fields=id,media_type,media_url,thumbnail_url,timestamp&limit=25&access_token=${token}`
   )
-  if (!listRes.ok) return IG_STORIES_MOCK
+  if (!listRes.ok) throw new Error(`stories API ${listRes.status}`)
 
   const listBody = await listRes.json() as { data?: StoryMediaRaw[] }
   const raws = listBody.data ?? []
@@ -111,23 +111,12 @@ export async function getInstagramActiveStories(
   igAccessToken?: string,
 ): Promise<IgStoriesPanel> {
   if (igAccessToken && igUserIdHint) {
-    try {
-      return await fetchStoriesWithToken(igUserIdHint, igAccessToken)
-    } catch {
-      return IG_STORIES_MOCK
-    }
+    return await fetchStoriesWithToken(igUserIdHint, igAccessToken)
   }
-
-  if (!pageId || !userToken) return IG_STORIES_MOCK
-  try {
-    const pageToken = await getPageToken(pageId, userToken)
-    if (!pageToken) return IG_STORIES_MOCK
-
-    const igUserId = igUserIdHint || (await getIgUserId(pageId, pageToken))
-    if (!igUserId) return IG_STORIES_MOCK
-
-    return await fetchStoriesWithToken(igUserId, pageToken)
-  } catch {
-    return IG_STORIES_MOCK
-  }
+  if (!pageId || !userToken) throw new Error("IG 계정이 연결되지 않았어요")
+  const pageToken = await getPageToken(pageId, userToken)
+  if (!pageToken) throw new Error("페이지 토큰 획득 실패")
+  const igUserId = igUserIdHint || (await getIgUserId(pageId, pageToken))
+  if (!igUserId) throw new Error("IG 사용자 ID 없음")
+  return await fetchStoriesWithToken(igUserId, pageToken)
 }
