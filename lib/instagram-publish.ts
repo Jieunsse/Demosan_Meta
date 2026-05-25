@@ -13,6 +13,7 @@ export type RecentMediaItem = {
   caption: string
   permalink?: string
   timestamp: string
+  likeCount: number
 }
 
 export type RecentMediaResult =
@@ -26,6 +27,7 @@ const RECENT_MEDIA_MOCK: RecentMediaItem[] = [
     caption: "신상품 입고 ✨ 5월 시즌룩 컬렉션 전체 보러가기",
     permalink: "https://www.instagram.com/p/mock-1/",
     timestamp: "2026-05-22T11:00:00Z",
+    likeCount: 0,
   },
   {
     id: "mock-2",
@@ -33,6 +35,7 @@ const RECENT_MEDIA_MOCK: RecentMediaItem[] = [
     caption: "오늘만 20% 쿠폰 — 프로필 링크에서 받기",
     permalink: "https://www.instagram.com/p/mock-2/",
     timestamp: "2026-05-21T15:30:00Z",
+    likeCount: 0,
   },
   {
     id: "mock-3",
@@ -40,6 +43,7 @@ const RECENT_MEDIA_MOCK: RecentMediaItem[] = [
     caption: "고객 후기 모아봤어요 💌 #adflow",
     permalink: "https://www.instagram.com/p/mock-3/",
     timestamp: "2026-05-20T09:10:00Z",
+    likeCount: 0,
   },
 ]
 
@@ -151,7 +155,7 @@ export async function getRecentMedia(opts: {
   if (!creds) return { ok: true, items: RECENT_MEDIA_MOCK, mock: true }
   const limit = opts.limit ?? 5
   const res = await fetch(
-    `${creds.graphBase}/${creds.igUserId}/media?fields=id,caption,media_url,thumbnail_url,permalink,timestamp&limit=${limit}&access_token=${creds.token}`
+    `${creds.graphBase}/${creds.igUserId}/media?fields=id,caption,media_url,thumbnail_url,permalink,timestamp,like_count&limit=${limit}&access_token=${creds.token}`
   )
   if (!res.ok) {
     const body = await res.json().catch(() => ({})) as { error?: { message?: string } }
@@ -160,7 +164,7 @@ export async function getRecentMedia(opts: {
   const body = await res.json() as {
     data?: Array<{
       id: string; caption?: string; media_url?: string; thumbnail_url?: string
-      permalink?: string; timestamp?: string
+      permalink?: string; timestamp?: string; like_count?: number
     }>
   }
   const items: RecentMediaItem[] = (body.data ?? []).map((m) => ({
@@ -169,6 +173,7 @@ export async function getRecentMedia(opts: {
     caption: m.caption ?? "",
     permalink: m.permalink,
     timestamp: m.timestamp ?? "",
+    likeCount: m.like_count ?? 0,
   }))
   return { ok: true, items }
 }
