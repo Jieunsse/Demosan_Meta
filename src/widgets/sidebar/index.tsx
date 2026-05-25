@@ -49,12 +49,13 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
         children: [
           { href: "/instagram", label: "인사이트", icon: "chart" },
           { href: "/instagram/posts", label: "게시", icon: "image" },
+          { href: "/instagram/comments", label: "댓글 관리", icon: "comment" },
           { href: "/instagram/stories", label: "스토리", icon: "play" },
           { href: "/instagram/partnerships", label: "파트너십", icon: "users" },
           { href: "/instagram/messages", label: "메시지", icon: "message" },
         ],
       },
-      { href: "/facebook", label: "Facebook", icon: "facebook", chip: "Beta" },
+      { href: "/facebook", label: "Facebook", icon: "facebook" },
     ],
   },
   {
@@ -208,7 +209,7 @@ export default function Sidebar() {
                     >
                       <span
                         className="w-[18px] h-[18px] grid place-items-center"
-                        style={active && it.icon === "instagram" ? { color: "#E1306C" } : undefined}
+                        style={it.icon === "instagram" ? { color: "#E1306C" } : undefined}
                       >
                         <Icon name={it.icon} size={18} />
                       </span>
@@ -224,13 +225,13 @@ export default function Sidebar() {
                     <Link href={it.href} className={linkClass(active)}>
                       <span
                         className="w-[18px] h-[18px] grid place-items-center"
-                        style={active && it.icon === "facebook" ? { color: "#1877F2" } : undefined}
+                        style={it.icon === "facebook" ? { color: "#1877F2" } : undefined}
                       >
                         <Icon name={it.icon} size={18} />
                       </span>
                       <span>{it.label}</span>
                       {it.chip && (
-                        <span className={countClass(undefined, active)}>{it.chip}</span>
+                        <span className={countClass(undefined, it.chip === "AI" ? true : active)}>{it.chip}</span>
                       )}
                       {liveCount != null && liveCount > 0 && (
                         <span className={countClass(it.countVariant, active)}>{liveCount}</span>
