@@ -1,4 +1,4 @@
-import { GRAPH, getPageToken, getIgUserId } from "./instagram-graph"
+import { GRAPH, IG_GRAPH, getPageToken, getIgUserId } from "./instagram-graph"
 
 export type IgComment = {
   id: string
@@ -32,18 +32,28 @@ export function getMockComments(mediaId: string): IgComment[] {
   return IG_COMMENTS_MOCK[mediaId] ?? IG_COMMENTS_MOCK.default
 }
 
+type GraphErrorBody = { error?: { message?: string; type?: string } }
+
+// igAccessToken 이 세션에 있지만 만료/무효화된 경우 Graph API 가 OAuthException 을 반환.
+// "토큰 없음" 과 동일하게 목 폴백으로 처리.
+function isOAuthException(body: GraphErrorBody): boolean {
+  return body.error?.type === "OAuthException"
+}
+
+type ResolvedToken = { token: string; graphBase: string }
+
 async function resolveIgToken(opts: {
   igAccessToken?: string
   pageId?: string
   accessToken?: string
-}): Promise<string | null> {
-  if (opts.igAccessToken) return opts.igAccessToken
+}): Promise<ResolvedToken | null> {
+  // IGAAX 토큰(Instagram Business Login)은 graph.instagram.com 전용
+  if (opts.igAccessToken) return { token: opts.igAccessToken, graphBase: IG_GRAPH }
   if (!opts.pageId || !opts.accessToken) return null
   const pageToken = await getPageToken(opts.pageId, opts.accessToken)
   if (!pageToken) return null
-  // IG 댓글은 page token 으로 호출 가능 (Page → IG 비즈 계정 연결 시)
   await getIgUserId(opts.pageId, pageToken)
-  return pageToken
+  return { token: pageToken, graphBase: GRAPH }
 }
 
 export async function listComments(opts: {
@@ -52,16 +62,17 @@ export async function listComments(opts: {
   pageId?: string
   accessToken?: string
 }): Promise<IgCommentsResult> {
-  const token = await resolveIgToken(opts)
-  if (!token) return { ok: true, items: getMockComments(opts.mediaId), mock: true }
+  const resolved = await resolveIgToken(opts)
+  if (!resolved) return { ok: true, items: getMockComments(opts.mediaId), mock: true }
 
   const url =
-    `${GRAPH}/${opts.mediaId}/comments` +
-    `?fields=id,username,text,timestamp,like_count,hidden,replies.summary(true)` +
-    `&access_token=${token}`
+    `${resolved.graphBase}/${opts.mediaId}/comments` +
+    `?fields=id,username,text,timestamp,like_count,hidden,replies{id}` +
+    `&access_token=${resolved.token}`
   const res = await fetch(url)
   if (!res.ok) {
-    const body = await res.json().catch(() => ({})) as { error?: { message?: string } }
+    const body = await res.json().catch(() => ({})) as GraphErrorBody
+    if (isOAuthException(body)) return { ok: true, items: getMockComments(opts.mediaId), mock: true }
     return { ok: false, status: res.status, error: body.error?.message ?? "댓글 조회 실패" }
   }
   const body = await res.json() as {
@@ -72,7 +83,7 @@ export async function listComments(opts: {
       timestamp?: string
       like_count?: number
       hidden?: boolean
-      replies?: { summary?: { total_count?: number } }
+      replies?: { data?: { id: string }[] }
     }>
   }
   const items: IgComment[] = (body.data ?? []).map((c) => ({
@@ -82,9 +93,126 @@ export async function listComments(opts: {
     timestamp: c.timestamp ?? "",
     likeCount: c.like_count ?? 0,
     hidden: c.hidden ?? false,
-    replyCount: c.replies?.summary?.total_count ?? 0,
+    replyCount: c.replies?.data?.length ?? 0,
   }))
   return { ok: true, items }
+}
+
+export type IgHideResult =
+  | { ok: true; mock?: boolean }
+  | { ok: false; error: string; status?: number }
+
+export type IgCreateResult =
+  | { ok: true; id: string; mock?: boolean }
+  | { ok: false; error: string; status?: number }
+
+export async function hideComment(opts: {
+  commentId: string
+  hidden: boolean
+  igAccessToken?: string
+  pageId?: string
+  accessToken?: string
+}): Promise<IgHideResult> {
+  const resolved = await resolveIgToken(opts)
+  if (!resolved) return { ok: true, mock: true }
+
+  const res = await fetch(
+    `${resolved.graphBase}/${opts.commentId}?hidden=${opts.hidden}&access_token=${resolved.token}`,
+    { method: "POST" }
+  )
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as GraphErrorBody
+    if (isOAuthException(body)) return { ok: true, mock: true }
+    return { ok: false, status: res.status, error: body.error?.message ?? "댓글 숨김 실패" }
+  }
+  return { ok: true }
+}
+
+export async function createComment(opts: {
+  mediaId: string
+  message: string
+  igAccessToken?: string
+  pageId?: string
+  accessToken?: string
+}): Promise<IgCreateResult> {
+  const resolved = await resolveIgToken(opts)
+  if (!resolved) return { ok: true, id: `mock-${Date.now()}`, mock: true }
+
+  const res = await fetch(
+    `${resolved.graphBase}/${opts.mediaId}/comments?message=${encodeURIComponent(opts.message)}&access_token=${resolved.token}`,
+    { method: "POST" }
+  )
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as GraphErrorBody
+    if (isOAuthException(body)) return { ok: true, id: `mock-${Date.now()}`, mock: true }
+    return { ok: false, status: res.status, error: body.error?.message ?? "댓글 작성 실패" }
+  }
+  const body = await res.json() as { id?: string }
+  return { ok: true, id: body.id ?? `created-${Date.now()}` }
+}
+
+export async function listReplies(opts: {
+  commentId: string
+  igAccessToken?: string
+  pageId?: string
+  accessToken?: string
+}): Promise<IgCommentsResult> {
+  const resolved = await resolveIgToken(opts)
+  if (!resolved) return { ok: true, items: [], mock: true }
+
+  const url =
+    `${resolved.graphBase}/${opts.commentId}/replies` +
+    `?fields=id,username,text,timestamp,like_count,hidden` +
+    `&access_token=${resolved.token}`
+  const res = await fetch(url)
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as GraphErrorBody
+    if (isOAuthException(body)) return { ok: true, items: [], mock: true }
+    return { ok: false, status: res.status, error: body.error?.message ?? "답글 조회 실패" }
+  }
+  const body = await res.json() as {
+    data?: Array<{
+      id: string
+      username?: string
+      text?: string
+      timestamp?: string
+      like_count?: number
+      hidden?: boolean
+    }>
+  }
+  const items: IgComment[] = (body.data ?? []).map((c) => ({
+    id: c.id,
+    username: c.username ?? "unknown",
+    text: c.text ?? "",
+    timestamp: c.timestamp ?? "",
+    likeCount: c.like_count ?? 0,
+    hidden: c.hidden ?? false,
+    replyCount: 0,
+  }))
+  return { ok: true, items }
+}
+
+export async function replyToComment(opts: {
+  commentId: string
+  message: string
+  igAccessToken?: string
+  pageId?: string
+  accessToken?: string
+}): Promise<IgCreateResult> {
+  const resolved = await resolveIgToken(opts)
+  if (!resolved) return { ok: true, id: `mock-reply-${Date.now()}`, mock: true }
+
+  const res = await fetch(
+    `${resolved.graphBase}/${opts.commentId}/replies?message=${encodeURIComponent(opts.message)}&access_token=${resolved.token}`,
+    { method: "POST" }
+  )
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as GraphErrorBody
+    if (isOAuthException(body)) return { ok: true, id: `mock-reply-${Date.now()}`, mock: true }
+    return { ok: false, status: res.status, error: body.error?.message ?? "답글 작성 실패" }
+  }
+  const body = await res.json() as { id?: string }
+  return { ok: true, id: body.id ?? `reply-${Date.now()}` }
 }
 
 export async function deleteComment(opts: {
@@ -93,12 +221,13 @@ export async function deleteComment(opts: {
   pageId?: string
   accessToken?: string
 }): Promise<IgDeleteResult> {
-  const token = await resolveIgToken(opts)
-  if (!token) return { ok: true, mock: true }
+  const resolved = await resolveIgToken(opts)
+  if (!resolved) return { ok: true, mock: true }
 
-  const res = await fetch(`${GRAPH}/${opts.commentId}?access_token=${token}`, { method: "DELETE" })
+  const res = await fetch(`${resolved.graphBase}/${opts.commentId}?access_token=${resolved.token}`, { method: "DELETE" })
   if (!res.ok) {
-    const body = await res.json().catch(() => ({})) as { error?: { message?: string } }
+    const body = await res.json().catch(() => ({})) as GraphErrorBody
+    if (isOAuthException(body)) return { ok: true, mock: true }
     return { ok: false, status: res.status, error: body.error?.message ?? "댓글 삭제 실패" }
   }
   return { ok: true }

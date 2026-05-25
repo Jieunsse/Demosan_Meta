@@ -8,7 +8,7 @@ import { Badge } from "@shared/ui/primitives";
 import { Button } from "@shared/ui/Button";
 import { Card } from "@shared/ui/Card";
 import { cn } from "@shared/lib/cn";
-import { OBJECTIVES_PHASE1, OBJECTIVES_PHASE2, type ObjectiveId } from "@entities/creative/options";
+import { OBJECTIVES_PHASE1, type ObjectiveId } from "@entities/creative/options";
 import { useCreativeDraft } from "@entities/creative/model";
 
 interface Props {
@@ -119,36 +119,7 @@ export default function GoalIntro({ onNext }: Props) {
         ))}
       </div>
 
-      {/* Phase 2 — 추가 인프라(Pixel/Lead Form/App SDK) 필요. 분리된 row 로 시각 노이즈 줄임. */}
-      <div style={{ marginTop: 36, marginBottom: 12, display: "flex", alignItems: "center", gap: 12 }}>
-        <span style={{
-          font: "600 11.5px/1 var(--w-font-sans)",
-          color: "var(--w-fg-neutral)",
-          letterSpacing: 0.3,
-          textTransform: "uppercase",
-        }}>
-          곧 열려요
-        </span>
-        <span style={{ font: "500 11px/1 var(--w-font-sans)", color: "var(--w-fg-alternative)" }}>
-          · Pixel · Lead Form · App SDK 등 추가 인프라가 필요한 광고 목표
-        </span>
-      </div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 14, justifyContent: "center", marginBottom: 22 }}>
-        {OBJECTIVES_PHASE2.map((o) => (
-          <div key={o.id} style={{ flex: "0 0 calc((100% - 42px) / 4)", minWidth: 0 }}>
-            <GoalCard
-              id={o.id}
-              iconName={o.iconName}
-              label={o.label}
-              copyTone={o.copyTone}
-              active={false}
-              disabled
-            />
-          </div>
-        ))}
-      </div>
-
-      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+      <div style={{ display: "flex", justifyContent: "center", marginTop: 32 }}>
         <Button
           variant="primary"
           size="lg"
@@ -156,8 +127,9 @@ export default function GoalIntro({ onNext }: Props) {
           onClick={onNext}
           disabled={!outcome}
           title={!outcome ? "광고 목표를 먼저 골라주세요" : undefined}
+          style={{ minWidth: 240 }}
         >
-          다음 <Icon name="arrow-right" size={14} />
+          다음
         </Button>
       </div>
     </Card>

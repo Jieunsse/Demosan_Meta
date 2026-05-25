@@ -268,7 +268,7 @@ export default function CreatePage() {
   const showIntro = !introCompleted;
 
   return (
-    <div className="px-12 py-9 pb-16 max-w-[1280px] w-full mx-auto flex flex-col gap-7" data-screen-label="광고 만들기">
+    <div className="px-12 py-9 pb-16 max-w-[1280px] w-full mx-auto flex flex-col gap-7 min-h-[calc(100vh-64px)]" data-screen-label="광고 만들기">
       <div className="flex justify-between items-end gap-6">
         <div>
           <span className="font-semibold text-[11px] leading-[1.45] tracking-[0.04em] uppercase text-[var(--w-fg-neutral)]">광고 만들기</span>
@@ -306,10 +306,14 @@ export default function CreatePage() {
       )}
 
       {showIntro ? (
-        <GoalIntro onNext={() => {
-          setIntroCompleted(true);
-          setStep(creative.state.outcome === 'boost_post' ? 1 : 0);
-        }} />
+        <div className="flex flex-1 items-center justify-center">
+          <div className="w-full">
+            <GoalIntro onNext={() => {
+              setIntroCompleted(true);
+              setStep(creative.state.outcome === 'boost_post' ? 1 : 0);
+            }} />
+          </div>
+        </div>
       ) : (
         <>
           <Stepper step={step} setStep={setStep} completed={completed} stepValid={stepValid} />
