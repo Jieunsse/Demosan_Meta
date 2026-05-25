@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
-import { debugInstagramInsights, getInstagramInsights, type IgInsightsDebug } from "@/lib/instagram-insights"
+import { debugInstagramInsights, getInstagramInsights, IG_MOCK_GOOD, type IgInsightsDebug } from "@/lib/instagram-insights"
 import { credentialsCache } from "@/lib/meta-credentials"
 
 const GRAPH = "https://graph.facebook.com/v20.0"
@@ -36,6 +36,12 @@ export async function GET(req: NextRequest) {
     if (session?.accessToken) Object.assign(dbg, await introspectToken(session.accessToken))
     return NextResponse.json(dbg)
   }
-  const data = await getInstagramInsights(session?.pageId, session?.accessToken, session?.igUserId, session?.igAccessToken)
-  return NextResponse.json(data)
+  if (session?.browseMode) return NextResponse.json(IG_MOCK_GOOD)
+
+  try {
+    const data = await getInstagramInsights(session?.pageId, session?.accessToken, session?.igUserId, session?.igAccessToken)
+    return NextResponse.json(data)
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : "insights 조회 실패" }, { status: 500 })
+  }
 }

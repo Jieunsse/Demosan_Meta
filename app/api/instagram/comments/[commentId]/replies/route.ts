@@ -8,6 +8,8 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ commentId:
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ ok: false, error: "로그인이 필요합니다." }, { status: 401 })
 
+  if (session.browseMode) return NextResponse.json({ ok: true, items: [], mock: true })
+
   const result = await listReplies({
     commentId,
     igAccessToken: session.igAccessToken,
@@ -21,6 +23,8 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ commentId:
   const { commentId } = await ctx.params
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ ok: false, error: "로그인이 필요합니다." }, { status: 401 })
+
+  if (session.browseMode) return NextResponse.json({ ok: true, id: `mock-reply-${Date.now()}`, mock: true })
 
   const { message } = await req.json() as { message?: string }
   if (!message?.trim()) {

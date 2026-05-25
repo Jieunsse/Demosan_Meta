@@ -8,6 +8,8 @@ export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ comment
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ ok: false, error: "로그인이 필요합니다." }, { status: 401 })
 
+  if (session.browseMode) return NextResponse.json({ ok: true, mock: true })
+
   const result = await deleteComment({
     commentId,
     igAccessToken: session.igAccessToken,
@@ -21,6 +23,8 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ commentId
   const { commentId } = await ctx.params
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ ok: false, error: "로그인이 필요합니다." }, { status: 401 })
+
+  if (session.browseMode) return NextResponse.json({ ok: true, mock: true })
 
   const { hidden } = await req.json() as { hidden?: boolean }
   const result = await hideComment({

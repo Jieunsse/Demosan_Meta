@@ -20,7 +20,7 @@ export type RecentMediaResult =
   | { ok: true; items: RecentMediaItem[]; mock?: boolean }
   | { ok: false; error: string; status?: number }
 
-const RECENT_MEDIA_MOCK: RecentMediaItem[] = [
+export const RECENT_MEDIA_MOCK: RecentMediaItem[] = [
   {
     id: "default",
     mediaUrl: "https://picsum.photos/seed/adflow-1/200/200",
@@ -152,7 +152,7 @@ export async function getRecentMedia(opts: {
   accessToken?: string
 }): Promise<RecentMediaResult> {
   const creds = await resolveIgCreds(opts)
-  if (!creds) return { ok: true, items: RECENT_MEDIA_MOCK, mock: true }
+  if (!creds) return { ok: false, error: "Instagram 계정이 연결되지 않았어요." }
   const limit = opts.limit ?? 5
   const res = await fetch(
     `${creds.graphBase}/${creds.igUserId}/media?fields=id,caption,media_url,thumbnail_url,permalink,timestamp,like_count&limit=${limit}&access_token=${creds.token}`

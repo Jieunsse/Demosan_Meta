@@ -127,8 +127,7 @@ async function fetchInsightsWithToken(igUserId: string, token: string, graphBase
     fetch(`${graphBase}/${igUserId}/media?fields=id,caption,media_url,thumbnail_url,like_count,comments_count,timestamp&limit=5&access_token=${token}`),
   ])
 
-  // account 가 실패하면 IG 계정 식별 자체가 안 된 거라 mock 으로 떨어뜨림.
-  if (!accountRes.ok) return IG_MOCK_GOOD
+  if (!accountRes.ok) throw new Error(`IG account API ${accountRes.status}`)
 
   const account = await accountRes.json() as { followers_count?: number; username?: string }
   const reachData = await reachRes.json() as {
@@ -174,25 +173,13 @@ export async function getInstagramInsights(
   igUserIdHint?: string,
   igAccessToken?: string,
 ): Promise<IgAccountInsights> {
-  // Instagram Business Login 토큰이 있으면 page token 없이 직접 호출
   if (igAccessToken && igUserIdHint) {
-    try {
-      return await fetchInsightsWithToken(igUserIdHint, igAccessToken, IG_GRAPH)
-    } catch {
-      return IG_MOCK_GOOD
-    }
+    return await fetchInsightsWithToken(igUserIdHint, igAccessToken, IG_GRAPH)
   }
-
-  if (!pageId || !userToken) return IG_MOCK_GOOD
-  try {
-    const pageToken = await getPageToken(pageId, userToken)
-    if (!pageToken) return IG_MOCK_GOOD
-
-    const igUserId = igUserIdHint || (await getIgUserId(pageId, pageToken))
-    if (!igUserId) return IG_MOCK_GOOD
-
-    return await fetchInsightsWithToken(igUserId, pageToken, GRAPH)
-  } catch {
-    return IG_MOCK_GOOD
-  }
+  if (!pageId || !userToken) throw new Error("IG 계정이 연결되지 않았어요")
+  const pageToken = await getPageToken(pageId, userToken)
+  if (!pageToken) throw new Error("페이지 토큰 획득 실패")
+  const igUserId = igUserIdHint || (await getIgUserId(pageId, pageToken))
+  if (!igUserId) throw new Error("IG 사용자 ID 없음")
+  return await fetchInsightsWithToken(igUserId, pageToken, GRAPH)
 }
