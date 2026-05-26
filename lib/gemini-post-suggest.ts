@@ -1,0 +1,92 @@
+// Server-side only. IG 포스트 페이지 전용 — 캡션 / 이미지 프롬프트를 짧게 제안.
+
+import { GoogleGenerativeAI } from "@google/generative-ai";
+
+const TEXT_MODELS = ["gemini-2.0-flash", "gemini-2.5-flash"];
+
+function requireEnv(key: string): string {
+  const v = process.env[key];
+  if (!v) throw new Error(`${key} 가 .env.local 에 설정되지 않았어요.`);
+  return v;
+}
+
+function is503(err: unknown): boolean {
+  return err instanceof Error && err.message.includes("503");
+}
+
+function stripHanja(text: string): string {
+  return text.replace(/[一-鿿]/g, "");
+}
+
+async function generateText(prompt: string, json: boolean): Promise<string> {
+  const apiKey = requireEnv("GOOGLE_AI_API_KEY");
+  for (const modelName of TEXT_MODELS) {
+    try {
+      const model = new GoogleGenerativeAI(apiKey).getGenerativeModel({
+        model: modelName,
+        generationConfig: json ? { responseMimeType: "application/json" } : undefined,
+      });
+      const result = await model.generateContent(prompt);
+      return result.response.text();
+    } catch (err) {
+      if (is503(err) && modelName !== TEXT_MODELS[TEXT_MODELS.length - 1]) {
+        await new Promise((r) => setTimeout(r, 1500));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error("모든 AI 모델이 일시적으로 응답하지 않아요. 잠시 후 다시 시도해주세요.");
+}
+
+const CAPTION_PROMPT = (hint: string) => `
+당신은 한국 시장 SNS 카피라이터예요. 인스타그램 오가닉 포스트 캡션 1개를 만들어주세요.
+
+힌트: ${hint || "(없음) — 일반적이고 매력적인 브랜드 톤으로"}
+
+규칙:
+- 한국어, 자연스러운 구어체. 150~250자.
+- 마지막 줄에 해시태그 3~5개 (# 포함, 한글/영문).
+- 광고스럽지 않게.
+
+JSON 만 출력:
+{ "caption": "본문\\n\\n#태그1 #태그2 ..." }
+`;
+
+const IMAGE_PROMPT_PROMPT = (hint: string, caption: string) => `
+당신은 SNS 이미지 디렉터예요. 인스타그램 피드 1:1 정사각 이미지를 위한 이미지 생성 프롬프트 1개를 만들어주세요.
+
+${caption ? `참고 캡션:\n${caption}\n` : ""}힌트: ${hint || "(없음)"}
+
+규칙:
+- 한국어 1~2문장. 80자 이내.
+- 피사체 / 분위기 / 조명 / 색감을 구체적으로.
+- 텍스트·로고 언급 금지.
+
+JSON 만 출력:
+{ "prompt": "..." }
+`;
+
+export const geminiPostSuggest = {
+  get isConfigured() {
+    return !!process.env.GOOGLE_AI_API_KEY;
+  },
+
+  async suggestCaption(hint: string): Promise<string> {
+    const text = await generateText(CAPTION_PROMPT(hint), true);
+    let parsed: { caption?: unknown };
+    try { parsed = JSON.parse(text); } catch { throw new Error("AI 응답을 파싱할 수 없어요."); }
+    const caption = typeof parsed.caption === "string" ? stripHanja(parsed.caption).trim() : "";
+    if (!caption) throw new Error("AI 응답 형식이 올바르지 않아요.");
+    return caption;
+  },
+
+  async suggestImagePrompt(hint: string, caption: string): Promise<string> {
+    const text = await generateText(IMAGE_PROMPT_PROMPT(hint, caption), true);
+    let parsed: { prompt?: unknown };
+    try { parsed = JSON.parse(text); } catch { throw new Error("AI 응답을 파싱할 수 없어요."); }
+    const prompt = typeof parsed.prompt === "string" ? stripHanja(parsed.prompt).trim() : "";
+    if (!prompt) throw new Error("AI 응답 형식이 올바르지 않아요.");
+    return prompt;
+  },
+};
