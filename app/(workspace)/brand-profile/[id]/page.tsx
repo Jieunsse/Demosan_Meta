@@ -12,6 +12,7 @@ import {
   useBrandProfilesStorage,
   type BrandProfileEntry,
 } from "@features/brand-profile/model/useBrandProfileStorage";
+import { seedDemoIfEmpty } from "@features/brand-profile/model/seed-demo";
 import {
   usePersonasForProfile,
   type PersonaEntry,
@@ -72,6 +73,7 @@ export default function BrandProfileDetailPage() {
   const showToast = useToast();
   const { data: session } = useSession();
   const isOwner = session?.role === "팀장";
+  seedDemoIfEmpty();
   const { profiles, saveProfile } = useBrandProfilesStorage();
   const { personas, savePersona, deletePersona } = usePersonasForProfile(id);
 

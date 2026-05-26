@@ -12,6 +12,7 @@ import {
   useBrandProfilesStorage,
   type BrandProfileEntry,
 } from "@features/brand-profile/model/useBrandProfileStorage";
+import { seedDemoIfEmpty } from "@features/brand-profile/model/seed-demo";
 
 interface ProfileCardProps {
   profile: BrandProfileEntry;
@@ -102,6 +103,7 @@ function AddCard({ onClick }: { onClick: () => void }) {
 export default function BrandProfilePage() {
   const router = useRouter();
   const showToast = useToast();
+  seedDemoIfEmpty();
   const { profiles, saveProfile, deleteProfile, setDefault } = useBrandProfilesStorage();
 
   const openNew = () => {
