@@ -314,7 +314,9 @@ export default function CommentsPage() {
               {/* 헤더 */}
               <div className="px-5 py-3 border-b border-[var(--w-line-normal)] bg-[var(--w-bg-elevated)] flex items-center gap-3 shrink-0">
                 <div className="flex-1 min-w-0">
-                  <div className="text-[13px] font-semibold text-[var(--w-fg-strong)] leading-none">댓글</div>
+                  <div className="text-[13px] font-semibold text-[var(--w-fg-strong)] leading-none">
+                    댓글{!commentsLoading && !commentsErr ? ` ${comments.length}개` : ""}
+                  </div>
                   <div className="text-[11px] text-[var(--w-fg-alternative)] mt-0.5">
                     {formatDate(selectedMedia.timestamp)}
                   </div>
