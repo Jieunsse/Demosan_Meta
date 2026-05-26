@@ -7,7 +7,7 @@ export type ChannelOptInput = {
   engagementRate: number;       // %
   reach?: number;               // IG 전용 (28일 오가닉 도달)
   postCount28d?: number;        // FB 전용 (28일 게시물 수)
-  posts: Array<{ engagement: number }>; // 채널 무관 합산 (IG=좋아요+댓글+저장, FB=반응+댓글+공유)
+  posts: Array<{ id?: string; engagement: number }>; // 채널 무관 합산 (IG=좋아요+댓글+저장, FB=반응+댓글+공유)
 };
 
 export type IgOptInput = {
@@ -53,6 +53,7 @@ export function suggestChannelOptimizations(
             `짧은 영상(60초 이하)·라이브가 페이지 알고리즘 노출을 높이는 데 효과적이에요.`,
             `질문 던지기·투표 게시물로 댓글을 유도하면 자연 도달이 함께 올라가요.`,
           ],
+      action: { kind: "ai-draft" },
     });
   } else if (engagementRate >= GOOD_ENGAGEMENT) {
     out.push({
@@ -70,6 +71,7 @@ export function suggestChannelOptimizations(
             `성과 좋은 게시물의 포맷·주제·시간대를 파악해 비슷한 콘텐츠를 더 올려보세요.`,
             `라이브·짧은 영상을 시리즈로 늘리면 도달이 안정적으로 커져요.`,
           ],
+      action: { kind: "ai-draft" },
     });
   } else {
     out.push({
@@ -85,6 +87,7 @@ export function suggestChannelOptimizations(
             `${engagementRate.toFixed(1)}%로 평균 범위 안에 있어요.`,
             `공유 수가 높은 게시물이 자연 도달을 키워요 — '공유하고 싶은' 정보성·감정적 콘텐츠를 늘려보세요.`,
           ],
+      action: { kind: "ai-draft" },
     });
   }
 
@@ -103,6 +106,7 @@ export function suggestChannelOptimizations(
             `팔로워 활동이 많은 시간대(보통 저녁 7~9시)에 맞춰 게시하고, 인기 해시태그 3~5개를 활용해보세요.`,
             `릴스는 피드보다 알고리즘 노출이 높아요 — 기존 콘텐츠를 릴스로 리패키징해보세요.`,
           ],
+          action: { kind: "ai-draft" },
         });
       }
     }
@@ -118,11 +122,12 @@ export function suggestChannelOptimizations(
           `페이지 알고리즘은 꾸준한 게시 활동을 선호해요 — 주 2~3회 페이스를 권해요.`,
           `짧은 영상·라이브·이미지 카드 등 포맷을 섞으면 같은 주제도 다르게 보여줄 수 있어요.`,
         ],
+        action: { kind: "ai-draft" },
       });
     }
   }
 
-  // 3. 공통 — 최고 성과 게시물 힌트
+  // 3. 공통 — 최고 성과 게시물 힌트 (IG 만 Boost Post 액션. FB 는 V1 action 없음)
   if (posts.length > 0) {
     const best = [...posts].sort((a, b) => b.engagement - a.engagement)[0];
     if (best.engagement > 0) {
@@ -134,6 +139,9 @@ export function suggestChannelOptimizations(
           `가장 반응이 좋은 게시물의 총 반응 ${fmtK(best.engagement)}회.`,
           `이 게시물의 포맷·주제·표현 방식을 분석해 비슷한 콘텐츠를 기획해보세요.`,
         ],
+        action: channel === "instagram" && best.id
+          ? { kind: "boost-post", igMediaId: best.id }
+          : undefined,
       });
     }
   }
@@ -155,6 +163,7 @@ export function suggestChannelOptimizations(
             `광고 집행과 오가닉 콘텐츠를 병행하면 팔로워 확보 속도를 높일 수 있어요.`,
             `페이지 CTA 버튼(메시지·문의·예약)이 명확히 설정돼 있는지 점검해보세요.`,
           ],
+      action: { kind: "create-campaign" },
     });
   }
 
@@ -192,12 +201,18 @@ export type OptimizationObjective = "OUTCOME_TRAFFIC" | "OUTCOME_AWARENESS" | "O
 // 기존 3 goal(awareness/traffic/engagement_post) 은 Meta objective 단위 룰을 그대로 사용.
 const NEW_GOAL_IDS = new Set(["traffic_page_visit", "engagement_page_likes", "engagement_messages", "leads_call"]);
 
+export type SuggestionAction =
+  | { kind: "ai-draft" }
+  | { kind: "boost-post"; igMediaId: string }
+  | { kind: "create-campaign" };
+
 export type Suggestion =
   | {
       kind: "pause";
       severity: "warn";
       title: string;
       detail: string[];
+      action?: SuggestionAction;
     }
   | {
       kind: "increase-budget";
@@ -206,12 +221,14 @@ export type Suggestion =
       detail: string[];
       fromDailyBudget: number;
       toDailyBudget: number;
+      action?: SuggestionAction;
     }
   | {
-      kind: "note"; // info-only; no action button
+      kind: "note"; // info-only by default; channel suggestions may attach an action
       severity: "info" | "warn";
       title: string;
       detail: string[];
+      action?: SuggestionAction;
     };
 
 import {

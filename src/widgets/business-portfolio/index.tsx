@@ -94,13 +94,13 @@ export default function PortfolioTabs({ ig, fb, activeTab, onTabChange, igView, 
     followers: igData.followers,
     engagementRate: igData.engagementRate,
     reach: igData.reach,
-    posts: igData.posts.map(p => ({ engagement: p.likeCount + p.commentCount + p.savedCount })),
+    posts: igData.posts.map(p => ({ id: p.id, engagement: p.likeCount + p.commentCount + p.savedCount })),
   });
   const fbSuggestions = suggestChannelOptimizations("facebook", {
     followers: fbData.followers,
     engagementRate: fbData.engagementRate,
     postCount28d: fbData.postCount28d,
-    posts: fbData.posts.map(p => ({ engagement: p.reactionsCount + p.commentsCount + p.sharesCount })),
+    posts: fbData.posts.map(p => ({ id: p.id, engagement: p.reactionsCount + p.commentsCount + p.sharesCount })),
   });
 
   return (

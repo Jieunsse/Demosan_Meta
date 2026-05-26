@@ -111,7 +111,13 @@ export default function AbTestsPage() {
           ) : (
             <div className="flex flex-col gap-3">
               {mockFiltered.map((c) => (
-                <AbTestCard key={c.id} campaign={c} demo onClick={() => router.push(`/campaigns/${c.id}`)} />
+                <AbTestCard
+                  key={c.id}
+                  campaign={c}
+                  demo
+                  onClick={() => router.push(`/campaigns/${c.id}`)}
+                  onApplyWinner={c.status === "ended" ? () => router.push(`/create?prefill=campaign:${c.id}`) : undefined}
+                />
               ))}
             </div>
           )}
@@ -119,7 +125,12 @@ export default function AbTestsPage() {
       ) : (
         <div className="flex flex-col gap-3">
           {filtered.map((c) => (
-            <AbTestCard key={c.id} campaign={c} onClick={() => router.push(`/campaigns/${c.id}`)} />
+            <AbTestCard
+              key={c.id}
+              campaign={c}
+              onClick={() => router.push(`/campaigns/${c.id}`)}
+              onApplyWinner={c.status === "ended" ? () => router.push(`/create?prefill=campaign:${c.id}`) : undefined}
+            />
           ))}
         </div>
       )}
@@ -143,23 +154,22 @@ function MockBanner({ connected, onConnect, onCreate }: { connected: boolean; on
   );
 }
 
-function AbTestCard({ campaign: c, onClick, demo = false }: { campaign: CampaignSummary; onClick: () => void; demo?: boolean }) {
+function AbTestCard({ campaign: c, onClick, onApplyWinner, demo = false }: { campaign: CampaignSummary; onClick: () => void; onApplyWinner?: () => void; demo?: boolean }) {
   const running = isRunning(c);
+  const concluded = c.status === "ended";
   const statusInfo = STATUS_MAP[c.status] ?? { label: c.status, chip: "neutral" };
   const axisLabel = AXIS_LABEL[c.abTestAxis ?? ""] ?? c.abTestAxis ?? "—";
 
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="bg-[var(--w-bg-elevated)] border border-[var(--w-line-normal)] rounded-2xl text-left cursor-pointer transition-[border-color] duration-[160ms] flex items-center gap-[18px] py-[18px] px-5 w-full"
+    <div
+      className="bg-[var(--w-bg-elevated)] border border-[var(--w-line-normal)] rounded-2xl flex items-center gap-[18px] py-[18px] px-5 w-full"
       style={{ opacity: demo ? 0.85 : 1 }}
     >
       <div style={{ width: 40, height: 40, borderRadius: 10, background: running ? "var(--w-primary-soft)" : "var(--w-bg-alternative)", color: running ? "var(--w-primary-normal)" : "var(--w-fg-alternative)", display: "grid", placeItems: "center", flex: "0 0 auto" }}>
         <Icon name="chart" size={20} />
       </div>
 
-      <div className="flex-1 min-w-0">
+      <button type="button" onClick={onClick} className="flex-1 min-w-0 text-left cursor-pointer">
         <div className="flex items-center gap-2 mb-1.5 flex-wrap">
           <Chip variant={statusInfo.chip as "live" | "paused" | "review" | "ended" | "issue" | "neutral"} dot>{statusInfo.label}</Chip>
           <Chip variant="neutral">{axisLabel} 축</Chip>
@@ -174,10 +184,23 @@ function AbTestCard({ campaign: c, onClick, demo = false }: { campaign: Campaign
           <span className="text-[var(--w-primary-normal)] text-[10px] font-bold place-self-center">B</span>
           <span className="whitespace-nowrap overflow-hidden text-ellipsis">{c.abTestVariantB ?? "—"}</span>
         </div>
-      </div>
+      </button>
 
-      <Icon name="arrow-right" size={16} style={{ color: "var(--w-fg-alternative)", flex: "0 0 auto" }} />
-    </button>
+      <div className="flex items-center gap-2 flex-shrink-0">
+        {concluded && onApplyWinner && (
+          <button
+            type="button"
+            onClick={onApplyWinner}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[var(--w-primary-soft)] text-[var(--w-primary-normal)] font-semibold text-[12px] leading-none hover:bg-[rgba(0,102,255,0.15)] transition-colors duration-[120ms]"
+          >
+            <Icon name="sparkles" size={12} /> 우세 안 반영하기
+          </button>
+        )}
+        <button type="button" onClick={onClick} className="w-8 h-8 grid place-items-center rounded-lg hover:bg-[var(--w-bg-neutral)] transition-colors duration-[120ms]">
+          <Icon name="arrow-right" size={16} style={{ color: "var(--w-fg-alternative)" }} />
+        </button>
+      </div>
+    </div>
   );
 }
 

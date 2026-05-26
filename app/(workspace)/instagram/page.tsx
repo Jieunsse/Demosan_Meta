@@ -58,7 +58,7 @@ export default function InstagramInsightsPage() {
         followers: igData.followers,
         engagementRate: igData.engagementRate,
         reach: igData.reach,
-        posts: igData.posts.map((p) => ({ engagement: p.likeCount + p.commentCount + p.savedCount })),
+        posts: igData.posts.map((p) => ({ id: p.id, engagement: p.likeCount + p.commentCount + p.savedCount })),
       })
     : [];
 

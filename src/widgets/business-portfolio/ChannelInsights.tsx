@@ -1,10 +1,14 @@
 "use client";
 
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { KpiCard } from "@shared/ui/primitives";
 import Icon from "@shared/ui/Icon";
 import { Card } from "@shared/ui/Card";
+import { Button } from "@shared/ui/Button";
 import { cn } from "@shared/lib/cn";
 import { type Suggestion } from "@entities/insights/optimization";
+import AiDraftModal from "@features/channel-suggestion-action/AiDraftModal";
 
 export type ChannelKpi = { label: string; value: string; suffix?: string };
 
@@ -29,8 +33,17 @@ export type ChannelInsightsProps = {
   suggestions: Suggestion[];
 };
 
-function SuggestionCard({ s }: { s: Suggestion }) {
+function SuggestionCard({ s, onAction, onSecondary }: { s: Suggestion; onAction: (s: Suggestion) => void; onSecondary?: (s: Suggestion) => void }) {
   const warn = s.severity === "warn";
+  const actionLabel = s.action
+    ? s.action.kind === "ai-draft"
+      ? "광고로 만들기"
+      : s.action.kind === "boost-post"
+        ? "이 게시물 광고로 만들기"
+        : "광고 만들기"
+    : null;
+  const showSecondary = s.action?.kind === "ai-draft" && !!onSecondary;
+
   return (
     <div style={{ display: "flex", gap: 14, padding: 14, border: "1px solid var(--w-line-alternative)", borderRadius: 12 }}>
       <div style={{ width: 36, height: 36, borderRadius: 10, background: warn ? "rgba(255,146,0,0.12)" : "rgba(0,191,64,0.10)", color: warn ? "var(--w-status-cautionary)" : "var(--w-status-positive)", display: "grid", placeItems: "center", flex: "0 0 auto" }}>
@@ -41,6 +54,18 @@ function SuggestionCard({ s }: { s: Suggestion }) {
         {s.detail.map((l, i) => (
           <div key={i} style={{ font: "500 12.5px/1.55 var(--w-font-sans)", color: "var(--w-fg-neutral)", marginTop: 4 }}>{l}</div>
         ))}
+        {actionLabel && (
+          <div className="flex justify-end items-center gap-3 mt-2.5">
+            {showSecondary && (
+              <button
+                type="button"
+                onClick={() => onSecondary!(s)}
+                className="font-semibold text-[12px] text-[var(--w-primary-press)] bg-transparent border-0 cursor-pointer hover:underline"
+              >초안만 보기</button>
+            )}
+            <Button variant="primary" size="sm" type="button" onClick={() => onAction(s)}>{actionLabel}</Button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -75,10 +100,29 @@ function PostRow({ post }: { post: ChannelPostRow }) {
 }
 
 export default function ChannelInsights({ channel, kpis, posts, accountHandle, isMock, scenario, onScenarioChange, suggestions }: ChannelInsightsProps) {
+  const router = useRouter();
+  const [draftFor, setDraftFor] = useState<Suggestion | null>(null);
   const channelLabel = channel === "instagram" ? "Instagram" : "Facebook";
   const mockHelp = channel === "instagram"
     ? "Facebook 페이지에 Instagram 비즈니스 계정을 연결하면 실제 인사이트를 볼 수 있어요."
     : "Facebook 페이지를 연결하면 실제 인사이트를 볼 수 있어요.";
+
+  const handleAction = (s: Suggestion) => {
+    if (!s.action) return;
+    switch (s.action.kind) {
+      case "ai-draft": {
+        const qs = new URLSearchParams({ outcome: "engagement", from: "channel-insights" });
+        router.push(`/create?${qs.toString()}`);
+        return;
+      }
+      case "boost-post":
+        router.push(`/create?outcome=boost_post&igMediaId=${encodeURIComponent(s.action.igMediaId)}&from=channel-insights`);
+        return;
+      case "create-campaign":
+        router.push(`/create?from=channel-insights`);
+        return;
+    }
+  };
 
   return (
     <>
@@ -149,10 +193,19 @@ export default function ChannelInsights({ channel, kpis, posts, accountHandle, i
           <p className="font-medium text-[13px] leading-[1.5] text-[var(--w-fg-neutral)] mt-1 mb-0">제안은 참고용이에요. 직접 확인 후 적용해요.</p>
           <hr className="h-px bg-[var(--w-line-neutral)] my-[18px] border-0" />
           <div className="flex flex-col gap-3">
-            {suggestions.map((s, i) => <SuggestionCard key={i} s={s} />)}
+            {suggestions.map((s, i) => <SuggestionCard key={i} s={s} onAction={handleAction} onSecondary={setDraftFor} />)}
           </div>
         </Card>
       </div>
+
+      {draftFor && (
+        <AiDraftModal
+          channel={channel}
+          suggestionTitle={draftFor.title}
+          suggestionDetail={draftFor.detail}
+          onClose={() => setDraftFor(null)}
+        />
+      )}
     </>
   );
 }
