@@ -305,31 +305,51 @@ export default function CampaignsPage() {
                   {filtered.map((c) => {
                     const isSel = selected.has(c.id);
                     const isMenu = menuOpen === c.id;
+                    const isIssue = c.status === "issue";
                     const { daysLine, progressLine } = campaignDateInfo(c.startDate, c.endDate, c.status);
+                    const spendPct = c.dailyBudget && c.dailyBudget > 0 ? Math.min(100, Math.round((c.spend / c.dailyBudget) * 100)) : null;
                     return (
                       <tr
                         key={c.id}
                         className={cn(
                           "group",
-                          isSel && "[&_td]:bg-[var(--w-primary-soft)] [&:hover_td]:!bg-[var(--w-primary-soft)]"
+                          isSel && "[&_td]:bg-[var(--w-primary-soft)] [&:hover_td]:!bg-[var(--w-primary-soft)]",
+                          isIssue && !isSel && "[&_td]:bg-[rgba(255,59,48,0.04)] [&:hover_td]:!bg-[rgba(255,59,48,0.07)]"
                         )}
                       >
-                        <td className="py-3.5 px-3.5 border-b border-[var(--w-line-alternative)] font-medium text-[13px] leading-[1.4] text-[var(--w-fg-strong)] align-middle group-hover:bg-[var(--w-bg-neutral)]"><Checkbox checked={isSel} onChange={() => toggleSelect(c.id)} /></td>
-                        <td className="py-3.5 px-3.5 border-b border-[var(--w-line-alternative)] font-medium text-[13px] leading-[1.4] text-[var(--w-fg-strong)] align-middle group-hover:bg-[var(--w-bg-neutral)]" onClick={() => goDetail(c.id)} style={{ cursor: "pointer" }}>
+                        <td className="py-3.5 px-3.5 border-b border-[var(--w-line-alternative)] font-medium text-[13px] leading-[1.4] text-[var(--w-fg-strong)] align-middle"><Checkbox checked={isSel} onChange={() => toggleSelect(c.id)} /></td>
+                        <td className="py-3.5 px-3.5 border-b border-[var(--w-line-alternative)] font-medium text-[13px] leading-[1.4] text-[var(--w-fg-strong)] align-middle" onClick={() => goDetail(c.id)} style={{ cursor: "pointer" }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                            <div style={{ width: 38, height: 38, borderRadius: 8, background: campaignGradient(c.id), flex: "0 0 auto" }} />
+                            <div style={{ width: 38, height: 38, borderRadius: 8, background: campaignGradient(c.id), flex: "0 0 auto", position: "relative" }}>
+                              {isIssue && <span style={{ position: "absolute", top: -4, right: -4, width: 12, height: 12, borderRadius: "50%", background: "var(--w-status-negative)", border: "2px solid var(--w-bg-elevated)" }} />}
+                            </div>
                             <div style={{ minWidth: 0 }}>
                               <div style={{ font: "600 13.5px/1.35 var(--w-font-sans)", color: "var(--w-fg-strong)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.headline}</div>
+                              {isIssue && c.issueReason && (
+                                <div style={{ font: "500 11.5px/1.3 var(--w-font-sans)", color: "var(--w-status-negative)", marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                  ⚠ {c.issueReason.summary}
+                                </div>
+                              )}
                             </div>
                           </div>
                         </td>
-                        <td className="py-3.5 px-3.5 border-b border-[var(--w-line-alternative)] font-medium text-[13px] leading-[1.4] text-[var(--w-fg-strong)] align-middle group-hover:bg-[var(--w-bg-neutral)]" style={{ textAlign: "center" }}><CampaignObjectiveChip goal={c.goal} objective={c.objective} /></td>
-                        <td className="py-3.5 px-3.5 border-b border-[var(--w-line-alternative)] font-medium text-[13px] leading-[1.4] text-[var(--w-fg-strong)] align-middle group-hover:bg-[var(--w-bg-neutral)]" style={{ textAlign: "center" }}><CampaignStatusChip status={c.status} /></td>
-                        <td className="py-3.5 px-3.5 border-b border-[var(--w-line-alternative)] font-medium text-[13px] leading-[1.4] text-[var(--w-fg-strong)] align-middle group-hover:bg-[var(--w-bg-neutral)]" onClick={() => goDetail(c.id)} style={{ cursor: "pointer", textAlign: "center" }}>
+                        <td className="py-3.5 px-3.5 border-b border-[var(--w-line-alternative)] font-medium text-[13px] leading-[1.4] text-[var(--w-fg-strong)] align-middle" style={{ textAlign: "center" }}><CampaignObjectiveChip goal={c.goal} objective={c.objective} /></td>
+                        <td className="py-3.5 px-3.5 border-b border-[var(--w-line-alternative)] font-medium text-[13px] leading-[1.4] text-[var(--w-fg-strong)] align-middle" style={{ textAlign: "center" }}><CampaignStatusChip status={c.status} /></td>
+                        <td className="py-3.5 px-3.5 border-b border-[var(--w-line-alternative)] font-medium text-[13px] leading-[1.4] text-[var(--w-fg-strong)] align-middle" onClick={() => goDetail(c.id)} style={{ cursor: "pointer", textAlign: "center" }}>
                           <div style={{ font: "500 12.5px/1 var(--w-font-sans)", color: "var(--w-fg-strong)" }}>{daysLine}</div>
                           <div style={{ font: "500 11px/1 var(--w-font-mono)", color: "var(--w-fg-alternative)", marginTop: 4 }}>{progressLine}</div>
                         </td>
-                        <td className="py-3.5 px-3.5 border-b border-[var(--w-line-alternative)] align-middle group-hover:bg-[var(--w-bg-neutral)] text-right font-medium text-[13px] leading-none [font-family:var(--w-font-mono)] text-[var(--w-fg-strong)]" style={{ textAlign: "center" }}>{c.dailyBudget != null ? fmtKRW(c.dailyBudget) : "—"}</td>
+                        <td className="py-3.5 px-3.5 border-b border-[var(--w-line-alternative)] align-middle" style={{ textAlign: "center", minWidth: 110 }}>
+                          <div style={{ font: "500 13px/1 var(--w-font-mono)", color: "var(--w-fg-strong)" }}>{c.dailyBudget != null ? fmtKRW(c.dailyBudget) : "—"}</div>
+                          {spendPct !== null && (
+                            <div style={{ marginTop: 5 }}>
+                              <div style={{ height: 3, borderRadius: 2, background: "var(--w-line-alternative)", overflow: "hidden" }}>
+                                <div style={{ height: "100%", width: `${spendPct}%`, background: spendPct >= 90 ? "var(--w-status-negative)" : spendPct >= 70 ? "var(--w-status-cautionary)" : "var(--w-primary-normal)", borderRadius: 2 }} />
+                              </div>
+                              <div style={{ font: "500 10.5px/1 var(--w-font-mono)", color: spendPct >= 90 ? "var(--w-status-negative)" : "var(--w-fg-alternative)", marginTop: 3 }}>{spendPct}% 소진</div>
+                            </div>
+                          )}
+                        </td>
                         <td className="py-3.5 px-3.5 border-b border-[var(--w-line-alternative)] align-middle group-hover:bg-[var(--w-bg-neutral)] text-right font-medium text-[13px] leading-none [font-family:var(--w-font-mono)] text-[var(--w-fg-strong)]" style={{ textAlign: "center" }}>{c.impressions ? fmt(c.impressions) : "—"}</td>
                         <td className="py-3.5 px-3.5 border-b border-[var(--w-line-alternative)] align-middle group-hover:bg-[var(--w-bg-neutral)] text-right font-medium text-[13px] leading-none [font-family:var(--w-font-mono)] text-[var(--w-fg-strong)]" style={{ textAlign: "center" }}>{c.clicks ? fmt(c.clicks) : "—"}</td>
                         <td className="py-3.5 px-3.5 border-b border-[var(--w-line-alternative)] align-middle group-hover:bg-[var(--w-bg-neutral)] text-right font-medium text-[13px] leading-none [font-family:var(--w-font-mono)] text-[var(--w-fg-strong)]" style={{ textAlign: "center" }}>{c.ctr ? c.ctr.toFixed(2) + "%" : "—"}</td>
