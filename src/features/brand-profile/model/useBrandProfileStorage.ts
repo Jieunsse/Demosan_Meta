@@ -7,10 +7,7 @@ export interface BrandProfile {
   brandDescription?: string;
   tone?: string;
   brandVoice?: string;
-  prohibitedWords?: string;
   customerVoiceSummary?: string;
-  requiredPhrases?: string;
-  requiredHashtags?: string;
   imageGuide?: string;
 }
 
@@ -91,7 +88,7 @@ export function readActiveBrandProfileEntry(): BrandProfileEntry | null {
 }
 
 export function appendToBrandProfile(
-  field: "brandVoice" | "requiredPhrases" | "imageGuide" | "requiredHashtags",
+  field: "brandVoice" | "imageGuide",
   content: string
 ): void {
   const profiles = readProfiles();

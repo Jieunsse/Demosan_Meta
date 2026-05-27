@@ -27,8 +27,9 @@ import SopCard from "@features/sop/ui/SopCard";
 import SopEditModal from "@features/sop/ui/SopEditModal";
 import PersonaCard from "@features/brand-profile/ui/PersonaCard";
 import PersonaEditModal from "@features/brand-profile/ui/PersonaEditModal";
+import ReferenceMaterialsTab from "@features/brand-profile/ui/ReferenceMaterialsTab";
 
-type Tab = "style" | "policy" | "persona";
+type Tab = "style" | "policy" | "persona" | "materials";
 
 const TEXTAREA_CLS =
   "w-full px-[14px] py-3 border border-[var(--w-line-normal)] rounded-xl bg-[var(--w-bg-elevated)] font-medium text-[14px] leading-[1.6] tracking-[0.004em] text-[var(--w-fg-strong)] outline-none transition-[border-color,box-shadow] duration-[120ms] placeholder:text-[var(--w-fg-alternative)] focus:border-[var(--w-primary-normal)] focus:shadow-[0_0_0_4px_rgba(0,102,255,0.14)] resize-y";
@@ -87,10 +88,7 @@ export default function BrandProfileDetailPage() {
   const [tone, setTone] = useState("");
   const [brandDescription, setBrandDescription] = useState("");
   const [brandVoice, setBrandVoice] = useState("");
-  const [prohibitedWords, setProhibitedWords] = useState("");
   const [customerVoiceSummary, setCustomerVoiceSummary] = useState("");
-  const [requiredPhrases, setRequiredPhrases] = useState("");
-  const [requiredHashtags, setRequiredHashtags] = useState("");
   const [imageGuide, setImageGuide] = useState("");
 
   useEffect(() => {
@@ -105,10 +103,7 @@ export default function BrandProfileDetailPage() {
       setTone(p.tone ?? "");
       setBrandDescription(p.brandDescription ?? "");
       setBrandVoice(p.brandVoice ?? "");
-      setProhibitedWords(p.prohibitedWords ?? "");
       setCustomerVoiceSummary(p.customerVoiceSummary ?? "");
-      setRequiredPhrases(p.requiredPhrases ?? "");
-      setRequiredHashtags(p.requiredHashtags ?? "");
       setImageGuide(p.imageGuide ?? "");
       setLoaded(true);
     }
@@ -123,10 +118,7 @@ export default function BrandProfileDetailPage() {
       tone: tone || undefined,
       brandDescription: brandDescription.trim() || undefined,
       brandVoice: brandVoice.trim() || undefined,
-      prohibitedWords: prohibitedWords.trim() || undefined,
       customerVoiceSummary: customerVoiceSummary.trim() || undefined,
-      requiredPhrases: requiredPhrases.trim() || undefined,
-      requiredHashtags: requiredHashtags.trim() || undefined,
       imageGuide: imageGuide.trim() || undefined,
     };
     saveProfile(updated);
@@ -191,7 +183,7 @@ export default function BrandProfileDetailPage() {
       </div>
 
       <div className="flex gap-1 border-b border-[var(--w-line-normal)]" style={{ marginBottom: -16 }}>
-        {(["style", "policy", "persona"] as Tab[]).map((t) => (
+        {(["style", "policy", "persona", "materials"] as Tab[]).map((t) => (
           <button
             key={t}
             type="button"
@@ -203,7 +195,7 @@ export default function BrandProfileDetailPage() {
                 : "border-transparent text-[var(--w-fg-neutral)] hover:text-[var(--w-fg-strong)]"
             )}
           >
-            {t === "style" ? "스타일" : t === "policy" ? "정책" : "페르소나"}
+            {t === "style" ? "스타일" : t === "policy" ? "정책" : t === "persona" ? "페르소나" : "참고 자료"}
           </button>
         ))}
       </div>
@@ -214,10 +206,7 @@ export default function BrandProfileDetailPage() {
           <ReadField label="광고 느낌 (Tone)" value={tone} />
           <ReadField label="브랜드 설명" value={brandDescription} />
           <ReadField label="브랜드 보이스 (Brand Voice)" value={brandVoice} />
-          <ReadField label="금지어" value={prohibitedWords} />
-          <ReadField label="필수 문구" value={requiredPhrases} />
-          <ReadField label="필수 해시태그" value={requiredHashtags} />
-          <ReadField label="이미지 가이드" value={imageGuide} />
+          <ReadField label="브랜드 미감 (이미지 가이드)" value={imageGuide} />
           <ReadField label="고객 목소리 요약 (Customer Voice)" value={customerVoiceSummary} />
         </div>
       )}
@@ -266,39 +255,12 @@ export default function BrandProfileDetailPage() {
             />
           </Field>
 
-          <Field label="금지어" hint="광고 카피에 절대 쓰면 안 되는 단어·표현. 줄바꿈 또는 쉼표로 구분.">
-            <textarea
-              className={cn(TEXTAREA_CLS, "min-h-[64px]")}
-              value={prohibitedWords}
-              onChange={(e) => setProhibitedWords(e.target.value)}
-              placeholder="예) 최고, 1위, 보장"
-            />
-          </Field>
-
-          <Field label="필수 문구" hint="광고에 반드시 포함해야 하는 문구. 줄바꿈으로 구분.">
-            <textarea
-              className={cn(TEXTAREA_CLS, "min-h-[64px]")}
-              value={requiredPhrases}
-              onChange={(e) => setRequiredPhrases(e.target.value)}
-              placeholder={"예) 지금 가입하면 30일 무료\n전문가 상담 가능"}
-            />
-          </Field>
-
-          <Field label="필수 해시태그" hint="Instagram 광고에 포함할 해시태그. 줄바꿈 또는 쉼표로 구분.">
-            <textarea
-              className={cn(TEXTAREA_CLS, "min-h-[56px]")}
-              value={requiredHashtags}
-              onChange={(e) => setRequiredHashtags(e.target.value)}
-              placeholder={"예) #그린루틴 #비건스킨케어"}
-            />
-          </Field>
-
-          <Field label="이미지 가이드" hint="배경색·로고 위치·인물 정책 등 이미지 생성 규칙.">
+          <Field label="브랜드 미감 (이미지 가이드)" hint="브랜드 분위기·배경색·로고 위치·인물 정책 등 이미지 생성의 미감 가이드.">
             <textarea
               className={cn(TEXTAREA_CLS, "min-h-[64px]")}
               value={imageGuide}
               onChange={(e) => setImageGuide(e.target.value)}
-              placeholder="예) 배경은 흰색 또는 연한 베이지. 로고는 우측 하단."
+              placeholder="예) 자연광 느낌의 밝은 톤. 배경은 흰색 또는 연한 베이지. 로고는 우측 하단."
             />
           </Field>
 
@@ -376,6 +338,10 @@ export default function BrandProfileDetailPage() {
             </div>
           )}
         </div>
+      )}
+
+      {tab === "materials" && (
+        <ReferenceMaterialsTab brandProfileId={id} canEdit={isOwner} />
       )}
 
       {editingType && (

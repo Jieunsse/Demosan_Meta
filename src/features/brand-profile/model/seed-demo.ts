@@ -1,5 +1,6 @@
 import type { BrandProfileEntry } from "./useBrandProfileStorage";
 import type { PersonaEntry } from "./usePersonasStorage";
+import type { ReferenceMaterial } from "@shared/lib/referenceMaterials";
 
 const DEMO_PROFILE_ID = "demo-greenroutine-001";
 
@@ -11,18 +12,32 @@ const DEMO_PROFILE: BrandProfileEntry = {
   brandDescription:
     "20~35세 여성을 위한 비건 스킨케어 브랜드 '그린루틴'. 대표 제품은 수분 크림과 토너로, 화학 첨가물 없이 식물성 성분만 사용해요. 민감성 피부도 안심하고 쓸 수 있는 게 강점이에요.",
   brandVoice: "친근하고 솔직하게. 과장 없이 담백하게. 고객과 대화하듯 말해요.",
-  prohibitedWords: "최고, 1위, 완벽, 100% 보장, 피부과 인증, 부작용 없음",
   customerVoiceSummary:
     "'바르고 나면 촉촉해요', '향이 자극적이지 않아서 좋아요', '민감한 피부인데 전혀 자극 없어요' 같은 리뷰가 많아요.",
-  requiredPhrases: "비건 인증\n무향·무색소",
-  requiredHashtags: "#그린루틴 #비건스킨케어 #민감성피부",
   imageGuide:
-    "배경은 흰색 또는 연한 베이지. 로고는 우측 하단. 자연광 느낌의 밝은 톤. 인물이 나오는 경우 미소 짓는 자연스러운 표정.",
+    "자연광 느낌의 밝고 깨끗한 톤. 배경은 흰색 또는 연한 베이지. 로고는 우측 하단. 인물이 나오는 경우 미소 짓는 자연스러운 표정.",
   policy: [
     {
       type: "prohibited_words",
       source: "user",
       data: { words: ["최고", "1위", "완벽", "100% 보장", "피부과 인증", "부작용 없음"] },
+    },
+    {
+      type: "required_phrases",
+      source: "user",
+      data: { phrases: ["비건 인증", "무향·무색소"] },
+    },
+    {
+      type: "required_hashtags",
+      source: "user",
+      data: { hashtags: ["#그린루틴", "#비건스킨케어", "#민감성피부"] },
+    },
+    {
+      type: "image_restrictions",
+      source: "user",
+      data: {
+        text: "이미지 최소 해상도 1080×1080px\n피드 이미지 내 텍스트 비율 20% 이하\n릴스는 9:16 비율 필수",
+      },
     },
     {
       type: "length_limits",
@@ -102,8 +117,46 @@ const DEMO_PERSONAS: PersonaEntry[] = [
   },
 ];
 
+// data URL: 연한 그린 배경 40×40 SVG placeholder (이미지 썸네일용)
+const IMG_PLACEHOLDER =
+  "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCI+PHJlY3Qgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiBmaWxsPSIjZThmNGU4Ii8+PHRleHQgeD0iNTAlIiB5PSI1NSUiIGZvbnQtc2l6ZT0iMTYiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGRvbWluYW50LWJhc2VsaW5lPSJtaWRkbGUiIGZvbnQtZmFtaWx5PSJzZXJpZiIgZmlsbD0iIzVhOGE1YSI+8J+MfTwvdGV4dD48L3N2Zz4=";
+
+const DEMO_MATERIALS: ReferenceMaterial[] = [
+  {
+    id: "demo-ref-001",
+    brandProfileId: DEMO_PROFILE_ID,
+    name: "그린루틴 브랜드 가이드라인.txt",
+    type: "txt",
+    mimeType: "text/plain",
+    sizeBytes: 1842,
+    storageUrl: "",
+    uploadedAt: Date.now() - 1000 * 60 * 60 * 24 * 14,
+  },
+  {
+    id: "demo-ref-002",
+    brandProfileId: DEMO_PROFILE_ID,
+    name: "2024 봄여름 제품 카탈로그.pdf",
+    type: "pdf",
+    mimeType: "application/pdf",
+    sizeBytes: 3_241_920,
+    storageUrl: "",
+    uploadedAt: Date.now() - 1000 * 60 * 60 * 24 * 7,
+  },
+  {
+    id: "demo-ref-003",
+    brandProfileId: DEMO_PROFILE_ID,
+    name: "수분크림 비주얼 소재 봄캠페인.jpg",
+    type: "image",
+    mimeType: "image/jpeg",
+    sizeBytes: 512_000,
+    storageUrl: IMG_PLACEHOLDER,
+    uploadedAt: Date.now() - 1000 * 60 * 60 * 24 * 3,
+  },
+];
+
 const PROFILES_KEY = "adflow:brand-profiles";
 const PERSONAS_KEY = "adflow:personas";
+const MATERIALS_KEY_PREFIX = "adflow:ref-materials:";
 
 export function seedDemoIfEmpty(): void {
   if (typeof window === "undefined") return;
@@ -121,5 +174,10 @@ export function seedDemoIfEmpty(): void {
     })();
     const filtered = existingPersonas.filter((p) => p.brandProfileId !== DEMO_PROFILE_ID);
     localStorage.setItem(PERSONAS_KEY, JSON.stringify([...filtered, ...DEMO_PERSONAS]));
+
+    const materialsKey = `${MATERIALS_KEY_PREFIX}${DEMO_PROFILE_ID}`;
+    if (!localStorage.getItem(materialsKey)) {
+      localStorage.setItem(materialsKey, JSON.stringify(DEMO_MATERIALS));
+    }
   } catch {}
 }

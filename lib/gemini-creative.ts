@@ -18,9 +18,6 @@ export interface BrandProfileContext {
   brandDescription?: string;
   brandVoice?: string;
   customerVoiceSummary?: string;
-  prohibitedWords?: string;
-  requiredPhrases?: string;
-  requiredHashtags?: string;
   policy?: SopSection[];
 }
 
@@ -87,12 +84,10 @@ function requireEnv(key: string): string {
 }
 
 function buildPolicyLines(bp: BrandProfileContext): string {
-  const styleProhibited = bp.prohibitedWords?.trim() ?? "";
   const policyProhibited = bp.policy
     ?.find((s): s is Extract<SopSection, { type: "prohibited_words" }> => s.type === "prohibited_words")
     ?.data.words.join(", ") ?? "";
-  const allProhibited = [styleProhibited, policyProhibited].filter(Boolean).join(", ");
-  const prohibitedLine = allProhibited ? `\n금지어 (절대 사용 금지): ${allProhibited}` : "";
+  const prohibitedLine = policyProhibited ? `\n금지어 (절대 사용 금지): ${policyProhibited}` : "";
 
   const lengthSection = bp.policy?.find(
     (s): s is Extract<SopSection, { type: "length_limits" }> => s.type === "length_limits",
@@ -117,8 +112,15 @@ function buildPolicyLines(bp: BrandProfileContext): string {
     if (parts.length) ctaLine = `\nCTA 제한: ${parts.join(" / ")}`;
   }
 
-  const requiredPhrasesLine = bp.requiredPhrases?.trim() ? `\n반드시 포함할 문구: ${bp.requiredPhrases.trim()}` : "";
-  const requiredHashtagsLine = bp.requiredHashtags?.trim() ? `\n필수 해시태그 (Instagram): ${bp.requiredHashtags.trim()}` : "";
+  const requiredPhrases = bp.policy
+    ?.find((s): s is Extract<SopSection, { type: "required_phrases" }> => s.type === "required_phrases")
+    ?.data.phrases ?? [];
+  const requiredPhrasesLine = requiredPhrases.length ? `\n반드시 포함할 문구: ${requiredPhrases.join(", ")}` : "";
+
+  const requiredHashtags = bp.policy
+    ?.find((s): s is Extract<SopSection, { type: "required_hashtags" }> => s.type === "required_hashtags")
+    ?.data.hashtags ?? [];
+  const requiredHashtagsLine = requiredHashtags.length ? `\n필수 해시태그 (Instagram): ${requiredHashtags.join(" ")}` : "";
 
   return prohibitedLine + lengthLine + ctaLine + requiredPhrasesLine + requiredHashtagsLine;
 }

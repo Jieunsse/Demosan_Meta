@@ -219,9 +219,6 @@ export default function CreatePage() {
           brandDescription: bp.brandDescription,
           brandVoice: bp.brandVoice,
           customerVoiceSummary: bp.customerVoiceSummary,
-          prohibitedWords: bp.prohibitedWords,
-          requiredPhrases: bp.requiredPhrases,
-          requiredHashtags: bp.requiredHashtags,
           policy: bpEntry?.policy,
         },
         persona: personaEntry
