@@ -66,6 +66,8 @@ export default function CommentsPage() {
 
   const [pendingDelete, setPendingDelete] = useState<IgComment | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [pendingDeleteReply, setPendingDeleteReply] = useState<{ reply: IgComment; parentId: string } | null>(null);
+  const [deletingReply, setDeletingReply] = useState(false);
   const [igPicture, setIgPicture] = useState<string | null>(null);
 
   const selectedMedia = media.find((m) => m.id === selectedId) ?? null;
@@ -179,6 +181,49 @@ export default function CommentsPage() {
       }
     } finally {
       setDeleting(false);
+    }
+  }
+
+  async function handleHideReply(parentId: string, reply: IgComment) {
+    const nextHidden = !reply.hidden;
+    const res = await fetch(`/api/instagram/comments/${encodeURIComponent(reply.id)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hidden: nextHidden }),
+    });
+    const data = (await res.json()) as MutateResp;
+    if (data.ok) {
+      setReplies((s) => ({
+        ...s,
+        [parentId]: (s[parentId] ?? []).map((r) => r.id === reply.id ? { ...r, hidden: nextHidden } : r),
+      }));
+      showToast(nextHidden ? "답글을 숨겼어요." : "답글을 다시 표시해요.");
+    } else {
+      showToast(data.error);
+    }
+  }
+
+  async function confirmDeleteReply() {
+    if (!pendingDeleteReply) return;
+    setDeletingReply(true);
+    try {
+      const res = await fetch(`/api/instagram/comments/${encodeURIComponent(pendingDeleteReply.reply.id)}`, { method: "DELETE" });
+      const data = (await res.json()) as MutateResp;
+      if (data.ok) {
+        setReplies((s) => ({
+          ...s,
+          [pendingDeleteReply.parentId]: (s[pendingDeleteReply.parentId] ?? []).filter((r) => r.id !== pendingDeleteReply.reply.id),
+        }));
+        setComments((cs) => cs.map((c) =>
+          c.id === pendingDeleteReply.parentId ? { ...c, replyCount: Math.max(0, c.replyCount - 1) } : c
+        ));
+        setPendingDeleteReply(null);
+        showToast("답글을 삭제했어요.");
+      } else {
+        showToast(data.error);
+      }
+    } finally {
+      setDeletingReply(false);
     }
   }
 
@@ -340,7 +385,7 @@ export default function CommentsPage() {
                 ) : comments.length === 0 ? (
                   <div className="text-[12.5px] text-[var(--w-fg-alternative)] py-10 text-center">아직 댓글이 없어요.</div>
                 ) : (
-                  <ul className="flex flex-col gap-0.5">
+                  <ul className="flex flex-col gap-2">
                     {commentsDevFallback && (
                       <li className="text-[11px] text-[var(--w-fg-alternative)] mb-2 px-1">
                         앱 심사 전 개발 환경 — 샘플 댓글을 표시해요.
@@ -365,6 +410,8 @@ export default function CommentsPage() {
                         onDelete={() => setPendingDelete(c)}
                         onReplyDraft={(v) => setReplyDraft((s) => ({ ...s, [c.id]: v }))}
                         onReplySubmit={() => handleReply(c.id)}
+                        onHideReply={(r) => handleHideReply(c.id, r)}
+                        onDeleteReply={(r) => setPendingDeleteReply({ reply: r, parentId: c.id })}
                       />
                     ))}
                   </ul>
@@ -449,6 +496,21 @@ export default function CommentsPage() {
           onConfirm={confirmDelete}
         />
       )}
+      {pendingDeleteReply && (
+        <ConfirmModal
+          title="이 답글을 삭제할까요?"
+          desc={
+            <div className="flex flex-col gap-1.5">
+              <span>@{pendingDeleteReply.reply.username} 의 답글이 영구 삭제돼요. 되돌릴 수 없어요.</span>
+              <span className="text-[12px] text-[var(--w-fg-alternative)] line-clamp-3">"{pendingDeleteReply.reply.text}"</span>
+            </div>
+          }
+          confirmLabel={deletingReply ? "삭제 중…" : "삭제"}
+          tone="danger"
+          onClose={() => { if (!deletingReply) setPendingDeleteReply(null); }}
+          onConfirm={confirmDeleteReply}
+        />
+      )}
     </div>
   );
 }
@@ -465,6 +527,8 @@ function CommentRow({
   onDelete,
   onReplyDraft,
   onReplySubmit,
+  onHideReply,
+  onDeleteReply,
 }: {
   comment: IgComment;
   replies?: IgComment[];
@@ -477,11 +541,13 @@ function CommentRow({
   onDelete: () => void;
   onReplyDraft: (v: string) => void;
   onReplySubmit: () => void;
+  onHideReply: (r: IgComment) => void;
+  onDeleteReply: (r: IgComment) => void;
 }) {
   const [showReplyInput, setShowReplyInput] = useState(false);
 
   return (
-    <li className={`rounded-xl px-3.5 py-3 ${comment.hidden ? "bg-[var(--w-bg-neutral)] opacity-60" : "bg-[var(--w-bg-elevated)]"}`}>
+    <li className={`rounded-xl px-4 py-4 ${comment.hidden ? "bg-[var(--w-bg-neutral)] opacity-60" : "bg-[var(--w-bg-elevated)]"}`}>
       <div className="flex gap-2.5 items-start">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
@@ -505,7 +571,7 @@ function CommentRow({
             <button
               type="button"
               onClick={() => { setShowReplyInput((v) => !v); }}
-              className="text-[11.5px] font-semibold text-[var(--w-primary-normal)] hover:underline"
+              className="text-[11.5px] font-semibold text-[var(--w-primary-normal)]"
             >
               답글
             </button>
@@ -534,7 +600,7 @@ function CommentRow({
             <button
               type="button"
               onClick={onDelete}
-              className="text-[11.5px] font-semibold text-[var(--w-status-negative)] hover:underline"
+              className="text-[11.5px] font-semibold text-[var(--w-status-negative)]"
             >
               삭제
             </button>
@@ -543,16 +609,42 @@ function CommentRow({
       </div>
 
       {repliesOpen && replies && replies.length > 0 && (
-        <ul className="mt-2.5 ml-4 flex flex-col gap-2 border-l-2 border-[var(--w-line-alternative)] pl-3">
+        <ul className="mt-2.5 ml-4 flex flex-col gap-3 border-l-2 border-[var(--w-line-alternative)] pl-3">
           {replies.map((r) => (
-            <li key={r.id} className="flex flex-col gap-0.5">
-              <div className="flex items-center gap-2">
+            <li key={r.id} className={`flex flex-col gap-0.5 ${r.hidden ? "opacity-50" : ""}`}>
+              <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-semibold text-[12px] text-[var(--w-fg-strong)]">@{r.username}</span>
                 <span className="text-[10.5px] text-[var(--w-fg-alternative)]">{formatDate(r.timestamp)}</span>
+                {r.likeCount > 0 && (
+                  <span className="text-[10.5px] text-[var(--w-fg-alternative)] inline-flex items-center gap-0.5">
+                    <Icon name="heart" size={9} />{r.likeCount}
+                  </span>
+                )}
+                {r.hidden && (
+                  <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-[var(--w-bg-neutral)] text-[var(--w-fg-alternative)]">
+                    숨김
+                  </span>
+                )}
               </div>
               <p className="text-[12.5px] text-[var(--w-fg-strong)] leading-[1.45] break-words whitespace-pre-wrap">
                 {r.text}
               </p>
+              <div className="flex items-center gap-3 mt-1">
+                <button
+                  type="button"
+                  onClick={() => onHideReply(r)}
+                  className="text-[11px] font-semibold text-[var(--w-fg-neutral)] hover:text-[var(--w-fg-strong)]"
+                >
+                  {r.hidden ? "보이기" : "숨기기"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onDeleteReply(r)}
+                  className="text-[11px] font-semibold text-[var(--w-status-negative)]"
+                >
+                  삭제
+                </button>
+              </div>
             </li>
           ))}
         </ul>
@@ -566,7 +658,7 @@ function CommentRow({
             onChange={(e) => onReplyDraft(e.target.value)}
             placeholder={`@${comment.username} 에게 답글…`}
             maxLength={2200}
-            className="flex-1 px-3 py-2 rounded-[8px] border border-[var(--w-line-normal)] bg-[var(--w-bg-elevated)] text-[12.5px] text-[var(--w-fg-strong)] outline-none focus:border-[var(--w-primary-normal)]"
+            className="flex-1 px-3 py-2 rounded-[8px] border border-[var(--w-line-normal)] bg-[var(--w-bg-elevated)] text-[12.5px] text-[var(--w-fg-strong)] outline-none ring-0 focus:outline-none focus:ring-0 focus:border-[var(--w-primary-normal)]"
             disabled={replySubmitting}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onReplySubmit(); }
