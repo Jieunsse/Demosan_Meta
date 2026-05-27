@@ -7,7 +7,8 @@
 import Icon from "@shared/ui/Icon";
 import { Button } from "@shared/ui/Button";
 import { cn } from "@shared/lib/cn";
-import { TONES, OBJECTIVES_ALL, type ToneId, type ObjectiveId } from "@entities/creative/options";
+import { OBJECTIVES_ALL, type ObjectiveId } from "@entities/creative/options";
+import type { ReferenceMaterial } from "@shared/lib/referenceMaterials";
 
 export const ASPECT_OPTIONS = [
   { id: "1:1" as const,  label: "1:1 정사각형",       enabled: true,  hint: "피드용 — 가장 안전" },
@@ -28,15 +29,19 @@ function BriefRow({ label, value }: { label: string; value: string }) {
 
 export default function BriefForm({
   state, scenes, logo, aspect, briefNotes, generating,
+  warehouseMaterials, selectedMaterials,
   onAddScenes, onRemoveScene, onClearScenes, onSetLogo, onRemoveLogo,
   onAspectChange, onNotesChange, onGenerate, onZoom,
+  onToggleMaterial, onUploadMaterial,
 }: {
-  state: { headline: string; primaryText: string; tone: ToneId; outcome: ObjectiveId | null };
+  state: { headline: string; primaryText: string; tone: string; outcome: ObjectiveId | null };
   scenes: string[];
   logo: string | null;
   aspect: AspectId;
   briefNotes: string;
   generating: boolean;
+  warehouseMaterials: ReferenceMaterial[];
+  selectedMaterials: ReferenceMaterial[];
   onAddScenes: (files: FileList | null) => void;
   onRemoveScene: (i: number) => void;
   onClearScenes: () => void;
@@ -46,8 +51,10 @@ export default function BriefForm({
   onNotesChange: (v: string) => void;
   onGenerate: () => void;
   onZoom: (src: string) => void;
+  onToggleMaterial: (m: ReferenceMaterial) => void;
+  onUploadMaterial: (files: FileList | null) => void;
 }) {
-  const toneLabel = TONES.find((t) => t.id === state.tone)?.label ?? state.tone;
+  const toneLabel = state.tone;
   const outcomeDef = state.outcome ? OBJECTIVES_ALL.find((o) => o.id === state.outcome) : null;
   const hasCopy = !!state.headline?.trim();
   const hasMaterials = scenes.length > 0 || !!logo;
@@ -151,6 +158,54 @@ export default function BriefForm({
             </div>
           ) : (
             <p className="font-medium text-[12px] leading-[1.5] tracking-[0.008em] text-[var(--w-fg-neutral)]" style={{ margin: 0 }}>없어도 돼요. 있으면 분위기 참고용으로 같이 보내요.</p>
+          )}
+        </div>
+
+        {/* 참고 자료 */}
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+            <span style={{ font: "500 12px/1 var(--w-font-sans)", color: "var(--w-fg-strong)" }}>참고 자료 (선택)</span>
+            <label className={cn("inline-flex items-center justify-center gap-1.5 border font-semibold leading-none tracking-[-0.002em] cursor-pointer transition-[background,border-color,color,box-shadow] duration-[120ms] whitespace-nowrap", "h-8 px-3 text-[12.5px] rounded-lg gap-[5px]", "bg-transparent border-[var(--w-line-normal)] text-[var(--w-fg-strong)] hover:bg-[var(--w-bg-neutral)]")}>
+              <Icon name="upload" size={12} /> 즉석 업로드
+              <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf,text/plain" multiple style={{ display: "none" }} onChange={(e) => onUploadMaterial(e.target.files)} />
+            </label>
+          </div>
+          {warehouseMaterials.length > 0 ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              {warehouseMaterials.map((m) => {
+                const selected = !!selectedMaterials.find((x) => x.id === m.id);
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => onToggleMaterial(m)}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 8, padding: "7px 10px",
+                      borderRadius: 8, border: `1.5px solid ${selected ? "var(--w-primary-normal)" : "var(--w-line-normal)"}`,
+                      background: selected ? "var(--w-primary-soft)" : "var(--w-bg-elevated)",
+                      cursor: "pointer", textAlign: "left",
+                    }}
+                  >
+                    <span style={{ font: "600 11px/1 var(--w-font-mono)", padding: "2px 6px", borderRadius: 4, background: "var(--w-bg-alternative)", color: "var(--w-fg-neutral)", flexShrink: 0 }}>
+                      {m.type.toUpperCase()}
+                    </span>
+                    <span style={{ font: "500 12.5px/1 var(--w-font-sans)", color: selected ? "var(--w-primary-press)" : "var(--w-fg-strong)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {m.name}
+                    </span>
+                    {selected && <Icon name="check" size={12} style={{ color: "var(--w-primary-normal)", marginLeft: "auto", flexShrink: 0 }} />}
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="font-medium text-[12px] leading-[1.5] tracking-[0.008em] text-[var(--w-fg-neutral)]" style={{ margin: 0 }}>
+              브랜드 프로필에 저장된 참고 자료가 없어요. 즉석 업로드하면 창고에도 자동 저장돼요.
+            </p>
+          )}
+          {selectedMaterials.length > 0 && (
+            <p className="font-medium text-[11px] leading-[1.5] tracking-[0.008em] text-[var(--w-primary-normal)]" style={{ margin: "4px 0 0" }}>
+              {selectedMaterials.length}개 선택됨 — 이번 생성에 함께 전달돼요
+            </p>
           )}
         </div>
 

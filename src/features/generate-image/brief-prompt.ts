@@ -1,19 +1,21 @@
-import { TONES, OBJECTIVES_ALL, type ToneId, type ObjectiveId } from "@entities/creative/options";
+import { OBJECTIVES_ALL, type ObjectiveId } from "@entities/creative/options";
 
 export interface BriefPromptInput {
   headline: string;
   primaryText: string;
-  tone: ToneId;
+  tone: string;
   outcomeChip: ObjectiveId | null;
   /** Number of scene shots attached (image data is passed separately as referenceImages). */
   scenesCount: number;
   hasLogo: boolean;
   aspect: string;
   notes: string;
+  /** 선택된 참고 자료 파일명 목록 — 프롬프트에 명시적으로 언급 */
+  refMaterialNames?: string[];
 }
 
 export function buildBriefPrompt(input: BriefPromptInput): string {
-  const toneLabel = TONES.find((t) => t.id === input.tone)?.label ?? input.tone;
+  const toneLabel = input.tone;
   const outcomeDef = input.outcomeChip ? OBJECTIVES_ALL.find((o) => o.id === input.outcomeChip) : null;
   const lines: (string | null)[] = [
     "Facebook/Instagram 광고용 이미지 디자인 의뢰입니다.",
@@ -29,6 +31,9 @@ export function buildBriefPrompt(input: BriefPromptInput): string {
       ? `- 연출컷 ${input.scenesCount}장 (앞쪽 첨부): 카메라 앵글·라이팅·전반 분위기 참고`
       : "- 연출컷: 없음",
     input.hasLogo ? "- 로고 1장 (뒤쪽 첨부): 가능하면 우측 하단에 작게 합성하지 말고 분위기만 참고" : "- 로고: 없음",
+    input.refMaterialNames?.length
+      ? `- 참고 자료 ${input.refMaterialNames.length}건 첨부: ${input.refMaterialNames.join(", ")}`
+      : null,
     "",
     input.notes.trim() ? `[추가 지시사항]\n${input.notes.trim()}\n` : null,
     "[원하는 결과]",

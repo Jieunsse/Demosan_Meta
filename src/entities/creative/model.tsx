@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useReducer, type Dispatch, type ReactNode } from "react";
-import { type ToneId, type CtaId, type ImageId, type Objective, type OutcomeChip } from "@entities/creative/options";
+import { type CtaId, type ImageId, type Objective, type OutcomeChip } from "@entities/creative/options";
 import { selectOutcome } from "@entities/creative/outcome-routing";
 import type { ExtractedTargeting } from "@/lib/gemini-creative";
 
@@ -9,7 +9,7 @@ const INITIAL_HEADLINE = "피부가 먼저 느끼는 차이, 그린루틴";
 
 // PRD §13.10 — 광고 목표는 STEP 01 single-select. multi-select 와 outcomeChips array 는 폐기.
 export type CreativeState = {
-  tone: ToneId;
+  tone: string;
   headline: string;
   cta: CtaId;
   image: ImageId;
@@ -30,7 +30,7 @@ export type CreativeState = {
 };
 
 export type CreativeAction =
-  | { type: "SET_TONE"; tone: ToneId }
+  | { type: "SET_TONE"; tone: string }
   | { type: "SET_HEADLINE"; headline: string }
   | { type: "SET_IMAGE"; image: ImageId }
   | { type: "SET_PRIMARY_TEXT"; primaryText: string }
