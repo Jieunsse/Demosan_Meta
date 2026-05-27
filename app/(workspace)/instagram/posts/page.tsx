@@ -12,6 +12,12 @@ import { useToast } from "@shared/ui/Toast";
 import ConfirmModal from "@shared/ui/ConfirmModal";
 import { IgPostPreview } from "@shared/ui/IgPostPreview";
 import type { IgComment } from "@/lib/instagram-comments";
+import { readProfiles, readActiveBrandProfileEntry } from "@features/brand-profile/model/useBrandProfileStorage";
+import type { BrandProfileEntry } from "@features/brand-profile/model/useBrandProfileStorage";
+import { readPersonas } from "@features/brand-profile/model/usePersonasStorage";
+import type { PersonaEntry } from "@features/brand-profile/model/usePersonasStorage";
+import { sectionPreviewText, isSectionFilled } from "@features/sop/model/useSopStorage";
+import { SOP_SECTION_LABEL } from "@features/sop/model/section-labels";
 
 type RecentItem = {
   id: string;
@@ -74,8 +80,13 @@ export default function PostsPage() {
   const [aiImages, setAiImages] = useState<string[]>([]);
   const [aiPicking, setAiPicking] = useState<string | null>(null);
   const [captionSuggesting, setCaptionSuggesting] = useState(false);
-  const [promptSuggesting, setPromptSuggesting] = useState(false);
+  const [imageTab, setImageTab] = useState<"upload" | "ai">("upload");
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [brandProfiles, setBrandProfiles] = useState<BrandProfileEntry[]>([]);
+  const [allPersonas, setAllPersonas] = useState<PersonaEntry[]>([]);
+  const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
+  const [selectedPersonaId, setSelectedPersonaId] = useState<string | null>(null);
 
   const loadRecent = useCallback(async () => {
     setRecentLoading(true);
@@ -105,6 +116,19 @@ export default function PostsPage() {
       .then(r => r.ok ? r.json() : null)
       .then((data: { igPicture?: string | null } | null) => { if (data?.igPicture) setIgPicture(data.igPicture); })
       .catch(() => null);
+  }, []);
+
+  useEffect(() => {
+    const profiles = readProfiles();
+    const personas = readPersonas();
+    setBrandProfiles(profiles);
+    setAllPersonas(personas);
+    const active = readActiveBrandProfileEntry();
+    if (active) {
+      setSelectedProfileId(active.id);
+      const first = personas.find((p) => p.brandProfileId === active.id);
+      if (first) setSelectedPersonaId(first.id);
+    }
   }, []);
 
   useEffect(() => {
@@ -292,32 +316,39 @@ export default function PostsPage() {
     }
   }, [aiPicking, showToast]);
 
-  const suggestText = useCallback(async (kind: "caption" | "image-prompt") => {
-    const setBusy = kind === "caption" ? setCaptionSuggesting : setPromptSuggesting;
-    setBusy(true);
+  const selectedProfile = brandProfiles.find((p) => p.id === selectedProfileId) ?? null;
+  const profilePersonas = allPersonas.filter((p) => p.brandProfileId === selectedProfileId);
+  const selectedPersona = profilePersonas.find((p) => p.id === selectedPersonaId) ?? null;
+
+  const suggestCaption = useCallback(async () => {
+    setCaptionSuggesting(true);
     try {
+      const profile = brandProfiles.find((p) => p.id === selectedProfileId) ?? null;
+      const persona = allPersonas.find((p) => p.id === selectedPersonaId) ?? null;
+      const brandContext = profile
+        ? {
+            tone: profile.tone,
+            brandVoice: profile.brandVoice,
+            customerVoiceSummary: profile.customerVoiceSummary,
+            imageGuide: profile.imageGuide,
+            personaDescription: persona?.customerDescription,
+          }
+        : undefined;
+
       const res = await fetch("/api/instagram/posts/suggest-text", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          kind,
-          hint: kind === "caption" ? caption.trim() : aiPrompt.trim(),
-          caption: kind === "image-prompt" ? caption.trim() : undefined,
-        }),
+        body: JSON.stringify({ kind: "caption", hint: caption.trim(), brandContext }),
       });
       const data = (await res.json()) as { text?: string; error?: string };
-      if (data.text) {
-        if (kind === "caption") setCaption(data.text);
-        else setAiPrompt(data.text);
-      } else {
-        showToast(`AI 생성 실패 — ${data.error ?? "결과 없음"}`);
-      }
+      if (data.text) setCaption(data.text);
+      else showToast(`AI 생성 실패 — ${data.error ?? "결과 없음"}`);
     } catch (e) {
       showToast(`AI 생성 실패 — ${e instanceof Error ? e.message : "요청 실패"}`);
     } finally {
-      setBusy(false);
+      setCaptionSuggesting(false);
     }
-  }, [aiPrompt, caption, showToast]);
+  }, [caption, showToast, brandProfiles, allPersonas, selectedProfileId, selectedPersonaId]);
 
   const onPasteZone = (e: React.ClipboardEvent) => {
     const text = e.clipboardData.getData("text").trim();
@@ -340,181 +371,306 @@ export default function PostsPage() {
         </div>
       </header>
 
+      {/* AI 컨텍스트 — 별도 섹션 */}
+      {brandProfiles.length > 0 && (
+        <div className="mb-4 rounded-xl border border-[var(--w-line-normal)] bg-[var(--w-bg-elevated)] p-3 flex flex-col gap-3">
+          <div className="flex items-center gap-1.5">
+            <Icon name="sparkles" size={12} />
+            <span className="text-[11px] font-semibold text-[var(--w-fg-neutral)] uppercase tracking-wide">AI 컨텍스트</span>
+          </div>
+
+          {/* 브랜드 프로필 선택 */}
+          <div className="flex flex-col gap-1.5">
+            <div className="text-[10.5px] font-semibold text-[var(--w-fg-alternative)] uppercase tracking-wide">브랜드 프로필</div>
+            <div className="flex gap-1.5 flex-wrap">
+              {brandProfiles.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedProfileId(p.id);
+                    const first = allPersonas.find((pe) => pe.brandProfileId === p.id);
+                    setSelectedPersonaId(first?.id ?? null);
+                  }}
+                  className={`px-2.5 py-1 rounded-full text-[11.5px] font-semibold border transition-colors ${
+                    selectedProfileId === p.id
+                      ? "bg-[var(--w-fg-strong)] text-[var(--w-bg-elevated)] border-[var(--w-fg-strong)]"
+                      : "border-[var(--w-line-normal)] text-[var(--w-fg-strong)] hover:bg-[var(--w-bg-neutral)]"
+                  }`}
+                >
+                  {p.name}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => { setSelectedProfileId(null); setSelectedPersonaId(null); }}
+                className={`px-2.5 py-1 rounded-full text-[11.5px] font-semibold border transition-colors ${
+                  selectedProfileId === null
+                    ? "bg-[var(--w-fg-strong)] text-[var(--w-bg-elevated)] border-[var(--w-fg-strong)]"
+                    : "border-[var(--w-line-normal)] text-[var(--w-fg-neutral)] hover:bg-[var(--w-bg-neutral)]"
+                }`}
+              >
+                미적용
+              </button>
+            </div>
+          </div>
+
+          {/* 페르소나 선택 */}
+          {selectedProfileId && profilePersonas.length > 0 && (
+            <div className="flex flex-col gap-1.5">
+              <div className="text-[10.5px] font-semibold text-[var(--w-fg-alternative)] uppercase tracking-wide">페르소나</div>
+              <div className="flex gap-1.5 flex-wrap">
+                {profilePersonas.map((pe) => (
+                  <button
+                    key={pe.id}
+                    type="button"
+                    onClick={() => setSelectedPersonaId(pe.id)}
+                    className={`px-2.5 py-1 rounded-full text-[11.5px] font-semibold border transition-colors ${
+                      selectedPersonaId === pe.id
+                        ? "bg-[var(--w-fg-strong)] text-[var(--w-bg-elevated)] border-[var(--w-fg-strong)]"
+                        : "border-[var(--w-line-normal)] text-[var(--w-fg-strong)] hover:bg-[var(--w-bg-neutral)]"
+                    }`}
+                  >
+                    {pe.name}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setSelectedPersonaId(null)}
+                  className={`px-2.5 py-1 rounded-full text-[11.5px] font-semibold border transition-colors ${
+                    selectedPersonaId === null
+                      ? "bg-[var(--w-fg-strong)] text-[var(--w-bg-elevated)] border-[var(--w-fg-strong)]"
+                      : "border-[var(--w-line-normal)] text-[var(--w-fg-neutral)] hover:bg-[var(--w-bg-neutral)]"
+                  }`}
+                >
+                  없음
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* 스타일 + 정책 미리보기 */}
+          {selectedProfile && (
+            <div className="border-t border-[var(--w-line-alternative)] pt-2.5 grid grid-cols-2 gap-x-4 gap-y-1">
+              {selectedProfile.tone && (
+                <div className="flex gap-1.5 text-[11px]">
+                  <span className="text-[var(--w-fg-alternative)] flex-shrink-0">톤</span>
+                  <span className="text-[#121212] line-clamp-1">{selectedProfile.tone}</span>
+                </div>
+              )}
+              {selectedProfile.brandVoice && (
+                <div className="flex gap-1.5 text-[11px]">
+                  <span className="text-[var(--w-fg-alternative)] flex-shrink-0">보이스</span>
+                  <span className="text-[#121212] line-clamp-1">{selectedProfile.brandVoice}</span>
+                </div>
+              )}
+              {selectedPersona?.customerDescription && (
+                <div className="flex gap-1.5 text-[11px]">
+                  <span className="text-[var(--w-fg-alternative)] flex-shrink-0">타겟</span>
+                  <span className="text-[#121212] line-clamp-1">{selectedPersona.customerDescription}</span>
+                </div>
+              )}
+              {selectedProfile.imageGuide && (
+                <div className="flex gap-1.5 text-[11px]">
+                  <span className="text-[var(--w-fg-alternative)] flex-shrink-0">이미지</span>
+                  <span className="text-[#121212] line-clamp-1">{selectedProfile.imageGuide}</span>
+                </div>
+              )}
+              {selectedProfile.policy?.filter(isSectionFilled).map((sec) => (
+                <div key={sec.type} className="flex gap-1.5 text-[11px]">
+                  <span className="text-[var(--w-fg-alternative)] flex-shrink-0">{SOP_SECTION_LABEL[sec.type]}</span>
+                  <span className="text-[#121212] line-clamp-1">{sectionPreviewText(sec)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       <Card variant="lg">
         <form id="ig-publish" onSubmit={onSubmit} className="grid grid-cols-[1fr_360px] gap-8 items-start">
           <div className="flex flex-col gap-5 min-w-0">
-            <div
-              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-              onDragLeave={() => setDragOver(false)}
-              onDrop={onDrop}
-              onPaste={onPasteZone}
-              onClick={openFilePicker}
-              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openFilePicker(); } }}
-              role="button"
-              aria-label="이미지 파일 선택"
-              tabIndex={0}
-              className={`relative rounded-[14px] border-2 border-dashed outline-none transition-colors cursor-pointer ${
-                dragOver
-                  ? "border-[var(--w-primary-normal)] bg-[var(--w-primary-pale,rgba(99,93,255,0.06))]"
-                  : "border-[var(--w-line-normal)] bg-[var(--w-bg-base)] hover:border-[var(--w-line-strong)] focus:border-[var(--w-primary-normal)]"
-              }`}
-            >
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                onChange={onFileInputChange}
-                className="hidden"
-              />
-              {imageUrl ? (
-                <div className="flex items-start gap-4 p-4">
-                  <div className="relative w-20 h-20 rounded-lg overflow-hidden bg-[var(--w-bg-neutral)] shrink-0">
-                    {!previewBroken ? (
-                      <Image
-                        src={imageUrl}
-                        alt=""
-                        fill
-                        className="object-cover"
-                        unoptimized
-                        onError={() => setPreviewBroken(true)}
-                      />
-                    ) : (
-                      <div className="absolute inset-0 grid place-items-center text-[var(--w-fg-alternative)]">
-                        <Icon name="warn" size={20} />
-                      </div>
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-[12.5px] font-semibold text-[var(--w-fg-strong)] mb-1">
-                      이미지 선택됨
-                      {previewBroken && (
-                        <span className="ml-2 text-[11px] font-normal text-[var(--w-status-negative)]">미리보기 로드 실패 — URL 을 확인해 주세요</span>
-                      )}
-                    </div>
-                    <div className="text-[11.5px] text-[var(--w-fg-alternative)] break-all line-clamp-2">{imageUrl}</div>
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); setImageUrl(""); }}
-                      className="mt-2 text-[11.5px] font-semibold text-[var(--w-fg-neutral)] hover:text-[var(--w-status-negative)]"
-                      disabled={submitting}
-                    >
-                      제거
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="grid place-items-center text-center py-10 px-4">
-                  <Icon name="image" size={28} />
-                  <div className="text-[13.5px] font-semibold text-[var(--w-fg-strong)] mt-2">
-                    {uploading ? "업로드 중..." : "클릭해서 파일을 고르거나 이미지 URL 을 드래그/붙여넣기"}
-                  </div>
-                  <div className="text-[11.5px] text-[var(--w-fg-alternative)] mt-1 leading-[1.5] max-w-[360px]">
-                    JPG · PNG · WebP, 최대 8MB. 업로드한 파일은 공개 URL 로 호스팅돼 Instagram 이 가져갑니다.
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <label htmlFor="aiPrompt" className="text-[11.5px] font-semibold text-[var(--w-fg-neutral)] inline-flex items-center gap-1.5">
-                <Icon name="sparkles" size={12} />
-                AI 로 이미지 생성
-              </label>
-              <div className="flex gap-2 items-stretch">
-                <textarea
-                  id="aiPrompt"
-                  placeholder="예: 따뜻한 햇살이 비치는 베이커리 진열대 위의 크루아상, 자연광, 따뜻한 톤"
-                  value={aiPrompt}
-                  onChange={(e) => setAiPrompt(e.target.value)}
-                  rows={2}
-                  maxLength={500}
-                  className="flex-1 px-3.5 py-2.5 rounded-[10px] border border-[var(--w-line-normal)] bg-[var(--w-bg-elevated)] text-[13px] text-[var(--w-fg-strong)] outline-none focus:border-[var(--w-primary-normal)] focus-visible:outline-none resize-none leading-[1.5]"
-                  disabled={aiGenerating || submitting || promptSuggesting}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); generateAi(); }
-                  }}
-                />
-                <div className="flex flex-col gap-1.5 self-stretch">
+            {/* 이미지 — 업로드 / AI 생성 탭 */}
+            <div className="flex flex-col gap-3">
+              <div className="flex gap-0.5 p-0.5 rounded-[10px] bg-[var(--w-bg-neutral)] self-start">
+                {(["upload", "ai"] as const).map((tab) => (
                   <button
+                    key={tab}
                     type="button"
-                    onClick={() => suggestText("image-prompt")}
-                    disabled={promptSuggesting || aiGenerating || submitting}
-                    className="flex-1 px-3 rounded-[10px] text-[11px] font-semibold bg-[var(--w-bg-neutral)] text-[var(--w-fg-neutral)] hover:bg-[var(--w-bg-elevated)] disabled:opacity-40 transition-colors whitespace-nowrap"
+                    onClick={() => setImageTab(tab)}
+                    className={`px-3.5 py-1.5 rounded-[8px] text-[12px] font-semibold transition-colors ${
+                      imageTab === tab
+                        ? "bg-[var(--w-bg-elevated)] text-[var(--w-fg-strong)] shadow-[0_1px_3px_rgba(0,0,0,0.08)]"
+                        : "text-[var(--w-fg-neutral)] hover:text-[var(--w-fg-strong)]"
+                    }`}
                   >
-                    {promptSuggesting ? "생성 중..." : "AI가 프롬프트 작성"}
+                    {tab === "upload" ? "업로드" : "AI 생성"}
                   </button>
-                  <Button
-                    type="button"
-                    variant="primary"
-                    size="md"
-                    onClick={generateAi}
-                    disabled={!aiPrompt.trim() || aiGenerating || submitting}
-                    className="flex-1 h-auto"
-                  >
-                    {aiGenerating ? "생성 중..." : "생성"}
-                  </Button>
-                </div>
+                ))}
               </div>
-              {(aiGenerating || aiImages.length > 0) && (
-                <div className="grid grid-cols-4 gap-2 mt-1">
-                  {(aiGenerating ? Array.from({ length: 4 }) : aiImages).map((url, i) => {
-                    const dataUrl = typeof url === "string" ? url : null;
-                    const selected = !!dataUrl && imageUrl === dataUrl;
-                    const picking = !!dataUrl && aiPicking === dataUrl;
-                    return (
-                      <button
-                        type="button"
-                        key={dataUrl ?? `skeleton-${i}`}
-                        onClick={() => dataUrl && pickAiImage(dataUrl)}
-                        disabled={!dataUrl || !!aiPicking}
-                        className={`relative aspect-square rounded-lg overflow-hidden border-2 transition ${
-                          selected
-                            ? "border-[var(--w-primary-normal)]"
-                            : "border-transparent hover:border-[var(--w-line-normal)]"
-                        } ${!dataUrl ? "bg-[var(--w-bg-neutral)] animate-pulse cursor-default" : ""}`}
-                        aria-pressed={selected}
-                        aria-label="생성된 이미지 선택"
-                      >
-                        {dataUrl && (
-                          <Image src={dataUrl} alt="" fill className="object-cover" unoptimized sizes="80px" />
-                        )}
-                        {picking && (
-                          <div className="absolute inset-0 grid place-items-center bg-black/40 text-white">
-                            <Icon name="clock" size={14} />
+
+              {imageTab === "upload" ? (
+                <div
+                  onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                  onDragLeave={() => setDragOver(false)}
+                  onDrop={onDrop}
+                  onPaste={onPasteZone}
+                  onClick={openFilePicker}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openFilePicker(); } }}
+                  role="button"
+                  aria-label="이미지 파일 선택"
+                  tabIndex={0}
+                  className={`relative rounded-[14px] border-2 border-dashed outline-none transition-colors cursor-pointer ${
+                    dragOver
+                      ? "border-[var(--w-primary-normal)] bg-[var(--w-primary-pale,rgba(99,93,255,0.06))]"
+                      : "border-[var(--w-line-normal)] bg-[var(--w-bg-base)] hover:border-[var(--w-line-strong)] focus:border-[var(--w-primary-normal)]"
+                  }`}
+                >
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    onChange={onFileInputChange}
+                    className="hidden"
+                  />
+                  {imageUrl ? (
+                    <div className="flex items-start gap-4 p-4">
+                      <div className="relative w-20 h-20 rounded-lg overflow-hidden bg-[var(--w-bg-neutral)] shrink-0">
+                        {!previewBroken ? (
+                          <Image
+                            src={imageUrl}
+                            alt=""
+                            fill
+                            className="object-cover"
+                            unoptimized
+                            onError={() => setPreviewBroken(true)}
+                          />
+                        ) : (
+                          <div className="absolute inset-0 grid place-items-center text-[var(--w-fg-alternative)]">
+                            <Icon name="warn" size={20} />
                           </div>
                         )}
-                      </button>
-                    );
-                  })}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[12.5px] font-semibold text-[var(--w-fg-strong)] mb-1">
+                          이미지 선택됨
+                          {previewBroken && (
+                            <span className="ml-2 text-[11px] font-normal text-[var(--w-status-negative)]">미리보기 로드 실패 — URL 을 확인해 주세요</span>
+                          )}
+                        </div>
+                        <div className="text-[11.5px] text-[var(--w-fg-alternative)] break-all line-clamp-2">{imageUrl}</div>
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); setImageUrl(""); }}
+                          className="mt-2 text-[11.5px] font-semibold text-[var(--w-fg-neutral)] hover:text-[var(--w-status-negative)]"
+                          disabled={submitting}
+                        >
+                          제거
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="grid place-items-center text-center py-10 px-4">
+                      <Icon name="image" size={28} />
+                      <div className="text-[13.5px] font-semibold text-[var(--w-fg-strong)] mt-2">
+                        {uploading ? "업로드 중..." : "클릭해서 파일을 고르거나 이미지 URL 을 드래그/붙여넣기"}
+                      </div>
+                      <div className="text-[11.5px] text-[var(--w-fg-alternative)] mt-1 leading-[1.5] max-w-[360px]">
+                        JPG · PNG · WebP, 최대 8MB. 업로드한 파일은 공개 URL 로 호스팅돼 Instagram 이 가져갑니다.
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  <div className="flex gap-2 items-start">
+                    <textarea
+                      id="aiPrompt"
+                      placeholder="어떤 이미지를 만들고 싶나요? (선택) — 브랜드 프로필 기반으로 생성돼요"
+                      value={aiPrompt}
+                      onChange={(e) => setAiPrompt(e.target.value)}
+                      rows={2}
+                      maxLength={500}
+                      className="flex-1 px-3.5 py-2.5 rounded-[10px] border border-[var(--w-line-normal)] bg-[var(--w-bg-elevated)] text-[13px] text-[var(--w-fg-strong)] outline-none focus:border-[var(--w-primary-normal)] focus-visible:outline-none resize-none leading-[1.5]"
+                      disabled={aiGenerating || submitting}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); generateAi(); }
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      variant="primary"
+                      size="md"
+                      onClick={generateAi}
+                      disabled={aiGenerating || submitting}
+                    >
+                      {aiGenerating ? "생성 중..." : "생성"}
+                    </Button>
+                  </div>
+                  {(aiGenerating || aiImages.length > 0) && (
+                    <div className="grid grid-cols-4 gap-2">
+                      {(aiGenerating ? Array.from({ length: 4 }) : aiImages).map((url, i) => {
+                        const dataUrl = typeof url === "string" ? url : null;
+                        const selected = !!dataUrl && imageUrl === dataUrl;
+                        const picking = !!dataUrl && aiPicking === dataUrl;
+                        return (
+                          <button
+                            type="button"
+                            key={dataUrl ?? `skeleton-${i}`}
+                            onClick={() => dataUrl && pickAiImage(dataUrl)}
+                            disabled={!dataUrl || !!aiPicking}
+                            className={`relative aspect-square rounded-lg overflow-hidden border-2 transition ${
+                              selected
+                                ? "border-[var(--w-primary-normal)]"
+                                : "border-transparent hover:border-[var(--w-line-normal)]"
+                            } ${!dataUrl ? "bg-[var(--w-bg-neutral)] animate-pulse cursor-default" : ""}`}
+                            aria-pressed={selected}
+                            aria-label="생성된 이미지 선택"
+                          >
+                            {dataUrl && (
+                              <Image src={dataUrl} alt="" fill className="object-cover" unoptimized sizes="80px" />
+                            )}
+                            {picking && (
+                              <div className="absolute inset-0 grid place-items-center bg-black/40 text-white">
+                                <Icon name="clock" size={14} />
+                              </div>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
 
+            {/* 캡션 */}
             <div className="flex flex-col gap-1.5">
-              <label htmlFor="caption" className="text-[11.5px] font-semibold text-[var(--w-fg-neutral)]">
-                캡션
-              </label>
-              <div className="flex gap-2 items-start">
-                <textarea
-                  id="caption"
-                  placeholder="게시글 본문, 해시태그(#), @멘션을 자유롭게 적어 주세요"
-                  value={caption}
-                  onChange={(e) => setCaption(e.target.value)}
-                  rows={6}
-                  maxLength={2200}
-                  className="flex-1 px-3.5 py-3 rounded-[10px] border border-[var(--w-line-normal)] bg-[var(--w-bg-elevated)] text-[13.5px] text-[var(--w-fg-strong)] outline-none focus:border-[var(--w-primary-normal)] focus-visible:outline-none resize-y leading-[1.55]"
-                  disabled={submitting || captionSuggesting}
-                />
+              <div className="flex items-center justify-between">
+                <label htmlFor="caption" className="text-[11.5px] font-semibold text-[var(--w-fg-neutral)]">
+                  캡션
+                </label>
                 <button
                   type="button"
-                  onClick={() => suggestText("caption")}
+                  onClick={suggestCaption}
                   disabled={captionSuggesting || submitting}
-                  className="px-3 py-2 rounded-[10px] text-[11px] font-semibold bg-[var(--w-bg-neutral)] text-[var(--w-fg-neutral)] hover:bg-[var(--w-bg-elevated)] disabled:opacity-40 transition-colors whitespace-nowrap"
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-[var(--w-bg-neutral)] text-[var(--w-fg-neutral)] hover:bg-[var(--w-bg-base)] disabled:opacity-40 transition-colors"
                 >
-                  {captionSuggesting ? "생성 중..." : "AI가 캡션 작성"}
+                  <Icon name="sparkles" size={11} />
+                  {captionSuggesting ? "생성 중..." : "AI 작성"}
                 </button>
               </div>
-              <div className="text-[11.5px] text-[var(--w-fg-alternative)] self-end">{caption.length} / 2200</div>
+              <textarea
+                id="caption"
+                placeholder="게시글 본문, 해시태그(#), @멘션을 자유롭게 적어 주세요"
+                value={caption}
+                onChange={(e) => setCaption(e.target.value)}
+                rows={6}
+                maxLength={2200}
+                className="px-3.5 py-3 rounded-[10px] border border-[var(--w-line-normal)] bg-[var(--w-bg-elevated)] text-[13.5px] text-[var(--w-fg-strong)] outline-none focus:border-[var(--w-primary-normal)] focus-visible:outline-none resize-y leading-[1.55]"
+                disabled={submitting || captionSuggesting}
+              />
+              <div className="text-[11.5px] text-[var(--w-fg-alternative)] text-right">{caption.length} / 2200</div>
               <Button form="ig-publish" type="submit" variant="primary" size="md" disabled={!canSubmit} className="w-48 self-center mt-1">
                 {submitting ? "게시 중..." : "게시하기"}
               </Button>
@@ -538,7 +694,7 @@ export default function PostsPage() {
             )}
           </div>
 
-          <div className="sticky top-6">
+          <div>
             <div className="text-[10.5px] font-semibold tracking-wide uppercase text-[var(--w-fg-alternative)] mb-2">
               미리보기
             </div>

@@ -39,10 +39,28 @@ async function generateText(prompt: string, json: boolean): Promise<string> {
   throw new Error("모든 AI 모델이 일시적으로 응답하지 않아요. 잠시 후 다시 시도해주세요.");
 }
 
-const CAPTION_PROMPT = (hint: string) => `
-당신은 한국 시장 SNS 카피라이터예요. 인스타그램 오가닉 포스트 캡션 1개를 만들어주세요.
+export interface BrandContext {
+  tone?: string;
+  brandVoice?: string;
+  customerVoiceSummary?: string;
+  imageGuide?: string;
+  personaDescription?: string;
+}
 
-힌트: ${hint || "(없음) — 일반적이고 매력적인 브랜드 톤으로"}
+function buildBrandSection(ctx: BrandContext | undefined): string {
+  if (!ctx) return "";
+  const lines: string[] = [];
+  if (ctx.tone) lines.push(`- 톤: ${ctx.tone}`);
+  if (ctx.brandVoice) lines.push(`- 브랜드 보이스: ${ctx.brandVoice}`);
+  if (ctx.customerVoiceSummary) lines.push(`- 고객 목소리: ${ctx.customerVoiceSummary}`);
+  if (ctx.personaDescription) lines.push(`- 타겟 고객: ${ctx.personaDescription}`);
+  return lines.length ? `\n브랜드 컨텍스트:\n${lines.join("\n")}\n` : "";
+}
+
+const CAPTION_PROMPT = (hint: string, ctx?: BrandContext) => `
+당신은 한국 시장 SNS 카피라이터예요. 인스타그램 오가닉 포스트 캡션 1개를 만들어주세요.
+${buildBrandSection(ctx)}
+힌트: ${hint || "(없음) — 위 브랜드 컨텍스트에 맞는 매력적인 캡션으로"}
 
 규칙:
 - 한국어, 자연스러운 구어체. 150~250자.
@@ -53,9 +71,9 @@ JSON 만 출력:
 { "caption": "본문\\n\\n#태그1 #태그2 ..." }
 `;
 
-const IMAGE_PROMPT_PROMPT = (hint: string, caption: string) => `
+const IMAGE_PROMPT_PROMPT = (hint: string, caption: string, ctx?: BrandContext) => `
 당신은 SNS 이미지 디렉터예요. 인스타그램 피드 1:1 정사각 이미지를 위한 이미지 생성 프롬프트 1개를 만들어주세요.
-
+${ctx?.imageGuide ? `\n이미지 가이드: ${ctx.imageGuide}\n` : ""}${ctx?.personaDescription ? `타겟 고객: ${ctx.personaDescription}\n` : ""}
 ${caption ? `참고 캡션:\n${caption}\n` : ""}힌트: ${hint || "(없음)"}
 
 규칙:
@@ -72,8 +90,8 @@ export const geminiPostSuggest = {
     return !!process.env.GOOGLE_AI_API_KEY;
   },
 
-  async suggestCaption(hint: string): Promise<string> {
-    const text = await generateText(CAPTION_PROMPT(hint), true);
+  async suggestCaption(hint: string, ctx?: BrandContext): Promise<string> {
+    const text = await generateText(CAPTION_PROMPT(hint, ctx), true);
     let parsed: { caption?: unknown };
     try { parsed = JSON.parse(text); } catch { throw new Error("AI 응답을 파싱할 수 없어요."); }
     const caption = typeof parsed.caption === "string" ? stripHanja(parsed.caption).trim() : "";
@@ -81,8 +99,8 @@ export const geminiPostSuggest = {
     return caption;
   },
 
-  async suggestImagePrompt(hint: string, caption: string): Promise<string> {
-    const text = await generateText(IMAGE_PROMPT_PROMPT(hint, caption), true);
+  async suggestImagePrompt(hint: string, caption: string, ctx?: BrandContext): Promise<string> {
+    const text = await generateText(IMAGE_PROMPT_PROMPT(hint, caption, ctx), true);
     let parsed: { prompt?: unknown };
     try { parsed = JSON.parse(text); } catch { throw new Error("AI 응답을 파싱할 수 없어요."); }
     const prompt = typeof parsed.prompt === "string" ? stripHanja(parsed.prompt).trim() : "";

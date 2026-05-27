@@ -1,18 +1,32 @@
 "use client";
 
+import Image from "next/image";
 import Icon from "@shared/ui/Icon";
-import { cn } from "@shared/lib/cn";
+import { Card } from "@shared/ui/Card";
+import { Chip } from "@shared/ui/Chip";
+import { Button } from "@shared/ui/Button";
 import type { PersonaEntry } from "../model/usePersonasStorage";
 
 const GENDER_LABEL: Record<number, string> = { 1: "남", 2: "여" };
 
+const GENDER_BG: Record<"male" | "female" | "all", string> = {
+  male: "linear-gradient(160deg, #C8DCFA 0%, #A8C4F0 100%)",
+  female: "linear-gradient(160deg, #FFE8DC 0%, #FFD0BE 100%)",
+  all: "linear-gradient(160deg, #D8EEE8 0%, #B8DECE 100%)",
+};
+
 interface Props {
   persona: PersonaEntry;
+  canEdit?: boolean;
   onEdit: () => void;
   onDelete: () => void;
 }
 
-export default function PersonaCard({ persona, onEdit, onDelete }: Props) {
+export default function PersonaCard({ persona, canEdit = true, onEdit, onDelete }: Props) {
+  const isMale = persona.genders?.length === 1 && persona.genders[0] === 1;
+  const isFemale = persona.genders?.length === 1 && persona.genders[0] === 2;
+  const genderType = isMale ? "male" : isFemale ? "female" : "all";
+
   const ageLabel =
     persona.ageMin != null && persona.ageMax != null
       ? `${persona.ageMin}–${persona.ageMax}세`
@@ -28,41 +42,53 @@ export default function PersonaCard({ persona, onEdit, onDelete }: Props) {
       : persona.genders.map((g) => GENDER_LABEL[g] ?? g).join("·");
 
   return (
-    <div
-      className={cn(
-        "group relative flex flex-col gap-2 px-4 py-3.5 rounded-xl border border-[var(--w-line-normal)] bg-[var(--w-bg-elevated)] cursor-pointer transition-[border-color,box-shadow] duration-[120ms]",
-        "hover:border-[var(--w-primary-normal)] hover:shadow-[0_0_0_3px_rgba(0,102,255,0.10)]",
-      )}
-      onClick={onEdit}
+    <Card
+      className={`p-0 overflow-hidden flex flex-col transition-[border-color] duration-[120ms] ease-in-out ${canEdit ? "cursor-pointer" : "cursor-default"}`}
+      onClick={canEdit ? onEdit : undefined}
     >
-      <span className="font-semibold text-[14px] leading-[1.3] text-[var(--w-fg-strong)] pr-6">
-        {persona.name}
-      </span>
-      <div className="flex flex-wrap gap-1.5">
-        {ageLabel && (
-          <Badge>{ageLabel}</Badge>
-        )}
-        <Badge>{genderLabel}</Badge>
-        {(persona.interests ?? []).slice(0, 2).map((i) => (
-          <Badge key={i}>{i}</Badge>
-        ))}
-      </div>
-      <button
-        type="button"
-        onClick={(e) => { e.stopPropagation(); onDelete(); }}
-        className="absolute top-3 right-3 flex items-center justify-center w-6 h-6 rounded-md text-[var(--w-fg-neutral)] opacity-0 group-hover:opacity-100 hover:bg-[var(--w-bg-neutral)] transition-opacity"
-        aria-label="삭제"
+      <div
+        className="relative aspect-[16/10] flex flex-col items-center justify-center overflow-hidden"
+        style={{ background: GENDER_BG[genderType] }}
       >
-        <Icon name="x" size={13} />
-      </button>
-    </div>
-  );
-}
-
-function Badge({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-[var(--w-bg-neutral)] font-medium text-[12px] leading-none text-[var(--w-fg-neutral)]">
-      {children}
-    </span>
+        <div className="flex-1 flex items-end justify-center gap-4 w-full">
+          {genderType === "male" && (
+            <Image src="/personas/avatar-male.png" alt="남성 페르소나" width={160} height={160} className="object-contain object-bottom" />
+          )}
+          {genderType === "female" && (
+            <Image src="/personas/avatar-female.png" alt="여성 페르소나" width={160} height={160} className="object-contain object-bottom" />
+          )}
+          {genderType === "all" && (
+            <>
+              <Image src="/personas/avatar-male.png" alt="남성 페르소나" width={120} height={120} className="object-contain object-bottom" />
+              <Image src="/personas/avatar-female.png" alt="여성 페르소나" width={120} height={120} className="object-contain object-bottom" />
+            </>
+          )}
+        </div>
+        <div className="w-full px-4 pb-3 font-bold text-[16px] leading-[1.35] tracking-[-0.014em] [font-family:var(--w-font-display)] [text-shadow:0_2px_8px_rgba(0,0,0,0.28)] text-white">
+          {persona.name}
+        </div>
+      </div>
+      <div className="flex flex-col gap-[10px] p-[14px] flex-1">
+        <div className="flex flex-wrap gap-[6px]">
+          {ageLabel && <Chip variant="neutral">{ageLabel}</Chip>}
+          <Chip variant="neutral">{genderLabel}</Chip>
+          {(persona.interests ?? []).slice(0, 3).map((i) => (
+            <Chip key={i} variant="neutral">{i}</Chip>
+          ))}
+        </div>
+        {persona.customerDescription && (
+          <div className="font-medium text-[13px] leading-[1.55] text-[var(--w-fg-neutral)] line-clamp-2">
+            {persona.customerDescription}
+          </div>
+        )}
+        {canEdit && (
+          <div className="flex items-center justify-end mt-auto pt-[10px] border-t border-[var(--w-line-alternative)]">
+            <Button variant="ghost" size="sm" className="text-[var(--w-fg-alternative)]" onClick={(e) => { e.stopPropagation(); onDelete(); }}>
+              <Icon name="x" size={14} />
+            </Button>
+          </div>
+        )}
+      </div>
+    </Card>
   );
 }

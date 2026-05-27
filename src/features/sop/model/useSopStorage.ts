@@ -5,8 +5,11 @@ import { syncDelete, syncUpsert } from "@shared/lib/supabase-sync";
 
 export type SopItemType =
   | "prohibited_words"
+  | "required_phrases"
+  | "required_hashtags"
   | "length_limits"
   | "cta_restrictions"
+  | "image_restrictions"
   | "industry_regulations"
   | "competitor_policy"
   | "pricing_rules"
@@ -31,6 +34,14 @@ export interface CtaRestrictionsData {
   note?: string;
 }
 
+export interface RequiredPhrasesData {
+  phrases: string[];
+}
+
+export interface RequiredHashtagsData {
+  hashtags: string[];
+}
+
 export interface FreeTextData {
   text: string;
 }
@@ -40,10 +51,13 @@ export type FreeTextSopType =
   | "competitor_policy"
   | "pricing_rules"
   | "audience_restrictions"
-  | "platform_rules";
+  | "platform_rules"
+  | "image_restrictions";
 
 export type SopSection =
   | { type: "prohibited_words"; data: ProhibitedWordsData; source?: SopSectionSource }
+  | { type: "required_phrases"; data: RequiredPhrasesData; source?: SopSectionSource }
+  | { type: "required_hashtags"; data: RequiredHashtagsData; source?: SopSectionSource }
   | { type: "length_limits"; data: LengthLimitsData; source?: SopSectionSource }
   | { type: "cta_restrictions"; data: CtaRestrictionsData; source?: SopSectionSource }
   | { type: FreeTextSopType; data: FreeTextData; source?: SopSectionSource };
@@ -66,6 +80,10 @@ export function isSectionFilled(s: SopSection): boolean {
   switch (s.type) {
     case "prohibited_words":
       return s.data.words.length > 0;
+    case "required_phrases":
+      return s.data.phrases.length > 0;
+    case "required_hashtags":
+      return s.data.hashtags.length > 0;
     case "length_limits":
       return (
         s.data.headline != null ||
@@ -84,6 +102,10 @@ export function sectionPreviewText(s: SopSection): string {
   switch (s.type) {
     case "prohibited_words":
       return s.data.words.slice(0, 4).join(", ");
+    case "required_phrases":
+      return s.data.phrases.slice(0, 3).join(", ");
+    case "required_hashtags":
+      return s.data.hashtags.slice(0, 4).join(" ");
     case "length_limits": {
       const parts: string[] = [];
       if (s.data.headline != null) parts.push(`헤드라인 ≤ ${s.data.headline}자`);

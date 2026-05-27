@@ -16,6 +16,8 @@ import type { SuggestImagePromptParams, SuggestImagePromptResult } from "@/lib/g
 import { useCreativeDraft } from "@entities/creative/model";
 import { useToast } from "@shared/ui/Toast";
 import { buildBriefPrompt } from "@features/generate-image/brief-prompt";
+import { readActiveBrandProfileEntry } from "@features/brand-profile/model/useBrandProfileStorage";
+import { useReferenceMaterials, type ReferenceMaterial } from "@shared/lib/referenceMaterials";
 import BriefForm, { type AspectId } from "./BriefForm";
 
 const MAX_REF_MB = 3;
@@ -96,6 +98,9 @@ export default function AiImageBlock({
   const [logo, setLogo] = useState<string | null>(null);
   const [aspect, setAspect] = useState<AspectId>("1:1");
   const [briefNotes, setBriefNotes] = useState("");
+  const [selectedMaterials, setSelectedMaterials] = useState<ReferenceMaterial[]>([]);
+  const activeBrandProfileId = readActiveBrandProfileEntry()?.id ?? "";
+  const { materials: warehouseMaterials, upload: uploadMaterial } = useReferenceMaterials(activeBrandProfileId);
 
   useEffect(() => {
     if (!zoomedSrc) return;
@@ -201,7 +206,16 @@ export default function AiImageBlock({
     if (!state.headline?.trim()) { showToast("STEP 01에서 헤드라인을 먼저 만들어 주세요"); return; }
     if (scenes.length === 0 && !logo) { showToast("연출컷이나 로고를 최소 1장 올려주세요"); return; }
     const combined = [...scenes, ...(logo ? [logo] : [])];
-    const referenceImages = combined.map(splitDataUrl).filter((r): r is ReferenceImage => !!r);
+    // 참고 자료 중 이미지·PDF는 referenceImages에 포함
+    const materialImages = selectedMaterials
+      .filter((m) => m.type === "image" || m.type === "pdf")
+      .map((m) => splitDataUrl(m.storageUrl))
+      .filter((r): r is ReferenceImage => !!r);
+    const referenceImages = [...combined.map(splitDataUrl).filter((r): r is ReferenceImage => !!r), ...materialImages];
+    // 참고 자료 중 TXT는 프롬프트에 텍스트로 주입
+    const txtMaterials = selectedMaterials
+      .filter((m) => m.type === "txt")
+      .map((m) => ({ name: m.name, storageUrl: m.storageUrl }));
     const p = buildBriefPrompt({
       headline: state.headline,
       primaryText: state.primaryText,
@@ -211,8 +225,32 @@ export default function AiImageBlock({
       hasLogo: !!logo,
       aspect,
       notes: briefNotes,
+      refMaterialNames: selectedMaterials.map((m) => m.name),
     });
-    runGenerate({ prompt: p, referenceImages: referenceImages.length ? referenceImages : undefined });
+    // TXT 내용은 프롬프트 뒤에 인라인 첨부 (storageUrl이 data: URL인 경우 디코딩)
+    const txtText = txtMaterials
+      .map((m) => {
+        if (m.storageUrl.startsWith("data:text/plain;base64,")) {
+          try { return `[참고 자료: ${m.name}]\n${atob(m.storageUrl.split(",")[1])}`; } catch { return null; }
+        }
+        return null;
+      })
+      .filter(Boolean)
+      .join("\n\n");
+    runGenerate({ prompt: txtText ? `${p}\n\n${txtText}` : p, referenceImages: referenceImages.length ? referenceImages : undefined });
+  };
+
+  const handleUploadMaterial = async (files: FileList | null) => {
+    if (!files || !activeBrandProfileId) return;
+    for (const file of Array.from(files)) {
+      try {
+        const material = await uploadMaterial(file);
+        setSelectedMaterials((prev) => [...prev, material]);
+        showToast(`"${file.name}" 추가됐어요`);
+      } catch (e) {
+        showToast((e as Error).message ?? "업로드에 실패했어요");
+      }
+    }
   };
 
   return (
@@ -334,6 +372,8 @@ export default function AiImageBlock({
           aspect={aspect}
           briefNotes={briefNotes}
           generating={genPending}
+          warehouseMaterials={warehouseMaterials}
+          selectedMaterials={selectedMaterials}
           onAddScenes={handleAddScenes}
           onRemoveScene={(i) => setScenes((prev) => prev.filter((_, idx) => idx !== i))}
           onClearScenes={() => setScenes([])}
@@ -343,6 +383,12 @@ export default function AiImageBlock({
           onNotesChange={setBriefNotes}
           onGenerate={handleGenerateFromBrief}
           onZoom={setZoomedSrc}
+          onToggleMaterial={(m) =>
+            setSelectedMaterials((prev) =>
+              prev.find((x) => x.id === m.id) ? prev.filter((x) => x.id !== m.id) : [...prev, m]
+            )
+          }
+          onUploadMaterial={handleUploadMaterial}
         />
       )}
 

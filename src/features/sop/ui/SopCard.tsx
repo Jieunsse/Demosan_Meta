@@ -104,6 +104,10 @@ function CardBody({ section, accent }: { section: SopSection; accent: string }) 
   switch (section.type) {
     case "prohibited_words":
       return <ChipList items={section.data.words} accent={accent} />;
+    case "required_phrases":
+      return <ChipList items={section.data.phrases} accent={accent} />;
+    case "required_hashtags":
+      return <ChipList items={section.data.hashtags} accent={accent} />;
     case "length_limits":
       return <LengthRows data={section.data} />;
     case "cta_restrictions":

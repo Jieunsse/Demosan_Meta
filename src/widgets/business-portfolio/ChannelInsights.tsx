@@ -9,6 +9,7 @@ import { Button } from "@shared/ui/Button";
 import { cn } from "@shared/lib/cn";
 import { type Suggestion } from "@entities/insights/optimization";
 import AiDraftModal from "@features/channel-suggestion-action/AiDraftModal";
+import { IgPostPreview } from "@shared/ui/IgPostPreview";
 
 export type ChannelKpi = { label: string; value: string; suffix?: string };
 
@@ -27,6 +28,7 @@ export type ChannelInsightsProps = {
   kpis: ChannelKpi[]; // 4슬롯
   posts: ChannelPostRow[];
   accountHandle?: string;
+  profilePicture?: string;
   isMock: boolean;
   scenario?: "good" | "poor";
   onScenarioChange?: (s: "good" | "poor") => void;
@@ -60,8 +62,8 @@ function SuggestionCard({ s, onAction, onSecondary }: { s: Suggestion; onAction:
               <button
                 type="button"
                 onClick={() => onSecondary!(s)}
-                className="font-semibold text-[12px] text-[var(--w-primary-press)] bg-transparent border-0 cursor-pointer hover:underline"
-              >초안만 보기</button>
+                className="font-semibold text-[12px] text-[var(--w-primary-press)] bg-[var(--w-primary-bg)] border-0 cursor-pointer hover:bg-[var(--w-primary-bg-hover)] rounded-md px-3 py-1.5 transition-colors"
+              >초안 보기</button>
             )}
             <Button variant="primary" size="sm" type="button" onClick={() => onAction(s)}>{actionLabel}</Button>
           </div>
@@ -71,12 +73,16 @@ function SuggestionCard({ s, onAction, onSecondary }: { s: Suggestion; onAction:
   );
 }
 
-function PostRow({ post }: { post: ChannelPostRow }) {
+function PostRow({ post, onClick }: { post: ChannelPostRow; onClick: () => void }) {
   const date = post.timestamp
     ? new Date(post.timestamp).toLocaleDateString("ko-KR", { month: "short", day: "numeric" })
     : "";
   return (
-    <div className="flex items-center justify-between gap-3 py-4 px-[18px] rounded-xl border border-[var(--w-line-alternative)] bg-[var(--w-bg-elevated)]">
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex items-center justify-between gap-3 py-4 px-[18px] rounded-xl border border-[var(--w-line-alternative)] bg-[var(--w-bg-elevated)] w-full text-left cursor-pointer hover:bg-[var(--w-bg-assistive)] transition-colors duration-[120ms]"
+    >
       <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0, flex: 1 }}>
         <div style={{ width: 44, height: 44, borderRadius: 8, background: "var(--w-bg-assistive)", flex: "0 0 auto", overflow: "hidden", display: "grid", placeItems: "center" }}>
           {post.mediaUrl
@@ -95,13 +101,14 @@ function PostRow({ post }: { post: ChannelPostRow }) {
         <span>{post.secondary.label} {post.secondary.value}</span>
         <span>{post.tertiary.label} {post.tertiary.value}</span>
       </div>
-    </div>
+    </button>
   );
 }
 
-export default function ChannelInsights({ channel, kpis, posts, accountHandle, isMock, scenario, onScenarioChange, suggestions }: ChannelInsightsProps) {
+export default function ChannelInsights({ channel, kpis, posts, accountHandle, profilePicture, isMock, scenario, onScenarioChange, suggestions }: ChannelInsightsProps) {
   const router = useRouter();
   const [draftFor, setDraftFor] = useState<Suggestion | null>(null);
+  const [selectedPost, setSelectedPost] = useState<ChannelPostRow | null>(null);
   const channelLabel = channel === "instagram" ? "Instagram" : "Facebook";
   const mockHelp = channel === "instagram"
     ? "Facebook 페이지에 Instagram 비즈니스 계정을 연결하면 실제 인사이트를 볼 수 있어요."
@@ -184,7 +191,9 @@ export default function ChannelInsights({ channel, kpis, posts, accountHandle, i
                 : "게시물이 없거나, Facebook 페이지의 `pages_read_engagement` 권한이 충분하지 않을 수 있어요."}
             </div>
           ) : (
-            posts.map(post => <PostRow key={post.id} post={post} />)
+            <div className="flex flex-col gap-2">
+              {posts.map(post => <PostRow key={post.id} post={post} onClick={() => setSelectedPost(post)} />)}
+            </div>
           )}
         </Card>
 
@@ -197,6 +206,28 @@ export default function ChannelInsights({ channel, kpis, posts, accountHandle, i
           </div>
         </Card>
       </div>
+
+      {selectedPost && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+          onClick={() => setSelectedPost(null)}
+        >
+          <div
+            className="w-[360px] max-h-[calc(100vh-48px)] overflow-y-auto rounded-[20px]"
+            onClick={e => e.stopPropagation()}
+          >
+            <IgPostPreview
+              imageUrl={selectedPost.mediaUrl}
+              caption={selectedPost.caption}
+              handle={accountHandle ?? "instagram"}
+              profilePicture={profilePicture}
+              timestamp={selectedPost.timestamp
+                ? new Date(selectedPost.timestamp).toLocaleDateString("ko-KR", { month: "short", day: "numeric" })
+                : undefined}
+            />
+          </div>
+        </div>
+      )}
 
       {draftFor && (
         <AiDraftModal

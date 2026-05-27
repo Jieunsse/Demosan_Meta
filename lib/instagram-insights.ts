@@ -16,6 +16,7 @@ export type IgAccountInsights = {
   profileViews: number
   engagementRate: number
   igUsername?: string
+  profilePicture?: string
   posts: IgPost[]
   mock: boolean
 }
@@ -121,7 +122,7 @@ async function fetchMediaInsights(mediaId: string, token: string, graphBase: str
 async function fetchInsightsWithToken(igUserId: string, token: string, graphBase: string): Promise<IgAccountInsights> {
   // profile_views 는 v22+ 부터 metric_type=total_value 필수. reach 는 기존 period 기반.
   const [accountRes, reachRes, profileViewsRes, mediaRes] = await Promise.all([
-    fetch(`${graphBase}/${igUserId}?fields=followers_count,username&access_token=${token}`),
+    fetch(`${graphBase}/${igUserId}?fields=followers_count,username,profile_picture_url&access_token=${token}`),
     fetch(`${graphBase}/${igUserId}/insights?metric=reach&period=days_28&access_token=${token}`),
     fetch(`${graphBase}/${igUserId}/insights?metric=profile_views&metric_type=total_value&period=day&access_token=${token}`),
     fetch(`${graphBase}/${igUserId}/media?fields=id,caption,media_url,thumbnail_url,like_count,comments_count,timestamp&limit=5&access_token=${token}`),
@@ -129,7 +130,7 @@ async function fetchInsightsWithToken(igUserId: string, token: string, graphBase
 
   if (!accountRes.ok) throw new Error(`IG account API ${accountRes.status}`)
 
-  const account = await accountRes.json() as { followers_count?: number; username?: string }
+  const account = await accountRes.json() as { followers_count?: number; username?: string; profile_picture_url?: string }
   const reachData = await reachRes.json() as {
     data?: Array<{ name: string; values: Array<{ value: number }> }>
   }
@@ -164,7 +165,7 @@ async function fetchInsightsWithToken(igUserId: string, token: string, graphBase
     ? Number(((totalEngagement / posts.length / followers) * 100).toFixed(1))
     : 0
 
-  return { followers, reach, profileViews, engagementRate, igUsername: account.username, posts, mock: false }
+  return { followers, reach, profileViews, engagementRate, igUsername: account.username, profilePicture: account.profile_picture_url, posts, mock: false }
 }
 
 export async function getInstagramInsights(

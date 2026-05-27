@@ -57,8 +57,8 @@ export default function PrivacyPage() {
 
         <h2 style={H2}>7. 개인정보 보호책임자</h2>
         <ul style={List}>
-          <li>담당자: 서비스 운영자</li>
-          <li>이메일: test@example.com</li>
+          <li>담당자: Jayden Ock</li>
+          <li>이메일: jayden@jocodingax.ai</li>
         </ul>
 
         <h2 style={H2}>8. 개인정보처리방침의 변경</h2>

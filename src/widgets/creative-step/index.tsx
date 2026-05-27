@@ -5,10 +5,8 @@
 // page.tsx 는 step 진행·세션스토리지 입력값·generate mutation 결과를 props 로 전달.
 // PRD §13.10 — outcome 선택은 intro 페이지가 담당. STEP 01 은 SelectedGoalCard 만 노출.
 
-import { type ToneId } from "@entities/creative/options";
 import InputForm from "./InputForm";
 import ResultPanel from "./ResultPanel";
-
 interface Props {
   brand: string;
   setBrand: (v: string) => void;
@@ -16,8 +14,10 @@ interface Props {
   setTarget: (v: string) => void;
   personaId: string | null;
   setPersonaId: (id: string | null) => void;
-  tone: ToneId;
-  setTone: (id: ToneId) => void;
+  productId: string | null;
+  setProductId: (id: string | null) => void;
+  tone: string;
+  setTone: (id: string) => void;
   /** SelectedGoalCard 의 "광고 목표 변경" → intro 복귀. page.tsx 가 outcome=null dispatch. */
   onChangeOutcome: () => void;
   generating: boolean;
@@ -50,6 +50,8 @@ export default function CreativeStep(p: Props) {
         setTarget={p.setTarget}
         personaId={p.personaId}
         setPersonaId={p.setPersonaId}
+        productId={p.productId}
+        setProductId={p.setProductId}
         tone={p.tone}
         setTone={p.setTone}
         onChangeOutcome={p.onChangeOutcome}

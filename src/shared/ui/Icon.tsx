@@ -8,7 +8,8 @@ export type IconName =
   | "chart" | "trend-up" | "trend-down" | "pause" | "play" | "info" | "warn" | "lock"
   | "bell" | "facebook" | "instagram" | "x" | "doc" | "wallet" | "link" | "dots" | "chev-down"
   | "message" | "clock" | "folder" | "asterisk" | "eye" | "eye-off"
-  | "phone" | "heart" | "edit" | "send" | "comment";
+  | "phone" | "heart" | "edit" | "send" | "comment"
+  | "check-circle" | "hash";
 
 interface IconProps extends Omit<SVGProps<SVGSVGElement>, "name"> {
   name: IconName;
@@ -83,6 +84,8 @@ export default function Icon({ name, size = 18, strokeWidth = 1.75, spin, style,
     case "clock": return <svg {...props}><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>;
     case "folder": return <svg {...props}><path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" /></svg>;
     case "asterisk": return <svg {...props}><path d="M12 3v18M5 7l14 10M19 7 5 17" /></svg>;
+    case "check-circle": return <svg {...props}><circle cx="12" cy="12" r="9" /><path d="m9 12 2 2 4-4" /></svg>;
+    case "hash": return <svg {...props}><path d="M4 9h16M4 15h16M10 3l-2 18M16 3l-2 18" /></svg>;
     default: return null;
   }
 }
