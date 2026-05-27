@@ -7,8 +7,11 @@ import type {
 
 export const SOP_SECTION_LABEL: Record<SopItemType, string> = {
   prohibited_words: "금지어 목록",
+  required_phrases: "필수 문구",
+  required_hashtags: "필수 해시태그",
   length_limits: "길이 제한",
   cta_restrictions: "CTA 제한",
+  image_restrictions: "이미지 규격 제한",
   industry_regulations: "업종 규제",
   competitor_policy: "경쟁사 언급 정책",
   pricing_rules: "가격 표시 규칙",
@@ -18,8 +21,11 @@ export const SOP_SECTION_LABEL: Record<SopItemType, string> = {
 
 export const SOP_SECTION_DESCRIPTION: Record<SopItemType, string> = {
   prohibited_words: "광고에 절대 쓰면 안 되는 단어",
+  required_phrases: "광고에 반드시 포함해야 하는 문구",
+  required_hashtags: "광고에 반드시 포함할 해시태그",
   length_limits: "헤드라인·본문·링크 설명·해시태그 개수의 상한",
   cta_restrictions: "쓰면 안 되는 CTA 문구",
+  image_restrictions: "이미지 해상도·비율·텍스트 비율 등 규격 제한",
   industry_regulations: "업종별 규제·인증·고지 의무",
   competitor_policy: "경쟁사 언급·비교 광고 정책",
   pricing_rules: "가격·할인·정가 표기 규칙",
@@ -29,8 +35,12 @@ export const SOP_SECTION_DESCRIPTION: Record<SopItemType, string> = {
 
 export const SOP_FREETEXT_PLACEHOLDER: Record<SopItemType, string> = {
   prohibited_words: "",
+  required_phrases: "",
+  required_hashtags: "",
   length_limits: "",
   cta_restrictions: "",
+  image_restrictions:
+    "한 줄에 한 가지 룰씩 적어주세요.\n예:\n이미지 최소 해상도 1080×1080px\n텍스트 비율 20% 이하\n세로 비율 9:16 (릴스 전용)",
   industry_regulations:
     "한 줄에 한 가지 룰씩 적어주세요.\n예:\n금융·의료·건강기능식품·주류·부동산 업종은 사전 서류 인증 필요\n의약품·도박·담배 광고 집행 불가",
   competitor_policy:
@@ -45,8 +55,11 @@ export const SOP_FREETEXT_PLACEHOLDER: Record<SopItemType, string> = {
 
 export const SOP_SECTION_ORDER: SopItemType[] = [
   "prohibited_words",
+  "required_phrases",
+  "required_hashtags",
   "length_limits",
   "cta_restrictions",
+  "image_restrictions",
   "industry_regulations",
   "competitor_policy",
   "pricing_rules",
@@ -56,9 +69,12 @@ export const SOP_SECTION_ORDER: SopItemType[] = [
 
 export const SOP_SECTION_PLACEHOLDER: Record<SopItemType, string> = {
   prohibited_words: "한 줄에 단어 하나씩 적어주세요.\n예:\n무조건\n100% 보장\n최저가",
+  required_phrases: "예: 비건 인증, 무향·무색소",
+  required_hashtags: "예: #그린루틴 #비건스킨케어",
   length_limits:
     "헤드라인: 30\n본문: 100\n링크: 30\n해시태그: 10\n(숫자는 글자 수 / 해시태그는 개수 상한)",
   cta_restrictions: "한 줄에 금지 CTA 하나씩 적어주세요.\n예:\n지금 바로 구매\n무조건 최저가",
+  image_restrictions: SOP_FREETEXT_PLACEHOLDER.image_restrictions,
   industry_regulations: SOP_FREETEXT_PLACEHOLDER.industry_regulations,
   competitor_policy: SOP_FREETEXT_PLACEHOLDER.competitor_policy,
   pricing_rules: SOP_FREETEXT_PLACEHOLDER.pricing_rules,
@@ -77,6 +93,10 @@ export function sectionToText(s: SopSection): string {
   switch (s.type) {
     case "prohibited_words":
       return s.data.words.join("\n");
+    case "required_phrases":
+      return s.data.phrases.join("\n");
+    case "required_hashtags":
+      return s.data.hashtags.join("\n");
     case "length_limits": {
       const lines: string[] = [];
       if (s.data.headline != null) lines.push(`헤드라인: ${s.data.headline}`);
@@ -101,6 +121,10 @@ export function textToSection(
   switch (type) {
     case "prohibited_words":
       return { type, source, data: { words: lines } };
+    case "required_phrases":
+      return { type, source, data: { phrases: lines } };
+    case "required_hashtags":
+      return { type, source, data: { hashtags: lines } };
     case "length_limits": {
       const data: LengthLimitsData = {};
       for (const line of lines) {
