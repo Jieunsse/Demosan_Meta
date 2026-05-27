@@ -28,8 +28,11 @@ import SopEditModal from "@features/sop/ui/SopEditModal";
 import PersonaCard from "@features/brand-profile/ui/PersonaCard";
 import PersonaEditModal from "@features/brand-profile/ui/PersonaEditModal";
 import ReferenceMaterialsTab from "@features/brand-profile/ui/ReferenceMaterialsTab";
+import ProductCard from "@features/brand-profile/ui/ProductCard";
+import ProductEditModal from "@features/brand-profile/ui/ProductEditModal";
+import { useProducts, type ProductEntry } from "@shared/lib/products";
 
-type Tab = "style" | "policy" | "persona" | "materials";
+type Tab = "style" | "policy" | "persona" | "materials" | "products";
 
 const TEXTAREA_CLS =
   "w-full px-[14px] py-3 border border-[var(--w-line-normal)] rounded-xl bg-[var(--w-bg-elevated)] font-medium text-[14px] leading-[1.6] tracking-[0.004em] text-[var(--w-fg-strong)] outline-none transition-[border-color,box-shadow] duration-[120ms] placeholder:text-[var(--w-fg-alternative)] focus:border-[var(--w-primary-normal)] focus:shadow-[0_0_0_4px_rgba(0,102,255,0.14)] resize-y";
@@ -77,12 +80,14 @@ export default function BrandProfileDetailPage() {
   seedDemoIfEmpty();
   const { profiles, saveProfile } = useBrandProfilesStorage();
   const { personas, savePersona, deletePersona } = usePersonasForProfile(id);
+  const { products, save: saveProduct, remove: deleteProduct } = useProducts(id);
 
   const [tab, setTab] = useState<Tab>("style");
   const [loaded, setLoaded] = useState(false);
   const [entry, setEntry] = useState<BrandProfileEntry | null>(null);
   const [editingType, setEditingType] = useState<SopItemType | null>(null);
   const [editingPersona, setEditingPersona] = useState<PersonaEntry | "new" | null>(null);
+  const [editingProduct, setEditingProduct] = useState<ProductEntry | "new" | null>(null);
 
   const [name, setName] = useState("");
   const [tone, setTone] = useState("");
@@ -183,7 +188,7 @@ export default function BrandProfileDetailPage() {
       </div>
 
       <div className="flex gap-1 border-b border-[var(--w-line-normal)]" style={{ marginBottom: -16 }}>
-        {(["style", "policy", "persona", "materials"] as Tab[]).map((t) => (
+        {(["style", "policy", "persona", "products", "materials"] as Tab[]).map((t) => (
           <button
             key={t}
             type="button"
@@ -195,7 +200,7 @@ export default function BrandProfileDetailPage() {
                 : "border-transparent text-[var(--w-fg-neutral)] hover:text-[var(--w-fg-strong)]"
             )}
           >
-            {t === "style" ? "스타일" : t === "policy" ? "정책" : t === "persona" ? "페르소나" : "참고 자료"}
+            {t === "style" ? "스타일" : t === "policy" ? "정책" : t === "persona" ? "페르소나" : t === "products" ? "제품" : "참고 자료"}
           </button>
         ))}
       </div>
@@ -340,6 +345,40 @@ export default function BrandProfileDetailPage() {
         </div>
       )}
 
+      {tab === "products" && (
+        <div className="flex flex-col gap-4 pt-4">
+          <p className="m-0 font-medium text-[13.5px] leading-[1.5] text-[var(--w-fg-neutral)]">
+            이 브랜드의 제품을 등록하세요. 광고 만들기에서 제품을 선택하면 AI 카피에 반영돼요.
+          </p>
+          {products.length > 0 ? (
+            <div className="grid grid-cols-2 gap-3">
+              {products.map((p) => (
+                <ProductCard
+                  key={p.id}
+                  product={p}
+                  canEdit={isOwner}
+                  onEdit={() => isOwner && setEditingProduct(p)}
+                  onDelete={() => deleteProduct(p.id)}
+                />
+              ))}
+            </div>
+          ) : (
+            !isOwner && (
+              <p className="m-0 font-medium text-[13px] leading-[1.5] text-[var(--w-fg-alternative)] italic">
+                아직 등록된 제품이 없어요
+              </p>
+            )
+          )}
+          {isOwner && (
+            <div>
+              <Button variant="secondary" type="button" onClick={() => setEditingProduct("new")}>
+                + 제품 추가
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+
       {tab === "materials" && (
         <ReferenceMaterialsTab brandProfileId={id} canEdit={isOwner} />
       )}
@@ -360,6 +399,15 @@ export default function BrandProfileDetailPage() {
           persona={editingPersona === "new" ? undefined : editingPersona}
           onSave={(p) => { savePersona(p); setEditingPersona(null); }}
           onClose={() => setEditingPersona(null)}
+        />
+      )}
+
+      {editingProduct && (
+        <ProductEditModal
+          brandProfileId={id}
+          product={editingProduct === "new" ? undefined : editingProduct}
+          onSave={(p, img) => saveProduct(p, img).then(() => {})}
+          onClose={() => setEditingProduct(null)}
         />
       )}
     </div>

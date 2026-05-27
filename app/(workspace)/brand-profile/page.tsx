@@ -14,10 +14,32 @@ import {
 } from "@features/brand-profile/model/useBrandProfileStorage";
 import { seedDemoIfEmpty } from "@features/brand-profile/model/seed-demo";
 import { readPersonas, type PersonaEntry } from "@features/brand-profile/model/usePersonasStorage";
-import { isSectionFilled } from "@features/sop/model/useSopStorage";
+import { isSectionFilled, type SopItemType } from "@features/sop/model/useSopStorage";
 import { SOP_SECTION_LABEL } from "@features/sop/model/section-labels";
 
+const SECTION_CHIP_CLS: Record<SopItemType, string> = {
+  prohibited_words:     "bg-[#feecec] text-[#b20c0c]",
+  required_phrases:     "bg-[#d9ffe6] text-[#006e25]",
+  required_hashtags:    "bg-[rgba(0,189,222,0.14)] text-[#0095b0]",
+  length_limits:        "bg-[#eaf2fe] text-[#0054d1]",
+  cta_restrictions:     "bg-[var(--w-accent-violet-soft)] text-[var(--w-accent-violet)]",
+  image_restrictions:   "bg-[rgba(255,146,0,0.14)] text-[#9c5800]",
+  industry_regulations: "bg-[rgba(255,146,0,0.14)] text-[#9c5800]",
+  competitor_policy:    "bg-[rgba(0,189,222,0.14)] text-[#0095b0]",
+  pricing_rules:        "bg-[#d9ffe6] text-[#006e25]",
+  audience_restrictions:"bg-[var(--w-accent-violet-soft)] text-[var(--w-accent-violet)]",
+  platform_rules:       "bg-[#eaf2fe] text-[#0054d1]",
+};
+
 const GENDER_LABEL: Record<number, string> = { 1: "남", 2: "여" };
+
+function personaChipCls(p: PersonaEntry): string {
+  const isMale = p.genders?.length === 1 && p.genders[0] === 1;
+  const isFemale = p.genders?.length === 1 && p.genders[0] === 2;
+  if (isMale) return "bg-[rgba(0,102,255,0.10)] text-[var(--w-primary-press)]";
+  if (isFemale) return "bg-[rgba(217,75,167,0.14)] text-[#c2185b]";
+  return "bg-[rgba(0,191,64,0.12)] text-[#006e25]";
+}
 
 function personaChipLabel(p: PersonaEntry): string {
   const age =
@@ -90,7 +112,7 @@ function ProfileCard({ profile, personas, onDelete, onSetDefault }: ProfileCardP
               {filledSections.map((s) => (
                 <span
                   key={s.type}
-                  className="inline-flex items-center px-2 py-0.5 rounded-full bg-[var(--w-bg-alternative)] font-medium text-[11px] text-[var(--w-fg-normal)]"
+                  className={cn("inline-flex items-center px-2 py-0.5 rounded-full font-medium text-[11px]", SECTION_CHIP_CLS[s.type])}
                 >
                   {SOP_SECTION_LABEL[s.type]}
                 </span>
@@ -105,12 +127,12 @@ function ProfileCard({ profile, personas, onDelete, onSetDefault }: ProfileCardP
           {personas.length > 0 ? (
             <div className="flex flex-wrap gap-1.5">
               {personas.map((p) => (
-                <span
-                  key={p.id}
-                  className="inline-flex items-center px-2 py-0.5 rounded-full bg-[var(--w-bg-alternative)] font-medium text-[11px] text-[var(--w-fg-normal)]"
-                >
-                  {personaChipLabel(p)}
-                </span>
+                  <span
+                    key={p.id}
+                    className={cn("inline-flex items-center px-2 py-0.5 rounded-full font-medium text-[11px]", personaChipCls(p))}
+                  >
+                    {personaChipLabel(p)}
+                  </span>
               ))}
             </div>
           ) : (
