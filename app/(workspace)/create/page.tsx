@@ -147,6 +147,9 @@ export default function CreatePage() {
   const [personaIdRaw, setPersonaIdRaw] = useSessionStorage("adflow_personaId", "");
   const personaId = personaIdRaw || null;
   const setPersonaId = (id: string | null) => setPersonaIdRaw(id ?? "");
+  const [productIdRaw, setProductIdRaw] = useSessionStorage("adflow_productId", "");
+  const productId = productIdRaw || null;
+  const setProductId = (id: string | null) => setProductIdRaw(id ?? "");
   const [displayedHeadlines, setDisplayedHeadlines] = useState<string[] | null>(null);
   const [headlineIdx, setHeadlineIdx] = useState(0);
   const [displayedPrimaryTexts, setDisplayedPrimaryTexts] = useState<[string, string, string] | null>(null);
@@ -199,6 +202,21 @@ export default function CreatePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // productId 변경 시 제품의 targetUrl → landingUrl 자동 프리필 (비어있을 때만)
+  useEffect(() => {
+    if (!productId) return;
+    const bpEntry = readActiveBrandProfileEntry();
+    if (!bpEntry) return;
+    try {
+      const all = JSON.parse(localStorage.getItem(`adflow:products:${bpEntry.id}`) ?? "[]") as Array<{ id: string; targetUrl?: string }>;
+      const product = all.find((pr) => pr.id === productId);
+      if (product?.targetUrl && !launch.state.landingUrl.trim()) {
+        launch.dispatch({ type: "SET_LANDING_URL", value: product.targetUrl });
+      }
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [productId]);
+
   const handleGenerate = () => {
     if (!creative.state.outcome) {
       showToast("원하는 결과(outcome)를 먼저 골라주세요");
@@ -207,15 +225,28 @@ export default function CreatePage() {
     const startedAt = Date.now();
     const bp = readBrandProfile();
     const bpEntry = readActiveBrandProfileEntry();
+    const isCustomBrandMode = (() => { try { return sessionStorage.getItem("adflow_brand_mode") === "custom"; } catch { return false; } })();
     const personaEntry = personaId ? readPersonas().find((pe) => pe.id === personaId) : undefined;
+    const productEntry = productId
+      ? (() => {
+          try {
+            const all = JSON.parse(localStorage.getItem(`adflow:products:${bpEntry?.id ?? ""}`) ?? "[]") as Array<{ id: string; name: string; description: string; price?: string; targetUrl?: string }>;
+            return all.find((pr) => pr.id === productId);
+          } catch { return undefined; }
+        })()
+      : undefined;
     generateMutation.mutate(
       {
-        brand: bp.brandDescription || brand,
+        brand: isCustomBrandMode ? (brand || bp.brandDescription || "") : (bp.brandDescription || brand),
         target: target || undefined,
         tone: bp.tone ?? creative.state.tone,
         outcome: creative.state.outcome,
         hint: creative.state.outcomeHint,
-        brandProfile: {
+        brandProfile: isCustomBrandMode ? {
+          brandVoice: bp.brandVoice,
+          customerVoiceSummary: bp.customerVoiceSummary,
+          policy: bpEntry?.policy,
+        } : {
           brandDescription: bp.brandDescription,
           brandVoice: bp.brandVoice,
           customerVoiceSummary: bp.customerVoiceSummary,
@@ -226,6 +257,13 @@ export default function CreatePage() {
               name: personaEntry.name,
               customerDescription: personaEntry.customerDescription,
               interests: personaEntry.interests,
+            }
+          : undefined,
+        product: productEntry
+          ? {
+              name: productEntry.name,
+              description: productEntry.description,
+              price: productEntry.price,
             }
           : undefined,
       },
@@ -373,6 +411,8 @@ export default function CreatePage() {
               setTarget={setTarget}
               personaId={personaId}
               setPersonaId={setPersonaId}
+              productId={productId}
+              setProductId={setProductId}
               tone={creative.state.tone}
               setTone={(id) => creative.dispatch({ type: "SET_TONE", tone: id })}
               onChangeOutcome={handleChangeOutcome}

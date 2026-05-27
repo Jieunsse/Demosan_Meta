@@ -27,6 +27,12 @@ export interface PersonaContext {
   interests?: string[];
 }
 
+export interface ProductContext {
+  name: string;
+  description: string;
+  price?: string;
+}
+
 export interface GenerateCreativeParams {
   brand: string;
   target?: string;
@@ -35,6 +41,7 @@ export interface GenerateCreativeParams {
   hint?: string;
   brandProfile?: BrandProfileContext;
   persona?: PersonaContext;
+  product?: ProductContext;
 }
 
 // Meta spec: 1=male, 2=female, [] = all (unspecified)
@@ -132,6 +139,9 @@ export function buildCreativePrompt(p: GenerateCreativeParams): string {
 
   const brandLine = bp?.brandDescription?.trim() ?? p.brand;
   const brandVoiceLine = bp?.brandVoice?.trim() ? `\n브랜드 보이스: ${bp.brandVoice.trim()}` : "";
+  const productLine = p.product
+    ? `\n제품: ${p.product.name} — ${p.product.description}${p.product.price ? ` (가격 참고: ${p.product.price})` : ""}`
+    : "";
 
   const audienceLine = p.persona?.customerDescription?.trim() || p.target?.trim() || p.persona?.name || "";
   const customerVoiceLine = bp?.customerVoiceSummary?.trim() ? `\n고객 언어: ${bp.customerVoiceSummary.trim()}` : "";
@@ -144,7 +154,7 @@ export function buildCreativePrompt(p: GenerateCreativeParams): string {
   return `
 아래 정보를 바탕으로 Facebook/Instagram 광고 소재를 작성해주세요.
 
-브랜드/제품: ${brandLine}${brandVoiceLine}
+브랜드: ${brandLine}${brandVoiceLine}${productLine}
 타겟 오디언스: ${audienceLine}${customerVoiceLine}${personaInterestsLine}
 톤앤매너: ${toneText(p.tone)}
 원하는 결과: ${outcomeDef.outcomeLabel} (Meta ${outcomeDef.metaObjective})

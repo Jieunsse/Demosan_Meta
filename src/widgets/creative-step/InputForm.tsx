@@ -4,7 +4,7 @@
 // PRD §13.10 — 광고 목표 카드 grid 와 outcomeHint 는 intro 페이지로 이관. STEP 01 에선
 // SelectedGoalCard 로 선택한 목표만 read-only 노출하고 "변경" 시 intro 로 복귀.
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Icon from "@shared/ui/Icon";
 import { Badge } from "@shared/ui/primitives";
@@ -17,6 +17,7 @@ import { useCreativeDraft } from "@entities/creative/model";
 import { useBrandProfileStorage } from "@features/brand-profile/model/useBrandProfileStorage";
 import { usePersonasStorage } from "@features/brand-profile/model/usePersonasStorage";
 import PersonaQuickCreateModal from "@features/brand-profile/ui/PersonaQuickCreateModal";
+import { useProducts } from "@shared/lib/products";
 
 interface Props {
   brand: string;
@@ -25,6 +26,8 @@ interface Props {
   setTarget: (v: string) => void;
   personaId: string | null;
   setPersonaId: (id: string | null) => void;
+  productId: string | null;
+  setProductId: (id: string | null) => void;
   tone: string;
   setTone: (id: string) => void;
   /** outcome 변경(→ intro 복귀) 콜백. SelectedGoalCard 의 "광고 목표 변경" 버튼이 호출. */
@@ -45,6 +48,35 @@ export default function InputForm(p: Props) {
     : allPersonas;
 
   const selectedPersona = personas.find((pe) => pe.id === p.personaId) ?? null;
+
+  const { products } = useProducts(activeId ?? "");
+  const selectedProduct = products.find((pr) => pr.id === p.productId) ?? null;
+
+  // 브랜드 입력 모드: "profile" = Brand Profile 읽기 전용, "custom" = 직접 입력 (세션 범위)
+  const [brandMode, setBrandMode] = useState<"profile" | "custom">(() => {
+    try { return (sessionStorage.getItem("adflow_brand_mode") as "profile" | "custom") ?? "profile"; }
+    catch { return "profile"; }
+  });
+  const isCustomMode = brandMode === "custom" || !bpBrand;
+
+  const switchMode = (mode: "profile" | "custom") => {
+    setBrandMode(mode);
+    try { sessionStorage.setItem("adflow_brand_mode", mode); } catch {}
+    if (mode === "custom" && !p.brand.trim()) {
+      p.setBrand(bpBrand); // 프로필 내용을 초기값으로 복사
+    }
+  };
+
+  // Brand Profile 전환 시 프로필 모드로 초기화
+  const prevActiveId = useRef<string | null>(activeId ?? null);
+  useEffect(() => {
+    const switched = prevActiveId.current !== (activeId ?? null);
+    prevActiveId.current = activeId ?? null;
+    if (switched && bpBrand) {
+      setBrandMode("profile");
+      try { sessionStorage.setItem("adflow_brand_mode", "profile"); } catch {}
+    }
+  }, [activeId, bpBrand]);
 
   const [showQuickCreate, setShowQuickCreate] = useState(false);
 
@@ -84,7 +116,7 @@ export default function InputForm(p: Props) {
                 size="sm"
                 type="button"
                 onClick={p.onGenerate}
-                disabled={p.generating || !(bpBrand || p.brand).trim() || (!p.target.trim() && !p.personaId)}
+                disabled={p.generating || !(isCustomMode ? p.brand : bpBrand).trim() || (!p.target.trim() && !p.personaId)}
               >
                 <Icon name="sparkles" size={12} /> 다시 생성
               </Button>
@@ -137,22 +169,68 @@ export default function InputForm(p: Props) {
           )}
           <label className="font-semibold text-[15px] leading-[1.3] tracking-[-0.008em] text-[var(--w-fg-strong)] flex items-center gap-1.5">
             어떤 브랜드·제품을 홍보하나요?
-            {bpBrand && profiles.length <= 1 && (
-              <Link href="/brand-profile" className="ml-auto font-medium text-[12px] text-[var(--w-primary-normal)] hover:underline inline-flex items-center gap-0.5">
-                <Icon name="asterisk" size={11} /> 브랜드 프로필에서 →
-              </Link>
+            {bpBrand && (
+              <div className="ml-auto flex items-center rounded-lg border border-[var(--w-line-normal)] overflow-hidden" style={{ height: 26 }}>
+                <button
+                  type="button"
+                  onClick={() => switchMode("profile")}
+                  className={cn(
+                    "px-[10px] font-semibold text-[11.5px] leading-none h-full transition-colors duration-[120ms] border-none cursor-pointer",
+                    !isCustomMode
+                      ? "bg-[var(--w-fg-strong)] text-[var(--w-bg-elevated)]"
+                      : "bg-transparent text-[var(--w-fg-neutral)] hover:text-[var(--w-fg-strong)]"
+                  )}
+                >
+                  프로필에서
+                </button>
+                <button
+                  type="button"
+                  onClick={() => switchMode("custom")}
+                  className={cn(
+                    "px-[10px] font-semibold text-[11.5px] leading-none h-full border-l border-[var(--w-line-normal)] transition-colors duration-[120ms] border-none cursor-pointer",
+                    isCustomMode
+                      ? "bg-[var(--w-fg-strong)] text-[var(--w-bg-elevated)]"
+                      : "bg-transparent text-[var(--w-fg-neutral)] hover:text-[var(--w-fg-strong)]"
+                  )}
+                  style={{ borderLeft: "1px solid var(--w-line-normal)" }}
+                >
+                  직접 입력
+                </button>
+              </div>
             )}
           </label>
+          {/* 브랜드 설명 */}
           <textarea
             className={cn(
               "w-full px-[14px] py-3 border border-[var(--w-line-normal)] rounded-xl bg-[var(--w-bg-elevated)] font-medium text-[14px] leading-[1.6] tracking-[0.004em] text-[var(--w-fg-strong)] outline-none transition-[border-color,box-shadow] duration-[120ms] placeholder:text-[var(--w-fg-alternative)] focus:border-[var(--w-primary-normal)] focus:shadow-[0_0_0_4px_rgba(0,102,255,0.14)] resize-y min-h-[88px]",
-              bpBrand && "bg-[var(--w-bg-alternative)] border-[var(--w-line-alternative)] text-[var(--w-fg-normal)]"
+              !isCustomMode && "bg-[var(--w-bg-alternative)] border-[var(--w-line-alternative)] text-[var(--w-fg-normal)]"
             )}
-            value={bpBrand || p.brand}
-            onChange={(e) => { if (!bpBrand) p.setBrand(e.target.value); }}
-            readOnly={!!bpBrand}
-            placeholder={"예) 20대 여성을 위한 비건 스킨케어 브랜드 '그린루틴'.\n대표 제품은 수분크림으로 자극 없는 성분이 강점이에요."}
+            value={isCustomMode ? p.brand : bpBrand}
+            onChange={(e) => { if (isCustomMode) p.setBrand(e.target.value); }}
+            readOnly={!isCustomMode}
+            placeholder={"예) 20대 여성을 위한 비건 스킨케어 브랜드 '그린루틴'."}
           />
+          {/* 제품 선택 (Brand Profile에 제품이 등록된 경우만) */}
+          {products.length > 0 && (
+            <div className="flex flex-col gap-2">
+              <select
+                className="w-full px-3 py-2 border border-[var(--w-line-normal)] rounded-xl bg-[var(--w-bg-elevated)] font-medium text-[13px] text-[var(--w-fg-strong)] outline-none cursor-pointer transition-[border-color,box-shadow] duration-[120ms] focus:border-[var(--w-primary-normal)] focus:shadow-[0_0_0_4px_rgba(0,102,255,0.14)]"
+                value={p.productId ?? ""}
+                onChange={(e) => p.setProductId(e.target.value || null)}
+              >
+                <option value="">제품 선택 (선택 안 하면 브랜드 전체 광고)</option>
+                {products.map((pr) => (
+                  <option key={pr.id} value={pr.id}>{pr.name}</option>
+                ))}
+              </select>
+              {selectedProduct && (
+                <div className="px-[14px] py-3 rounded-xl border border-[var(--w-line-alternative)] bg-[var(--w-bg-alternative)] text-[14px] leading-[1.5] text-[var(--w-fg-normal)]">
+                  <span className="font-semibold text-[var(--w-fg-strong)]">{selectedProduct.name}</span>
+                  <p className="m-0 mt-1 font-medium text-[13px] text-[var(--w-fg-neutral)]">{selectedProduct.description}</p>
+                </div>
+              )}
+            </div>
+          )}
         </div>
         <div className="flex flex-col gap-2">
           <label className="font-semibold text-[15px] leading-[1.3] tracking-[-0.008em] text-[var(--w-fg-strong)] flex items-center gap-1.5">누구에게 보여줄 광고인가요?</label>
@@ -239,7 +317,7 @@ export default function InputForm(p: Props) {
             variant="primary"
             type="button"
             onClick={p.onGenerate}
-            disabled={p.generating || !(bpBrand || p.brand).trim() || (!p.target.trim() && !p.personaId)}
+            disabled={p.generating || !(isCustomMode ? p.brand : bpBrand).trim() || (!p.target.trim() && !p.personaId)}
           >
             {p.generating ? (
               <><div className="rounded-full border-[2.4px] border-[var(--w-line-normal)] border-t-[var(--w-primary-normal)] animate-[spin_0.85s_linear_infinite] w-[14px] h-[14px]" /> 생성 중…</>
