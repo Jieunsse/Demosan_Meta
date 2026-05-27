@@ -35,10 +35,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "파일이 8MB 를 넘었어요." }, { status: 400 })
   }
 
-  const base = process.env.NEXTAUTH_URL?.trim()
-  if (!base) {
-    return NextResponse.json({ ok: false, error: "NEXTAUTH_URL 이 설정돼 있지 않아요." }, { status: 500 })
-  }
+  const origin = `${req.nextUrl.protocol}//${req.nextUrl.host}`
 
   const ext = EXT_BY_MIME[file.type]
   const filename = `${randomUUID()}.${ext}`
@@ -47,6 +44,6 @@ export async function POST(req: NextRequest) {
   const buf = Buffer.from(await file.arrayBuffer())
   await writeFile(path.join(dir, filename), buf)
 
-  const url = `${base.replace(/\/$/, "")}/uploads/${filename}`
+  const url = `${origin}/uploads/${filename}`
   return NextResponse.json({ ok: true, url })
 }

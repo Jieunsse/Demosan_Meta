@@ -312,7 +312,7 @@ export default function CampaignsPage() {
                       <tr
                         key={c.id}
                         className={cn(
-                          "group",
+                          "group [&:hover_td]:bg-[var(--w-bg-neutral)]",
                           isSel && "[&_td]:bg-[var(--w-primary-soft)] [&:hover_td]:!bg-[var(--w-primary-soft)]",
                           isIssue && !isSel && "[&_td]:bg-[rgba(255,59,48,0.04)] [&:hover_td]:!bg-[rgba(255,59,48,0.07)]"
                         )}
@@ -350,11 +350,11 @@ export default function CampaignsPage() {
                             </div>
                           )}
                         </td>
-                        <td className="py-3.5 px-3.5 border-b border-[var(--w-line-alternative)] align-middle group-hover:bg-[var(--w-bg-neutral)] text-right font-medium text-[13px] leading-none [font-family:var(--w-font-mono)] text-[var(--w-fg-strong)]" style={{ textAlign: "center" }}>{c.impressions ? fmt(c.impressions) : "—"}</td>
-                        <td className="py-3.5 px-3.5 border-b border-[var(--w-line-alternative)] align-middle group-hover:bg-[var(--w-bg-neutral)] text-right font-medium text-[13px] leading-none [font-family:var(--w-font-mono)] text-[var(--w-fg-strong)]" style={{ textAlign: "center" }}>{c.clicks ? fmt(c.clicks) : "—"}</td>
-                        <td className="py-3.5 px-3.5 border-b border-[var(--w-line-alternative)] align-middle group-hover:bg-[var(--w-bg-neutral)] text-right font-medium text-[13px] leading-none [font-family:var(--w-font-mono)] text-[var(--w-fg-strong)]" style={{ textAlign: "center" }}>{c.ctr ? c.ctr.toFixed(2) + "%" : "—"}</td>
-                        <td className="py-3.5 px-3.5 border-b border-[var(--w-line-alternative)] align-middle group-hover:bg-[var(--w-bg-neutral)] text-right font-medium text-[13px] leading-none [font-family:var(--w-font-mono)] text-[var(--w-fg-strong)]" style={{ textAlign: "center" }}>{c.spend ? fmtKRW(c.spend) : "—"}</td>
-                        <td className="py-3.5 px-3.5 border-b border-[var(--w-line-alternative)] font-medium text-[13px] leading-[1.4] text-[var(--w-fg-strong)] align-middle group-hover:bg-[var(--w-bg-neutral)]" data-menu-root style={{ position: "relative" }}>
+                        <td className="py-3.5 px-3.5 border-b border-[var(--w-line-alternative)] align-middle text-right font-medium text-[13px] leading-none [font-family:var(--w-font-mono)] text-[var(--w-fg-strong)]" style={{ textAlign: "center" }}>{c.impressions ? fmt(c.impressions) : "—"}</td>
+                        <td className="py-3.5 px-3.5 border-b border-[var(--w-line-alternative)] align-middle text-right font-medium text-[13px] leading-none [font-family:var(--w-font-mono)] text-[var(--w-fg-strong)]" style={{ textAlign: "center" }}>{c.clicks ? fmt(c.clicks) : "—"}</td>
+                        <td className="py-3.5 px-3.5 border-b border-[var(--w-line-alternative)] align-middle text-right font-medium text-[13px] leading-none [font-family:var(--w-font-mono)] text-[var(--w-fg-strong)]" style={{ textAlign: "center" }}>{c.ctr ? c.ctr.toFixed(2) + "%" : "—"}</td>
+                        <td className="py-3.5 px-3.5 border-b border-[var(--w-line-alternative)] align-middle text-right font-medium text-[13px] leading-none [font-family:var(--w-font-mono)] text-[var(--w-fg-strong)]" style={{ textAlign: "center" }}>{c.spend ? fmtKRW(c.spend) : "—"}</td>
+                        <td className="py-3.5 px-3.5 border-b border-[var(--w-line-alternative)] font-medium text-[13px] leading-[1.4] text-[var(--w-fg-strong)] align-middle" data-menu-root style={{ position: "relative" }}>
                           <button
                             className="w-8 h-8 rounded-lg border border-transparent bg-transparent text-[var(--w-fg-neutral)] cursor-pointer inline-grid place-items-center hover:bg-[var(--w-bg-neutral)] hover:text-[var(--w-fg-strong)]"
                             type="button"
@@ -501,8 +501,8 @@ function TableSkeleton() {
         <tbody>
           {[0, 1, 2, 3, 4, 5].map((i) => (
             <tr key={i} className="group">
-              <td className="py-3.5 px-3.5 border-b border-[var(--w-line-alternative)] font-medium text-[13px] leading-[1.4] text-[var(--w-fg-strong)] align-middle group-hover:bg-[var(--w-bg-neutral)]"><Skeleton className="w-[18px] h-[18px] rounded-[5px]" /></td>
-              <td className="py-3.5 px-3.5 border-b border-[var(--w-line-alternative)] font-medium text-[13px] leading-[1.4] text-[var(--w-fg-strong)] align-middle group-hover:bg-[var(--w-bg-neutral)]">
+              <td className="py-3.5 px-3.5 border-b border-[var(--w-line-alternative)] font-medium text-[13px] leading-[1.4] text-[var(--w-fg-strong)] align-middle"><Skeleton className="w-[18px] h-[18px] rounded-[5px]" /></td>
+              <td className="py-3.5 px-3.5 border-b border-[var(--w-line-alternative)] font-medium text-[13px] leading-[1.4] text-[var(--w-fg-strong)] align-middle">
                 <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
                   <Skeleton className="w-[38px] h-[38px] rounded-[8px]" />
                   <div style={{ flex: 1 }}>
@@ -511,15 +511,15 @@ function TableSkeleton() {
                   </div>
                 </div>
               </td>
-              <td className="py-3.5 px-3.5 border-b border-[var(--w-line-alternative)] font-medium text-[13px] leading-[1.4] text-[var(--w-fg-strong)] align-middle group-hover:bg-[var(--w-bg-neutral)]"><Skeleton className="h-[22px] w-[60px] rounded-full mx-auto" /></td>
-              <td className="py-3.5 px-3.5 border-b border-[var(--w-line-alternative)] font-medium text-[13px] leading-[1.4] text-[var(--w-fg-strong)] align-middle group-hover:bg-[var(--w-bg-neutral)]"><Skeleton className="h-[22px] w-[70px] rounded-full mx-auto" /></td>
-              <td className="py-3.5 px-3.5 border-b border-[var(--w-line-alternative)] font-medium text-[13px] leading-[1.4] text-[var(--w-fg-strong)] align-middle group-hover:bg-[var(--w-bg-neutral)]"><Skeleton className="h-[14px] w-[80%] mx-auto" /></td>
-              <td className="py-3.5 px-3.5 border-b border-[var(--w-line-alternative)] font-medium text-[13px] leading-[1.4] text-[var(--w-fg-strong)] align-middle group-hover:bg-[var(--w-bg-neutral)]"><Skeleton className="h-[14px] w-[70px] mx-auto" /></td>
-              <td className="py-3.5 px-3.5 border-b border-[var(--w-line-alternative)] font-medium text-[13px] leading-[1.4] text-[var(--w-fg-strong)] align-middle group-hover:bg-[var(--w-bg-neutral)]"><Skeleton className="h-[14px] w-[60px] mx-auto" /></td>
-              <td className="py-3.5 px-3.5 border-b border-[var(--w-line-alternative)] font-medium text-[13px] leading-[1.4] text-[var(--w-fg-strong)] align-middle group-hover:bg-[var(--w-bg-neutral)]"><Skeleton className="h-[14px] w-[50px] mx-auto" /></td>
-              <td className="py-3.5 px-3.5 border-b border-[var(--w-line-alternative)] font-medium text-[13px] leading-[1.4] text-[var(--w-fg-strong)] align-middle group-hover:bg-[var(--w-bg-neutral)]"><Skeleton className="h-[14px] w-[50px] mx-auto" /></td>
-              <td className="py-3.5 px-3.5 border-b border-[var(--w-line-alternative)] font-medium text-[13px] leading-[1.4] text-[var(--w-fg-strong)] align-middle group-hover:bg-[var(--w-bg-neutral)]"><Skeleton className="h-[14px] w-[70px] mx-auto" /></td>
-              <td className="py-3.5 px-3.5 border-b border-[var(--w-line-alternative)] font-medium text-[13px] leading-[1.4] text-[var(--w-fg-strong)] align-middle group-hover:bg-[var(--w-bg-neutral)]" />
+              <td className="py-3.5 px-3.5 border-b border-[var(--w-line-alternative)] font-medium text-[13px] leading-[1.4] text-[var(--w-fg-strong)] align-middle"><Skeleton className="h-[22px] w-[60px] rounded-full mx-auto" /></td>
+              <td className="py-3.5 px-3.5 border-b border-[var(--w-line-alternative)] font-medium text-[13px] leading-[1.4] text-[var(--w-fg-strong)] align-middle"><Skeleton className="h-[22px] w-[70px] rounded-full mx-auto" /></td>
+              <td className="py-3.5 px-3.5 border-b border-[var(--w-line-alternative)] font-medium text-[13px] leading-[1.4] text-[var(--w-fg-strong)] align-middle"><Skeleton className="h-[14px] w-[80%] mx-auto" /></td>
+              <td className="py-3.5 px-3.5 border-b border-[var(--w-line-alternative)] font-medium text-[13px] leading-[1.4] text-[var(--w-fg-strong)] align-middle"><Skeleton className="h-[14px] w-[70px] mx-auto" /></td>
+              <td className="py-3.5 px-3.5 border-b border-[var(--w-line-alternative)] font-medium text-[13px] leading-[1.4] text-[var(--w-fg-strong)] align-middle"><Skeleton className="h-[14px] w-[60px] mx-auto" /></td>
+              <td className="py-3.5 px-3.5 border-b border-[var(--w-line-alternative)] font-medium text-[13px] leading-[1.4] text-[var(--w-fg-strong)] align-middle"><Skeleton className="h-[14px] w-[50px] mx-auto" /></td>
+              <td className="py-3.5 px-3.5 border-b border-[var(--w-line-alternative)] font-medium text-[13px] leading-[1.4] text-[var(--w-fg-strong)] align-middle"><Skeleton className="h-[14px] w-[50px] mx-auto" /></td>
+              <td className="py-3.5 px-3.5 border-b border-[var(--w-line-alternative)] font-medium text-[13px] leading-[1.4] text-[var(--w-fg-strong)] align-middle"><Skeleton className="h-[14px] w-[70px] mx-auto" /></td>
+              <td className="py-3.5 px-3.5 border-b border-[var(--w-line-alternative)] font-medium text-[13px] leading-[1.4] text-[var(--w-fg-strong)] align-middle" />
             </tr>
           ))}
         </tbody>
