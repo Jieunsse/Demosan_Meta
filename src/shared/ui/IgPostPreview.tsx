@@ -66,9 +66,13 @@ export function IgPostPreview({
         <Icon name="dots" size={16} />
       </div>
 
-      <div className="aspect-square bg-[var(--w-bg-neutral)] relative">
+      <div className="aspect-square bg-[var(--w-bg-neutral)] relative overflow-hidden">
         {showImage ? (
-          <Image src={imageUrl} alt="" fill className="object-cover" unoptimized sizes="360px" />
+          <>
+            <Image src={imageUrl} alt="" fill className="object-cover scale-110 blur-xl opacity-60" unoptimized sizes="360px" aria-hidden />
+            <Image src={imageUrl} alt="" fill className="object-contain" unoptimized sizes="360px" />
+          </>
+
         ) : (
           <div className="absolute inset-0 grid place-items-center text-[var(--w-fg-alternative)]">
             <div className="text-center">

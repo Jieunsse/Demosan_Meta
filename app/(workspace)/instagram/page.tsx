@@ -100,6 +100,7 @@ export default function InstagramInsightsPage() {
               kpis={kpis}
               posts={posts}
               accountHandle={igData.igUsername}
+              profilePicture={igData.profilePicture}
               isMock={igData.mock}
               scenario={scenario}
               onScenarioChange={data?.mock ? setScenario : undefined}
