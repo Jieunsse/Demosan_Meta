@@ -1,3 +1,5 @@
+import type { IconName } from '@shared/ui/Icon'
+
 export const TONES = [
   { id: 'warm' as const, label: '감성적·따뜻하게', promptDesc: '감성적이고 따뜻한 톤' },
   { id: 'pro' as const, label: '전문적·신뢰감 있게', promptDesc: '전문적이고 신뢰감 있는 톤' },
@@ -269,6 +271,53 @@ export type DefaultLinkKind = (typeof OBJECTIVES_ALL)[number]['defaultLink']
 
 export function findObjective(id: ObjectiveId) {
   return OBJECTIVES_ALL.find((o) => o.id === id)!
+}
+
+// Copy Hook (카피 훅) — ADR-029 / PRD-copy-hook. BTNARUST 8종. 카피의 주력 설득 각도.
+export type CopyHook =
+  | 'benefit' | 'trust' | 'number' | 'rush'
+  | 'unique' | 'trendy' | 'surprise' | 'story'
+
+export interface CopyHookDef {
+  id: CopyHook
+  label: string      // 배지·칩 표시 ("Number")
+  ko: string         // 한국어 짧은 이름 ("수치")
+  icon: IconName     // 카드 아이콘
+  uiDesc: string     // 화면 노출용 한 줄 — 유저가 읽고 고르는 설명
+  promptDesc: string // Gemini 주입용 한 줄
+}
+
+export const COPY_HOOKS: CopyHookDef[] = [
+  { id: 'benefit',  label: 'Benefit',  ko: '혜택',    icon: 'heart',        uiDesc: '고객이 얻는 변화를\n먼저 말해요',     promptDesc: '이 광고가 삶에 무엇을 바꿔주는지 먼저 답하는 혜택 중심' },
+  { id: 'trust',    label: 'Trust',    ko: '신뢰',    icon: 'check-circle', uiDesc: '근거와 후기로\n믿음을 줘요',           promptDesc: '출처·증언·레퍼런스로 믿게 만드는 신뢰 중심' },
+  { id: 'number',   label: 'Number',   ko: '수치',    icon: 'hash',         uiDesc: '구체적인 숫자로\n설득해요',           promptDesc: '구체적 수치로 증명하는' },
+  { id: 'rush',     label: 'Rush',     ko: '긴급',    icon: 'clock',        uiDesc: '지금 행동해야 할\n이유를 만들어요',   promptDesc: '시간압박·혜택소멸·한정성으로 지금 행동을 유발하는' },
+  { id: 'unique',   label: 'Unique',   ko: '차별화',  icon: 'asterisk',     uiDesc: '남들과 다른 점을\n분명하게 보여줘요', promptDesc: '기능이 아닌 경험·관점·접근의 차별화를 내세우는' },
+  { id: 'trendy',   label: 'Trendy',   ko: '트렌드',  icon: 'trend-up',     uiDesc: '요즘 뜨는 흐름에\n자연스럽게 얹어요', promptDesc: '지금 뜨는 키워드·트렌드에 자연스럽게 접점을 만드는' },
+  { id: 'surprise', label: 'Surprise', ko: '반전',    icon: 'eye',          uiDesc: '예상을 뒤집어\n시선을 멈추게 해요',   promptDesc: '놀라움 → 이해 → 납득 구조로 시선을 끄는' },
+  { id: 'story',    label: 'Story',    ko: '스토리',  icon: 'comment',      uiDesc: '이야기로 끌어들여\n끝까지 읽게 해요', promptDesc: '개발 비화·역전 성공담 등 이야기로 몰입시키는' },
+]
+
+export const COPY_HOOK_MAP: Record<CopyHook, CopyHookDef> =
+  Object.fromEntries(COPY_HOOKS.map((h) => [h.id, h])) as Record<CopyHook, CopyHookDef>
+
+export function findHook(id: CopyHook): CopyHookDef {
+  return COPY_HOOK_MAP[id]
+}
+
+// Outcome 종속 추천 풀 — metaObjective 단위 (8 칩이 3~6 objective 로 모임). Rush 는 기본 제외(디테일에서 추가).
+export const HOOK_RECOMMENDATIONS_BY_OBJECTIVE: Record<MetaObjective, [CopyHook, CopyHook, CopyHook]> = {
+  OUTCOME_AWARENESS:     ['surprise', 'story', 'unique'],
+  OUTCOME_ENGAGEMENT:    ['trendy', 'story', 'surprise'],
+  OUTCOME_TRAFFIC:       ['number', 'trust', 'benefit'],
+  OUTCOME_LEADS:         ['trust', 'number', 'benefit'],
+  OUTCOME_SALES:         ['number', 'trust', 'benefit'],
+  OUTCOME_APP_PROMOTION: ['benefit', 'number', 'trust'],
+}
+
+// 추천 3훅 — Outcome 칩 → metaObjective → 풀. STEP 02 생성 시 각 본문 변형 1개씩 끌고 감.
+export function recommendedHooks(outcome: ObjectiveId): [CopyHook, CopyHook, CopyHook] {
+  return HOOK_RECOMMENDATIONS_BY_OBJECTIVE[findObjective(outcome).metaObjective]
 }
 
 export const GOAL_RESULT: Record<ObjectivePhase1Id, { noun: string; costLabel: string }> = {

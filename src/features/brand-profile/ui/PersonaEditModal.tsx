@@ -74,11 +74,23 @@ interface Props {
   onClose: () => void;
 }
 
+type GenderMode = "ai" | "all" | "male" | "female";
+
+function initGenderMode(genders?: number[]): GenderMode {
+  if (genders == null) return "ai";
+  if (genders.length === 0) return "all";
+  return genders.includes(1) && !genders.includes(2) ? "male" : "female";
+}
+
 export default function PersonaEditModal({ brandProfileId, persona, onSave, onClose }: Props) {
   const [name, setName] = useState(persona?.name ?? "");
+  // 연령·성별 — 명시 시 override, AI 자동(undefined)이면 Gemini 추천. 신규는 기본 AI 자동.
+  const [ageAuto, setAgeAuto] = useState<boolean>(persona ? persona.ageMin == null : true);
   const [ageMin, setAgeMin] = useState<number>(persona?.ageMin ?? 18);
   const [ageMax, setAgeMax] = useState<number>(persona?.ageMax ?? 65);
-  const [genders, setGenders] = useState<number[]>(persona?.genders ?? []);
+  const [ageMinInput, setAgeMinInput] = useState(String(persona?.ageMin ?? 18));
+  const [ageMaxInput, setAgeMaxInput] = useState(String(persona?.ageMax ?? 65));
+  const [genderMode, setGenderMode] = useState<GenderMode>(initGenderMode(persona?.genders));
   const [location, setLocation] = useState<string[]>(persona?.location ?? []);
   const [interests, setInterests] = useState<string[]>(persona?.interests ?? []);
   const [customerDescription, setCustomerDescription] = useState(persona?.customerDescription ?? "");
@@ -89,26 +101,27 @@ export default function PersonaEditModal({ brandProfileId, persona, onSave, onCl
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const toggleGender = (g: number) => {
-    setGenders((prev) => (prev.includes(g) ? prev.filter((x) => x !== g) : [...prev, g]));
-  };
-
   const handleSave = () => {
     if (!name.trim()) return;
     onSave({
       id: persona?.id ?? `persona-${Date.now()}`,
       brandProfileId,
       name: name.trim(),
-      ageMin,
-      ageMax,
-      genders,
+      ageMin: ageAuto ? undefined : ageMin,
+      ageMax: ageAuto ? undefined : ageMax,
+      genders: genderMode === "ai" ? undefined : genderMode === "all" ? [] : genderMode === "male" ? [1] : [2],
       location: location.length ? location : undefined,
       interests: interests.length ? interests : undefined,
       customerDescription: customerDescription.trim() || undefined,
     });
   };
 
-  const GENDER_OPTIONS = [{ value: 0, label: "전체" }, { value: 1, label: "남" }, { value: 2, label: "여" }];
+  const GENDER_OPTIONS: { value: GenderMode; label: string }[] = [
+    { value: "ai", label: "AI 추천" },
+    { value: "all", label: "전체" },
+    { value: "male", label: "남" },
+    { value: "female", label: "여" },
+  ];
 
   return (
     <div
@@ -138,44 +151,84 @@ export default function PersonaEditModal({ brandProfileId, persona, onSave, onCl
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label className="font-semibold text-[13.5px] text-[var(--w-fg-strong)]">연령대</label>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center justify-between">
+              <label className="font-semibold text-[13.5px] text-[var(--w-fg-strong)]">연령대</label>
+              <button
+                type="button"
+                onClick={() => setAgeAuto((v) => !v)}
+                className={cn(
+                  "inline-flex items-center gap-1 px-2.5 py-1 rounded-full border font-medium text-[12px] cursor-pointer transition-[background,border-color,color] duration-[120ms]",
+                  ageAuto
+                    ? "border-[var(--w-primary-normal)] bg-[var(--w-primary-soft)] text-[var(--w-primary-press)]"
+                    : "border-[var(--w-line-normal)] bg-[var(--w-bg-elevated)] text-[var(--w-fg-neutral)]",
+                )}
+              >
+                <Icon name="sparkles" size={11} /> AI에게 맡기기
+              </button>
+            </div>
+            {ageAuto ? (
+              <p className="m-0 font-medium text-[12.5px] leading-[1.5] text-[var(--w-fg-neutral)]">
+                연령대를 비워두면 AI가 광고 내용을 보고 추천해요.
+              </p>
+            ) : (
+            <div className="flex items-center gap-2">
               <div className="flex flex-col gap-1 flex-1">
-                <span className="font-medium text-[12px] text-[var(--w-fg-neutral)]">최소 {ageMin}세</span>
-                <input type="range" min={18} max={65} value={ageMin} onChange={(e) => {
-                  const v = Number(e.target.value);
-                  setAgeMin(v);
-                  if (v > ageMax) setAgeMax(v);
-                }} className="w-full" />
+                <span className="font-medium text-[12px] text-[var(--w-fg-neutral)]">최소</span>
+                <div className="relative">
+                  <input
+                    type="number" min={18} max={65} value={ageMinInput}
+                    onChange={(e) => setAgeMinInput(e.target.value)}
+                    onBlur={() => {
+                      const v = Math.max(18, Math.min(65, Number(ageMinInput) || 18));
+                      const next = Math.min(v, ageMax);
+                      setAgeMin(next);
+                      setAgeMinInput(String(next));
+                    }}
+                    className="w-full px-[14px] py-3 pr-8 border border-[var(--w-line-normal)] rounded-xl bg-[var(--w-bg-elevated)] font-medium text-[14px] text-[var(--w-fg-strong)] outline-none transition-[border-color,box-shadow] duration-[120ms] focus:border-[var(--w-primary-normal)] focus:shadow-[0_0_0_4px_rgba(0,102,255,0.14)]"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 font-medium text-[13px] text-[var(--w-fg-neutral)] pointer-events-none">세</span>
+                </div>
               </div>
+              <span className="font-medium text-[13px] text-[var(--w-fg-neutral)] mt-5">~</span>
               <div className="flex flex-col gap-1 flex-1">
-                <span className="font-medium text-[12px] text-[var(--w-fg-neutral)]">최대 {ageMax}세</span>
-                <input type="range" min={18} max={65} value={ageMax} onChange={(e) => {
-                  const v = Number(e.target.value);
-                  setAgeMax(v);
-                  if (v < ageMin) setAgeMin(v);
-                }} className="w-full" />
+                <span className="font-medium text-[12px] text-[var(--w-fg-neutral)]">최대</span>
+                <div className="relative">
+                  <input
+                    type="number" min={18} max={65} value={ageMaxInput}
+                    onChange={(e) => setAgeMaxInput(e.target.value)}
+                    onBlur={() => {
+                      const v = Math.max(18, Math.min(65, Number(ageMaxInput) || 65));
+                      const next = Math.max(v, ageMin);
+                      setAgeMax(next);
+                      setAgeMaxInput(String(next));
+                    }}
+                    className="w-full px-[14px] py-3 pr-8 border border-[var(--w-line-normal)] rounded-xl bg-[var(--w-bg-elevated)] font-medium text-[14px] text-[var(--w-fg-strong)] outline-none transition-[border-color,box-shadow] duration-[120ms] focus:border-[var(--w-primary-normal)] focus:shadow-[0_0_0_4px_rgba(0,102,255,0.14)]"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 font-medium text-[13px] text-[var(--w-fg-neutral)] pointer-events-none">세</span>
+                </div>
               </div>
             </div>
+            )}
           </div>
 
           <div className="flex flex-col gap-1.5">
             <label className="font-semibold text-[13.5px] text-[var(--w-fg-strong)]">성별</label>
             <div className="flex gap-2">
               {GENDER_OPTIONS.map(({ value, label }) => {
-                const selected = value === 0 ? genders.length === 0 : genders.includes(value);
+                const selected = genderMode === value;
                 return (
                   <button
                     key={value}
                     type="button"
-                    onClick={() => value === 0 ? setGenders([]) : toggleGender(value)}
+                    onClick={() => setGenderMode(value)}
                     className={cn(
-                      "px-4 py-2 rounded-full border font-medium text-[13px] cursor-pointer transition-[background,border-color,color] duration-[120ms]",
+                      "inline-flex items-center gap-1 px-4 py-2 rounded-full border font-medium text-[13px] cursor-pointer transition-[background,border-color,color] duration-[120ms]",
                       selected
                         ? "border-[var(--w-fg-strong)] bg-[var(--w-fg-strong)] text-[var(--w-bg-elevated)]"
                         : "border-[var(--w-line-normal)] bg-[var(--w-bg-elevated)] text-[var(--w-fg-strong)]",
                     )}
                   >
+                    {value === "ai" && <Icon name="sparkles" size={12} />}
                     {label}
                   </button>
                 );
@@ -195,6 +248,9 @@ export default function PersonaEditModal({ brandProfileId, persona, onSave, onCl
 
           <div className="flex flex-col gap-1.5">
             <label className="font-semibold text-[13.5px] text-[var(--w-fg-strong)]">고객 설명</label>
+            <p className="text-[12px] leading-[1.4] text-[var(--w-fg-alternative)] m-0">
+              이 사람이 지금 어떤 상황인가요? 무엇을 참고 있나요?
+            </p>
             <textarea
               className="w-full px-[14px] py-3 border border-[var(--w-line-normal)] rounded-xl bg-[var(--w-bg-elevated)] font-medium text-[14px] leading-[1.6] text-[var(--w-fg-strong)] outline-none transition-[border-color,box-shadow] duration-[120ms] placeholder:text-[var(--w-fg-alternative)] focus:border-[var(--w-primary-normal)] focus:shadow-[0_0_0_4px_rgba(0,102,255,0.14)] resize-y min-h-[72px]"
               value={customerDescription}

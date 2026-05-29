@@ -3,12 +3,21 @@
 import { useCallback, useEffect, useState } from "react";
 import { syncUpsert } from "@shared/lib/supabase-sync";
 import type { SopSection } from "@features/sop/model/useSopStorage";
+
+export type CopyReference = {
+  id: string;
+  text: string;
+  source: "ig" | "manual";
+  createdAt: string;
+};
+
 export interface BrandProfile {
   brandDescription?: string;
   tone?: string;
   brandVoice?: string;
   customerVoiceSummary?: string;
   imageGuide?: string;
+  copyReferences?: CopyReference[];
 }
 
 export interface BrandProfileEntry extends BrandProfile {

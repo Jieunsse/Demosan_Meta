@@ -15,12 +15,28 @@ const chipOn = "bg-[var(--w-fg-strong)] text-[var(--w-bg-elevated)] border-[var(
 const chipAccent = "border-[var(--w-primary-normal)] text-[var(--w-primary-press)] bg-[var(--w-primary-soft)]";
 const GENDER_OPTS: [Gender, string][] = [["all", "전체"], ["male", "남성"], ["female", "여성"]];
 
+// ADR-022 — 연령·성별 출처 배지. 페르소나 override = 페르소나, AI 추천 = AI 추천.
+function SourceBadge({ source }: { source: "persona" | "ai" }) {
+  const persona = source === "persona";
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center", gap: 4,
+      background: persona ? "var(--w-bg-neutral)" : "var(--w-primary-soft)",
+      color: persona ? "var(--w-fg-neutral)" : "var(--w-primary-press)",
+      font: "600 11px/1 var(--w-font-sans)", padding: "3px 8px", borderRadius: 20,
+    }}>
+      <Icon name={persona ? "users" : "sparkles"} size={10} /> {persona ? "페르소나" : "AI 추천"}
+    </span>
+  );
+}
+
 interface Props { onBack: () => void; onNext: () => void }
 
 export default function TargetStep({ onBack, onNext }: Props) {
   const { state, dispatch } = useLaunchDraft();
   const creative = useCreativeDraft();
   const targeting = creative.state.targeting;
+  const source = creative.state.targetingSource;
 
   const toggleCountry = (code: string) => {
     const next = state.countries.includes(code)
@@ -36,7 +52,9 @@ export default function TargetStep({ onBack, onNext }: Props) {
         subtitle={
           state.mode === "simple"
             ? "광고를 노출할 국가만 선택하세요. 연령·성별은 Meta 어드밴티지+가 자동으로 최적화해요."
-            : "AI가 채워둔 값이에요. 그대로 두거나 조정해도 돼요."
+            : targeting
+              ? "연령·성별은 AI가 입력 내용을 보고 추천했어요. 그대로 두거나 조정해도 돼요."
+              : "타겟 조건을 설정해주세요."
         }
       />
       <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
@@ -49,19 +67,20 @@ export default function TargetStep({ onBack, onNext }: Props) {
         {state.mode === "detailed" && (
           <>
             <div>
-              <label className="font-semibold text-[15px] leading-[1.3] tracking-[-0.008em] text-[var(--w-fg-strong)] flex items-center gap-1.5" style={{ marginBottom: 10 }}>연령</label>
-              {targeting && (
-                <div className="font-medium text-[12px] leading-[1.5] tracking-[0.008em] text-[var(--w-fg-neutral)]" style={{ color: "var(--w-primary-press)", marginBottom: 8 }}>
-                  ✦ &lsquo;누구에게 보여줄 광고인가요&rsquo; 입력 내용에서 자동으로 채웠어요 · 수정 가능
-                </div>
-              )}
+              <label className="font-semibold text-[15px] leading-[1.3] tracking-[-0.008em] text-[var(--w-fg-strong)] flex items-center gap-1.5" style={{ marginBottom: 10 }}>
+                연령
+                {source && <SourceBadge source={source.age} />}
+              </label>
               <AgeRange
                 value={[state.ageMin, state.ageMax]}
                 onChange={(v) => dispatch({ type: "SET_AGE_RANGE", min: v[0], max: v[1] })}
               />
             </div>
             <div>
-              <label className="font-semibold text-[15px] leading-[1.3] tracking-[-0.008em] text-[var(--w-fg-strong)] flex items-center gap-1.5" style={{ marginBottom: 8 }}>성별</label>
+              <label className="font-semibold text-[15px] leading-[1.3] tracking-[-0.008em] text-[var(--w-fg-strong)] flex items-center gap-1.5" style={{ marginBottom: 8 }}>
+                성별
+                {source && <SourceBadge source={source.gender} />}
+              </label>
               <div className="flex gap-2 flex-wrap">
                 {GENDER_OPTS.map(([k, l]) => (
                   <button

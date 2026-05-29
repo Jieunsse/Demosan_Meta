@@ -13,6 +13,7 @@ const baseCreative: CreativeState = {
   primaryText: "본문 카피",
   generatedImages: null,
   targeting: null,
+  targetingSource: null,
   outcome: "traffic",
   outcomeHint: "",
   objective: "OUTCOME_TRAFFIC",

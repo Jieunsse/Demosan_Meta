@@ -4,6 +4,7 @@ import { createContext, useContext, useReducer, type Dispatch, type ReactNode } 
 import { type CtaId, type ImageId, type Objective, type OutcomeChip } from "@entities/creative/options";
 import { selectOutcome } from "@entities/creative/outcome-routing";
 import type { ExtractedTargeting } from "@/lib/gemini-creative";
+import type { TargetingSource } from "@features/brand-profile/model/mergePersonaTargeting";
 
 const INITIAL_HEADLINE = "피부가 먼저 느끼는 차이, 그린루틴";
 
@@ -16,6 +17,8 @@ export type CreativeState = {
   primaryText: string;
   generatedImages: [string, string, string] | null;
   targeting: ExtractedTargeting | null;
+  // ADR-022 — targeting 연령·성별의 출처(페르소나 override / AI 추천). STEP 02 배지에 사용.
+  targetingSource: TargetingSource | null;
   outcome: OutcomeChip | null;
   outcomeHint: string;
   objective: Objective | null;
@@ -36,6 +39,7 @@ export type CreativeAction =
   | { type: "SET_PRIMARY_TEXT"; primaryText: string }
   | { type: "SET_GENERATED_IMAGES"; images: [string, string, string] }
   | { type: "SET_TARGETING"; targeting: ExtractedTargeting }
+  | { type: "SET_TARGETING_SOURCE"; source: TargetingSource | null }
   // PRD-objective-aware-launch §3 — traffic/engagement 에서 사용자가 CTA 직접 선택.
   | { type: "SET_CTA"; cta: CtaId }
   | { type: "SET_OUTCOME"; outcome: OutcomeChip | null }
@@ -54,6 +58,7 @@ export const INITIAL_CREATIVE_STATE: CreativeState = {
   primaryText: "",
   generatedImages: null,
   targeting: null,
+  targetingSource: null,
   outcome: null,
   outcomeHint: "",
   objective: null,
@@ -71,6 +76,7 @@ function reducer(state: CreativeState, action: CreativeAction): CreativeState {
     case "SET_PRIMARY_TEXT":     return { ...state, primaryText: action.primaryText };
     case "SET_GENERATED_IMAGES": return { ...state, generatedImages: action.images };
     case "SET_TARGETING":        return { ...state, targeting: action.targeting };
+    case "SET_TARGETING_SOURCE": return { ...state, targetingSource: action.source };
     case "SET_CTA":              return { ...state, cta: action.cta };
     case "SET_OUTCOME": {
       const { outcome, objective, cta } = selectOutcome(state.outcome, action.outcome, state.cta);

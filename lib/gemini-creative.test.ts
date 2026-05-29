@@ -57,3 +57,45 @@ describe("buildCreativePrompt — persona 주입", () => {
     expect(prompt).toContain("타겟 오디언스: 자유 입력 타겟");
   });
 });
+
+describe("buildCreativePrompt — 카피 훅 주입 (ADR-029)", () => {
+  it("hooks 미지정 시 outcome 추천 풀이 변형별로 주입된다", () => {
+    // traffic → Number / Trust / Benefit
+    const prompt = buildCreativePrompt({ ...BASE, target: "20대" });
+    expect(prompt).toContain("카피 훅:");
+    expect(prompt).toContain("본문1 = Number");
+    expect(prompt).toContain("본문2 = Trust");
+    expect(prompt).toContain("본문3 = Benefit");
+  });
+
+  it("hooks 3개 지정 시 그 훅이 변형 순서대로 주입된다", () => {
+    const prompt = buildCreativePrompt({
+      ...BASE,
+      target: "20대",
+      hooks: ["story", "rush", "unique"],
+    });
+    expect(prompt).toContain("본문1 = Story");
+    expect(prompt).toContain("본문2 = Rush");
+    expect(prompt).toContain("본문3 = Unique");
+  });
+
+  it("primaryTexts JSON 가이드에 각 변형의 훅 라벨이 붙는다", () => {
+    const prompt = buildCreativePrompt({
+      ...BASE,
+      target: "20대",
+      hooks: ["number", "story", "trust"],
+    });
+    expect(prompt).toContain("본문1 — Number 훅");
+    expect(prompt).toContain("본문2 — Story 훅");
+    expect(prompt).toContain("본문3 — Trust 훅");
+  });
+
+  it("hooks 가 2개뿐이면(잘못된 입력) 추천 풀로 폴백한다", () => {
+    const prompt = buildCreativePrompt({
+      ...BASE,
+      target: "20대",
+      hooks: ["story"],
+    });
+    expect(prompt).toContain("본문1 = Number"); // traffic 추천 풀
+  });
+});
