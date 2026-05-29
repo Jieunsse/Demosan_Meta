@@ -65,14 +65,18 @@ interface ProfileCardProps {
 }
 
 function ProfileCard({ profile, personas, onDelete, onSetDefault }: ProfileCardProps) {
+  const router = useRouter();
   const toneLabel = profile.tone ? TONES.find((t) => t.id === profile.tone)?.label : null;
   const filledSections = (profile.policy ?? []).filter(isSectionFilled);
 
   return (
-    <Link
-      href={`/brand-profile/${profile.id}`}
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => router.push(`/brand-profile/${profile.id}`)}
+      onKeyDown={(e) => e.key === "Enter" && router.push(`/brand-profile/${profile.id}`)}
       className={cn(
-        "rounded-2xl border bg-[var(--w-bg-elevated)] p-5 flex flex-col gap-4 transition-[border-color,box-shadow] duration-[120ms] hover:border-[var(--w-primary-normal)] hover:shadow-[0_0_0_4px_rgba(0,102,255,0.08)] no-underline text-inherit",
+        "rounded-2xl border bg-[var(--w-bg-elevated)] p-5 flex flex-col gap-4 transition-[border-color,box-shadow] duration-[120ms] hover:border-[var(--w-primary-normal)] hover:shadow-[0_0_0_4px_rgba(0,102,255,0.08)] cursor-pointer",
         profile.isDefault ? "border-[var(--w-primary-normal)]" : "border-[var(--w-line-normal)]"
       )}
     >
@@ -100,7 +104,6 @@ function ProfileCard({ profile, personas, onDelete, onSetDefault }: ProfileCardP
             </p>
           )}
         </div>
-        <Icon name="edit" size={14} style={{ color: "var(--w-fg-alternative)", flexShrink: 0, marginTop: 2 }} />
       </div>
 
       {/* 정책 + 페르소나 2분할 */}
@@ -144,7 +147,7 @@ function ProfileCard({ profile, personas, onDelete, onSetDefault }: ProfileCardP
       {/* 액션 */}
       <div
         className="flex items-center gap-1.5 pt-3 border-t border-[var(--w-line-normal)]"
-        onClick={(e) => e.preventDefault()}
+        onClick={(e) => e.stopPropagation()}
       >
         {!profile.isDefault && (
           <button
@@ -155,19 +158,28 @@ function ProfileCard({ profile, personas, onDelete, onSetDefault }: ProfileCardP
             기본값으로 설정
           </button>
         )}
-        <button
-          type="button"
-          className={cn("font-medium text-[12px] text-[var(--w-fg-neutral)] hover:text-[var(--w-status-destructive)] transition-colors", !profile.isDefault ? "" : "ml-auto")}
-          onClick={(e) => {
-            e.preventDefault();
-            if (!window.confirm(`"${profile.name}" 프로필을 삭제할까요?`)) return;
-            onDelete(profile.id);
-          }}
-        >
-          삭제
-        </button>
+        <div className="ml-auto flex items-center gap-3">
+          <Link
+            href={`/brand-profile/${profile.id}/edit`}
+            className="font-medium text-[12px] text-[var(--w-fg-neutral)] hover:text-[var(--w-fg-strong)] transition-colors"
+            onClick={(e) => e.stopPropagation()}
+          >
+            수정
+          </Link>
+          <button
+            type="button"
+            className="font-medium text-[12px] text-[var(--w-fg-neutral)] hover:text-[var(--w-status-destructive)] transition-colors"
+            onClick={(e) => {
+              e.preventDefault();
+              if (!window.confirm(`"${profile.name}" 프로필을 삭제할까요?`)) return;
+              onDelete(profile.id);
+            }}
+          >
+            삭제
+          </button>
+        </div>
       </div>
-    </Link>
+    </div>
   );
 }
 
