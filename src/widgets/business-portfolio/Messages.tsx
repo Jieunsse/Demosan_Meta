@@ -309,6 +309,57 @@ export default function Messages() {
     staleTime: 60_000,
   });
 
+  const qc = useQueryClient();
+  useEffect(() => {
+    const es = new EventSource("/api/instagram/dm-stream");
+    es.addEventListener("message", (e) => {
+      try {
+        const event = JSON.parse(e.data) as {
+          type: string
+          conversationId: string
+          message: {
+            id: string
+            from_me: boolean
+            text: string
+            attachment_url?: string
+            created_at: string
+            participant_id: string
+          }
+        };
+        if (event.type !== "dm_new_message") return;
+
+        const newMsg: IgMessage = {
+          id: event.message.id,
+          from: event.message.from_me ? "me" : "them",
+          text: event.message.text,
+          attachmentImageUrl: event.message.attachment_url,
+          createdAt: event.message.created_at,
+        };
+        const preview = event.message.text.length > 70
+          ? `${event.message.text.slice(0, 69)}…`
+          : event.message.text;
+
+        // 스레드 캐시에 메시지 append
+        qc.setQueryData<IgThread>(["ig-thread", event.conversationId], (old) =>
+          old ? { ...old, messages: [...old.messages, newMsg] } : old,
+        );
+        // 대화 목록 preview·updatedAt 갱신
+        qc.setQueryData<IgInbox>(["ig-conversations"], (old) => {
+          if (!old) return old;
+          return {
+            ...old,
+            conversations: old.conversations.map((c) =>
+              c.id === event.conversationId
+                ? { ...c, preview, updatedAt: event.message.created_at }
+                : c,
+            ),
+          };
+        });
+      } catch {}
+    });
+    return () => es.close();
+  }, [qc]);
+
   if (inboxQ.isLoading) {
     return (
       <Card className="flex flex-col items-center gap-3 py-10 px-5 text-[var(--w-fg-neutral)]">
