@@ -81,6 +81,8 @@ export default function PostsPage() {
   const [aiPicking, setAiPicking] = useState<string | null>(null);
   const [captionSuggesting, setCaptionSuggesting] = useState(false);
   const [imageTab, setImageTab] = useState<"upload" | "ai">("upload");
+  const [captionTab, setCaptionTab] = useState<"write" | "ai">("write");
+  const [captionHint, setCaptionHint] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [brandProfiles, setBrandProfiles] = useState<BrandProfileEntry[]>([]);
@@ -338,17 +340,21 @@ export default function PostsPage() {
       const res = await fetch("/api/instagram/posts/suggest-text", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ kind: "caption", hint: caption.trim(), brandContext }),
+        body: JSON.stringify({ kind: "caption", hint: captionHint.trim(), brandContext }),
       });
       const data = (await res.json()) as { text?: string; error?: string };
-      if (data.text) setCaption(data.text);
-      else showToast(`AI 생성 실패 — ${data.error ?? "결과 없음"}`);
+      if (data.text) {
+        setCaption(data.text);
+        setCaptionTab("write");
+      } else {
+        showToast(`AI 생성 실패 — ${data.error ?? "결과 없음"}`);
+      }
     } catch (e) {
       showToast(`AI 생성 실패 — ${e instanceof Error ? e.message : "요청 실패"}`);
     } finally {
       setCaptionSuggesting(false);
     }
-  }, [caption, showToast, brandProfiles, allPersonas, selectedProfileId, selectedPersonaId]);
+  }, [captionHint, showToast, brandProfiles, allPersonas, selectedProfileId, selectedPersonaId]);
 
   const onPasteZone = (e: React.ClipboardEvent) => {
     const text = e.clipboardData.getData("text").trim();
@@ -645,32 +651,63 @@ export default function PostsPage() {
             </div>
 
             {/* 캡션 */}
-            <div className="flex flex-col gap-1.5">
-              <div className="flex items-center justify-between">
-                <label htmlFor="caption" className="text-[11.5px] font-semibold text-[var(--w-fg-neutral)]">
-                  캡션
-                </label>
-                <button
-                  type="button"
-                  onClick={suggestCaption}
-                  disabled={captionSuggesting || submitting}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-[var(--w-bg-neutral)] text-[var(--w-fg-neutral)] hover:bg-[var(--w-bg-base)] disabled:opacity-40 transition-colors"
-                >
-                  <Icon name="sparkles" size={11} />
-                  {captionSuggesting ? "생성 중..." : "AI 작성"}
-                </button>
+            <div className="flex flex-col gap-3">
+              <div className="flex gap-0.5 p-0.5 rounded-[10px] bg-[var(--w-bg-neutral)] self-start">
+                {(["write", "ai"] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    type="button"
+                    onClick={() => setCaptionTab(tab)}
+                    className={`px-3.5 py-1.5 rounded-[8px] text-[12px] font-semibold transition-colors ${
+                      captionTab === tab
+                        ? "bg-[var(--w-bg-elevated)] text-[var(--w-fg-strong)] shadow-[0_1px_3px_rgba(0,0,0,0.08)]"
+                        : "text-[var(--w-fg-neutral)] hover:text-[var(--w-fg-strong)]"
+                    }`}
+                  >
+                    {tab === "write" ? "직접 입력" : "AI 작성"}
+                  </button>
+                ))}
               </div>
-              <textarea
-                id="caption"
-                placeholder="게시글 본문, 해시태그(#), @멘션을 자유롭게 적어 주세요"
-                value={caption}
-                onChange={(e) => setCaption(e.target.value)}
-                rows={6}
-                maxLength={2200}
-                className="px-3.5 py-3 rounded-[10px] border border-[var(--w-line-normal)] bg-[var(--w-bg-elevated)] text-[13.5px] text-[var(--w-fg-strong)] outline-none focus:border-[var(--w-primary-normal)] focus-visible:outline-none resize-y leading-[1.55]"
-                disabled={submitting || captionSuggesting}
-              />
-              <div className="text-[11.5px] text-[var(--w-fg-alternative)] text-right">{caption.length} / 2200</div>
+
+              {captionTab === "write" ? (
+                <div className="flex flex-col gap-1.5">
+                  <textarea
+                    id="caption"
+                    placeholder="게시글 본문, 해시태그(#), @멘션을 자유롭게 적어 주세요"
+                    value={caption}
+                    onChange={(e) => setCaption(e.target.value)}
+                    rows={6}
+                    maxLength={2200}
+                    className="px-3.5 py-3 rounded-[10px] border border-[var(--w-line-normal)] bg-[var(--w-bg-elevated)] text-[13.5px] text-[var(--w-fg-strong)] outline-none focus:border-[var(--w-primary-normal)] focus-visible:outline-none resize-y leading-[1.55]"
+                    disabled={submitting}
+                  />
+                  <div className="text-[11.5px] text-[var(--w-fg-alternative)] text-right">{caption.length} / 2200</div>
+                </div>
+              ) : (
+                <div className="flex gap-2 items-start">
+                  <textarea
+                    placeholder="어떤 내용을 담고 싶나요? (선택) — 브랜드 프로필 기반으로 생성돼요"
+                    value={captionHint}
+                    onChange={(e) => setCaptionHint(e.target.value)}
+                    rows={2}
+                    maxLength={500}
+                    className="flex-1 px-3.5 py-2.5 rounded-[10px] border border-[var(--w-line-normal)] bg-[var(--w-bg-elevated)] text-[13px] text-[var(--w-fg-strong)] outline-none focus:border-[var(--w-primary-normal)] focus-visible:outline-none resize-none leading-[1.5]"
+                    disabled={captionSuggesting || submitting}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); suggestCaption(); }
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    variant="primary"
+                    size="md"
+                    onClick={suggestCaption}
+                    disabled={captionSuggesting || submitting}
+                  >
+                    {captionSuggesting ? "생성 중..." : "생성"}
+                  </Button>
+                </div>
+              )}
               <Button form="ig-publish" type="submit" variant="primary" size="md" disabled={!canSubmit} className="w-48 self-center mt-1">
                 {submitting ? "게시 중..." : "게시하기"}
               </Button>
