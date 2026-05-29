@@ -46,17 +46,13 @@ function StepLabel({ step }: { step: Step }) {
   );
 }
 
-// Step 1 — 세션에 adAccountId 있으면 완료 상태, 없으면 /setup으로 이동
+// Step 1 — 세션에 adAccountId 있으면 연결 확인, 없으면 /setup으로 이동
 function Step1({ onNext, onSkip }: { onNext: () => void; onSkip: () => void }) {
   const { data: session, status } = useSession();
   const router = useRouter();
 
   const connected = !!(session?.adAccountId && session?.pageId);
   const browseMode = !!session?.browseMode;
-
-  useEffect(() => {
-    if (status === "authenticated" && connected) onNext();
-  }, [status, connected, onNext]);
 
   return (
     <div className="flex flex-col gap-[22px]">
@@ -73,6 +69,20 @@ function Step1({ onNext, onSkip }: { onNext: () => void; onSkip: () => void }) {
         <div className="flex items-center gap-2 py-4 text-[var(--w-fg-neutral)] font-medium text-[13px]">
           <div className="rounded-full border-[2.4px] border-[var(--w-line-normal)] border-t-[var(--w-primary-normal)] animate-[spin_0.85s_linear_infinite] w-4 h-4" />
           <span>불러오는 중…</span>
+        </div>
+      )}
+
+      {status === "authenticated" && connected && (
+        <div className="flex items-start gap-3 px-[14px] py-3.5 rounded-xl bg-[var(--w-primary-soft)] border border-[rgba(0,102,255,0.18)]">
+          <div className="w-7 h-7 rounded-lg bg-[var(--w-bg-elevated)] text-[var(--w-primary-press)] grid place-items-center flex-[0_0_auto]">
+            <Icon name="check" size={15} />
+          </div>
+          <div className="min-w-0">
+            <div className="font-semibold text-[13px] leading-[1.4] text-[var(--w-fg-strong)]">계정이 연결되어 있어요</div>
+            <div className="font-medium text-[12px] leading-[1.45] text-[var(--w-fg-neutral)] mt-0.5 truncate">
+              {session?.adAccountName ?? session?.adAccountId}
+            </div>
+          </div>
         </div>
       )}
 
@@ -98,10 +108,15 @@ function Step1({ onNext, onSkip }: { onNext: () => void; onSkip: () => void }) {
       )}
 
       <hr className="h-px bg-[var(--w-line-neutral)] my-0 border-0" />
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <Button variant="ghost" size="sm" type="button" onClick={onSkip}>
           건너뛰기
         </Button>
+        {status === "authenticated" && connected && (
+          <Button variant="primary" size="sm" type="button" onClick={onNext}>
+            다음
+          </Button>
+        )}
       </div>
     </div>
   );
@@ -188,7 +203,7 @@ function Step2({ onNext, onSkip }: { onNext: () => void; onSkip: () => void }) {
           disabled={saving || !name.trim()}
           onClick={save}
         >
-          저장하고 다음 <Icon name="arrow-right" size={13} />
+          다음
         </Button>
       </div>
     </div>
@@ -196,10 +211,13 @@ function Step2({ onNext, onSkip }: { onNext: () => void; onSkip: () => void }) {
 }
 
 // Step 3 — 완료 + 광고 만들기 CTA
-function Step3({ onComplete }: { onComplete: () => void }) {
-  function goCreate() {
-    onComplete();
-    window.location.href = "/create";
+function Step3({ onComplete }: { onComplete: (next?: string) => void | Promise<void> }) {
+  async function goCreate() {
+    await onComplete("/create");
+  }
+
+  async function goLater() {
+    await onComplete();
   }
 
   return (
@@ -220,7 +238,7 @@ function Step3({ onComplete }: { onComplete: () => void }) {
         <Button variant="primary" size="md" type="button" onClick={goCreate}>
           광고 만들기 <Icon name="arrow-right" size={14} />
         </Button>
-        <Button variant="ghost" size="sm" type="button" onClick={onComplete}>
+        <Button variant="ghost" size="sm" type="button" onClick={goLater}>
           나중에 하기
         </Button>
       </div>
@@ -247,11 +265,20 @@ export default function OnboardingPage() {
     window.history.replaceState(null, "", `/onboarding?step=${s}`);
   }
 
-  function complete() {
-    const userId = session?.user?.email ?? "guest";
-    localStorage.setItem(onboardedKey(userId), "true");
-    localStorage.removeItem("adflow:onboarding-step");
-    window.location.replace("/dashboard");
+  async function complete(next: string = "/dashboard") {
+    // localStorage 캐시를 먼저 박아 가드 루프를 차단. 서버 POST 는 best-effort.
+    try {
+      localStorage.setItem(onboardedKey(session?.user?.email), "true");
+      localStorage.removeItem("adflow:onboarding-step");
+    } catch {
+      /* storage 사용 불가 — 무시 */
+    }
+    try {
+      await fetch("/api/onboarding/status", { method: "POST" });
+    } catch {
+      /* 서버 저장 실패해도 진행 — 다음 가드에서 재시도 */
+    }
+    window.location.replace(next);
   }
 
   return (

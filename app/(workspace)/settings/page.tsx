@@ -316,10 +316,14 @@ function DangerTab() {
   const { data: session } = useSession();
   const [confirmClear, setConfirmClear] = useState(false);
 
-  function restartOnboarding() {
-    const userId = session?.user?.email ?? "guest";
+  async function restartOnboarding() {
     try {
-      localStorage.removeItem(onboardedKey(userId));
+      await fetch("/api/onboarding/status", { method: "DELETE" });
+    } catch {
+      /* 실패해도 진행 */
+    }
+    try {
+      localStorage.removeItem(onboardedKey(session?.user?.email));
       localStorage.removeItem("adflow:onboarding-step");
     } catch {
       /* storage 사용 불가 — 무시 */

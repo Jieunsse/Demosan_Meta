@@ -2,6 +2,7 @@
 
 import { useSession, signOut } from "next-auth/react";
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import Icon from "@shared/ui/Icon";
 import { Button } from "@shared/ui/Button";
 
@@ -103,6 +104,8 @@ function SetupEmpty({ kind }: { kind: "account" | "page" }) {
 
 export default function SetupPage() {
   const { update } = useSession();
+  const searchParams = useSearchParams();
+  const nextUrl = searchParams.get("next") ?? "/dashboard";
   const [phase, setPhase] = useState<Phase>("account");
   const [accounts, setAccounts] = useState<AdAccount[]>([]);
   const [pages, setPages] = useState<FbPage[]>([]);
@@ -151,13 +154,13 @@ export default function SetupPage() {
       igUsername: page.igUsername ?? "",
       browseMode: false,
     });
-    window.location.href = "/dashboard";
+    window.location.href = nextUrl;
   }
 
   async function browseAround() {
     setSelecting("__browse__");
     await update({ browseMode: true });
-    window.location.href = "/dashboard";
+    window.location.href = nextUrl;
   }
 
   const isPage = phase === "page";

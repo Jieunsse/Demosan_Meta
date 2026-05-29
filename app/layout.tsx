@@ -9,8 +9,8 @@ export const metadata: Metadata = {
 };
 
 // Resolve the saved theme before paint so the workspace shell doesn't flash.
-// /login is force-light regardless of saved preference.
-const THEME_INIT_SCRIPT = `(function(){try{var p=location.pathname;if(p==='/login'||p.indexOf('/login/')===0){document.documentElement.setAttribute('data-theme','light');return;}var t=localStorage.getItem('adflow_theme')||'light';var dark=t==='dark'||(t==='system'&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.setAttribute('data-theme',dark?'dark':'light');}catch(e){document.documentElement.setAttribute('data-theme','light');}})();`;
+// /login, /onboarding, /setup are force-light regardless of saved preference.
+const THEME_INIT_SCRIPT = `(function(){try{var p=location.pathname;if(p==='/login'||p.indexOf('/login/')===0||p==='/onboarding'||p.indexOf('/onboarding/')===0||p==='/setup'||p.indexOf('/setup/')===0){document.documentElement.setAttribute('data-theme','light');return;}var t=localStorage.getItem('adflow_theme')||'light';var dark=t==='dark'||(t==='system'&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.setAttribute('data-theme',dark?'dark':'light');}catch(e){document.documentElement.setAttribute('data-theme','light');}})();`;
 
 export default function RootLayout({
   children,

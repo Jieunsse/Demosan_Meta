@@ -46,3 +46,8 @@ create table if not exists sops (
   updated_at text not null,
   synced_at timestamptz default now()
 );
+
+create table if not exists onboarded_users (
+  user_email   text primary key,
+  onboarded_at timestamptz not null default now()
+);
