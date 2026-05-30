@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { AuthError } from "../route-handler";
 import { metaAds, type MetaObjectiveParam } from "../meta-ads";
 import { isWinner } from "../optimization";
@@ -35,11 +36,28 @@ export interface AutoRelaunchReadyPayload {
   evidence: WinnerEvidence;
 }
 
+// ADR-038 결정 3 — 서버 cron 폴러가 라운드 결산/완료 시 push. beat 으로 클라가 결정 대기 여부 판단.
+export interface TournamentRoundConcludedPayload {
+  id: string;
+  type: "tournament-round-concluded";
+  message: string;
+  ts: number;
+  tournamentId: string;
+  productName: string;
+  roundIndex: number;
+  winnerIsB: boolean;
+  completed: boolean; // 토너먼트 종료 여부 (봉투 소진)
+}
+
 export interface AuthExpiredPayload {
   type: "auth_expired";
 }
 
-export type NotificationPayload = AdStatusPayload | AutoRelaunchReadyPayload | AuthExpiredPayload;
+export type NotificationPayload =
+  | AdStatusPayload
+  | AutoRelaunchReadyPayload
+  | TournamentRoundConcludedPayload
+  | AuthExpiredPayload;
 
 interface ControllerEntry {
   controller: ReadableStreamDefaultController<Uint8Array>;
@@ -87,6 +105,24 @@ function fanOut(entry: UserEntry, payload: NotificationPayload) {
 function broadcastPing(entry: UserEntry) {
   const chunk = encodePing();
   entry.controllers = entry.controllers.filter((c) => safeEnqueue(c.controller, chunk));
+}
+
+// SSE stream route 의 hashToken 과 동일 — cron 폴러가 owner 토큰으로 userId 를 역산해 푸시한다.
+function hashToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex").slice(0, 24);
+}
+
+// ADR-038 — cron 폴러가 토너먼트 owner 의 열린 SSE 스트림으로 결산 알림 push. 연결 없으면 no-op
+// (브라우저가 닫혀 있어도 토너먼트는 Supabase 상에서 진행되고, 재접속 시 상세 화면이 최신 상태를 읽는다).
+export function pushTournamentConcluded(
+  ownerToken: string,
+  payload: Omit<TournamentRoundConcludedPayload, "type">,
+): number {
+  const entry = registry.get(hashToken(ownerToken));
+  if (!entry) return 0;
+  const before = entry.controllers.length;
+  fanOut(entry, { ...payload, type: "tournament-round-concluded" });
+  return before;
 }
 
 function makeEmissionId(userId: string, adId: string, transition: string, ts: number): string {

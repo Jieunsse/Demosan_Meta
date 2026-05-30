@@ -1,0 +1,71 @@
+// ADR-038 결정 3 — 서버 cron 폴러. 브라우저 없이 실 유저 토너먼트를 진행한다.
+// running 토너먼트마다: ① Meta KPI 로 결산 시도(MIN_ROUND_DAYS 미달이면 보류) ② 결산되면 auto 무인 체인으로
+// 다음 라운드 자동 게재 ③ owner 의 열린 SSE 스트림으로 tournament-round-concluded push(연결 없으면 no-op).
+//
+// 인증 = CRON_SECRET (Vercel Cron 은 authorization: Bearer ${CRON_SECRET} 로 호출). 세션 없음 —
+// 게재·폴링·푸시에 필요한 토큰/계정/페이지는 토너먼트 delivery 봉투(Supabase)에서 읽는다.
+
+import { NextRequest, NextResponse } from "next/server";
+import { getRealTournamentRunner, supabaseTournamentStore } from "@entities/ab-test/tournament/real";
+import { pushTournamentConcluded } from "@/lib/notifications/registry";
+import { deriveBeat } from "@entities/ab-test/tournament/engine";
+
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+export const maxDuration = 60;
+
+function authorized(req: NextRequest): boolean {
+  const secret = process.env.CRON_SECRET;
+  if (!secret) return false; // 미설정이면 폴러를 열어두지 않는다(보수적)
+  return req.headers.get("authorization") === `Bearer ${secret}`;
+}
+
+export async function GET(req: NextRequest) {
+  if (!authorized(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const runner = getRealTournamentRunner();
+  const all = await supabaseTournamentStore.list();
+  const active = all.filter((t) => t.status === "running" && t.delivery);
+
+  let settled = 0;
+  let advanced = 0;
+  const errors: string[] = [];
+
+  for (const t of active) {
+    try {
+      const result = await runner.pollAndSettle(t.id);
+      if (result.status !== "settled") continue;
+      settled += 1;
+
+      // auto 무인 체인 — 봉투/이상신호 브레이크가 없으면 다음 라운드 자동 게재.
+      if (t.mode === "auto") {
+        await runner.autoAdvance(t.id);
+      }
+
+      // 결산 후 최신 상태로 SSE push (autoAdvance 가 status 를 바꿨을 수 있어 다시 읽는다).
+      const fresh = await supabaseTournamentStore.get(t.id);
+      if (!fresh?.delivery) continue;
+      if (fresh.mode === "auto" && deriveBeat(fresh) === "auto-running" && !result.completed) {
+        advanced += 1;
+      }
+      pushTournamentConcluded(fresh.delivery.accessToken, {
+        id: `tourn-${fresh.id}-r${result.round.index}-${result.round.launchedAt ?? ""}`,
+        message: result.completed
+          ? `🏁 '${fresh.productName}' 토너먼트가 끝났어요 — 최종 챔피언이 확정됐어요.`
+          : `라운드 ${result.round.index} 결산 완료 — ${result.winnerIsB ? "새 챌린저 승격" : "챔피언 방어"}`,
+        ts: Date.now(),
+        tournamentId: fresh.id,
+        productName: fresh.productName,
+        roundIndex: result.round.index,
+        winnerIsB: result.winnerIsB,
+        completed: result.completed,
+      });
+    } catch (e) {
+      errors.push(`${t.id}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  return NextResponse.json({ scanned: active.length, settled, advanced, errors });
+}
