@@ -128,6 +128,8 @@ function buildCommonOptions(meta?: MetaCredentials): AuthOptions {
         session.igUsername = token.igUsername as string | undefined
         session.browseMode = token.browseMode as boolean | undefined
         session.role = token.role as "팀장" | "팀원·게재" | "팀원·검토" | undefined
+        // 둘러보기 모드: 실제 IG 연결이 없으므로 연결 탭과 동일한 데모 계정명으로 통일
+        if (session.browseMode && !session.igUsername) session.igUsername = "greenroutine_official"
         return session
       },
     },

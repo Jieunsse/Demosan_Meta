@@ -18,6 +18,7 @@ function fmtK(n: number): string {
 
 export default function InstagramInsightsPage() {
   const { data: session } = useSession();
+  const browseMode = !!session?.browseMode;
   const [scenario, setScenario] = useState<"good" | "poor">("good");
 
   const { data, isLoading, isError, refetch } = useQuery({
@@ -85,7 +86,7 @@ export default function InstagramInsightsPage() {
 
       {!isLoading && !isError && (
         <>
-          {!session?.pageId && (
+          {!session?.pageId && !browseMode && (
             <Card className="flex items-center justify-between gap-4">
               <div>
                 <div style={{ font: "700 15px/1.3 var(--w-font-sans)", color: "var(--w-fg-strong)" }}>Meta 계정이 아직 연결되지 않았어요</div>
@@ -101,9 +102,9 @@ export default function InstagramInsightsPage() {
               posts={posts}
               accountHandle={igData.igUsername}
               profilePicture={igData.profilePicture}
-              isMock={igData.mock}
+              isMock={igData.mock && !browseMode}
               scenario={scenario}
-              onScenarioChange={data?.mock ? setScenario : undefined}
+              onScenarioChange={data?.mock && !browseMode ? setScenario : undefined}
               suggestions={suggestions}
             />
           )}
