@@ -51,3 +51,19 @@ create table if not exists onboarded_users (
   user_email   text primary key,
   onboarded_at timestamptz not null default now()
 );
+
+-- ADR-038 — A/B 토너먼트 실 유저 이관. 다른 테이블과 달리 미러가 아니라 source-of-truth(primary):
+-- 서버 cron 폴러가 브라우저 없이 라운드를 진행하므로 Supabase 가 진실의 원천이다. 전체 Tournament 는
+-- data jsonb, 폴러가 필터링하는 status 는 컬럼으로 승격. user_email = 소유 유저(섬2 가 Meta 토큰 매칭).
+create table if not exists tournaments (
+  id               text primary key,
+  user_email       text,
+  brand_profile_id text,
+  status           text not null,
+  mode             text not null,
+  data             jsonb not null,
+  created_at       text not null,
+  updated_at       timestamptz default now()
+);
+
+create index if not exists tournaments_status on tournaments (status);
