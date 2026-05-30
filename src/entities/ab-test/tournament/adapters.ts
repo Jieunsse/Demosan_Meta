@@ -14,9 +14,10 @@ export interface TournamentStore {
   remove(id: string): Promise<void>;
 }
 
-// 라운드 게재 (ADR-038 결정 4) — 데모=결정적 campaignId 시뮬, 실제=Meta ad study(SPLIT_TEST) 생성.
+// 라운드 게재 (ADR-038 결정 4) — 데모=결정적 campaignId 시뮬, 실제=같은 AdSet 챔피언(A)/챌린저(B)
+// 2광고 게재. adIds 는 KpiSource 가 셀별 insights 를 끌어올 키. 데모는 campaignId 만 반환(adIds 생략).
 export interface RoundLauncher {
-  launch(t: Tournament, round: TourRound): Promise<{ campaignId: string }>;
+  launch(t: Tournament, round: TourRound): Promise<{ campaignId: string; adIds?: [string, string] }>;
 }
 
 // KPI 소스 (ADR-038 결정 1) — 데모=시드 결정적 생성기(roundAdKpis), 실제=Meta insights 폴링.

@@ -25,11 +25,32 @@ export type TourRound = {
   verdict?: RoundVerdict;
   rawWinner?: "A" | "B"; // 승격 결과 — "B"=챌린저 유의 승격 / "A"=챔피언 방어(유의 승리 or inconclusive) (ADR-037)
   adKpis?: [AdKpi, AdKpi]; // 결산 시점 광고별 성과 스냅샷 (표시용)
+  adIds?: [string, string]; // 실 게재 라운드의 챔피언(A)·챌린저(B) 광고 ID — KpiSource insights 키. 데모는 미사용
+  launchedAt?: string; // 실 게재 시각 ISO — cron 이 MIN_ROUND_DAYS 경과 판정에 사용. 데모는 fastForwardDays 사용
   status: "running" | "settled";
 };
 
 export type TourMode = "manual-n" | "auto";
 export type TourEnvelope = { totalBudget?: number; targetDate?: string };
+
+// 실 게재 자격증명 + 게재 스펙 (ADR-038 결정 3). 데모는 undefined — cron 폴러가 세션 없이 라운드를
+// 게재·폴링하려면 유저 long-lived 토큰·계정·페이지와 타겟/링크/CTA 를 토너먼트에 박아둬야 한다.
+// Supabase 가 진실의 원천이라 이 봉투째 jsonb 로 저장된다(서버 service-role 뒤).
+export type TournamentDelivery = {
+  accessToken: string;
+  adAccountId: string; // act_ 프리픽스 포함 형태
+  pageId: string;
+  ownerEmail: string; // cron 이 SSE 푸시할 대상
+  goalId?: string; // OBJECTIVES_PHASE1 id — 미지정 시 traffic 레거시 경로
+  linkUrl: string;
+  ctaType: string; // Meta call_to_action.type (예: LEARN_MORE)
+  countries: string[];
+  ageMin: number;
+  ageMax: number;
+  genders?: number[];
+  roundDays: number; // 라운드당 실제 게재 기간 (MIN_ROUND_DAYS 이상)
+  imageDataUrl?: string; // 공통 이미지 (axis≠image 라운드용)
+};
 
 export type Tournament = {
   id: string;
@@ -57,6 +78,7 @@ export type Tournament = {
   spentBudget: number; // 자동 봉투 누적
   status: "running" | "completed";
   createdAt: string;
+  delivery?: TournamentDelivery; // 실 게재 봉투 (ADR-038). 데모는 undefined — 시뮬 경로
 };
 
 /* ─── 엔진 (순수 함수) ───────────────────────────────────────── */
