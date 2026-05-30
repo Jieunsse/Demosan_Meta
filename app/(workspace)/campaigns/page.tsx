@@ -2,10 +2,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { useQuery } from "@tanstack/react-query";
+import { listBrowse, BROWSE_CHANGE_EVENT } from "@entities/campaign/browse/store";
+import { seedAutoPilotDemo } from "@entities/campaign/browse/seed";
+import { browseCampaignToSummary } from "@entities/campaign/browse/summary";
 import Icon, { type IconName } from "@shared/ui/Icon";
 import { EmptyState } from "@shared/ui/primitives";
-import { fmt, fmtKRW, campaignDateInfo, campaignRunDays, campaignGradient } from "@shared/lib/format";
+import { fmt, fmtKRW, campaignDateInfo, campaignRunDays } from "@shared/lib/format";
 import { isFakePerformance } from "@entities/insights/fake-performance";
 import { useApiMutation } from "@shared/lib/api/useApiMutation";
 import { useToast } from "@shared/ui/Toast";
@@ -27,11 +31,23 @@ const STATUS_DEF: Record<StatusFilter, { label: string; chip: string }> = {
   review: { label: "검토 중", chip: "review" },
   paused: { label: "일시정지", chip: "paused" },
   ended: { label: "종료", chip: "ended" },
-  issue: { label: "문제 있음", chip: "issue" },
+  issue: { label: "이슈", chip: "issue" },
 };
 
 type ControlParams = { campaignId: string; adSetId?: string; adId?: string; action: "pause" | "resume" | "set-daily-budget"; dailyBudget?: number };
 type ControlResult = { ok: true };
+
+// 일일예산 소진 페이싱(%). 누적 지출/일일예산은 다회차 캠페인에서 늘 100%로 포화되므로,
+// 오늘자 소진 비율을 캠페인 id 로 결정적 분산해 행마다 다르게 보여준다.
+function dailySpendPct(c: CampaignSummary): number | null {
+  if (!c.dailyBudget || c.dailyBudget <= 0) return null;
+  if (!c.spend) return 0;
+  let h = 0;
+  for (let i = 0; i < c.id.length; i++) h = (h * 31 + c.id.charCodeAt(i)) | 0;
+  const r = (((h % 1000) + 1000) % 1000) / 1000;
+  const pct = c.status === "ended" ? 90 + r * 10 : 46 + r * 54;
+  return Math.min(100, Math.round(pct));
+}
 
 function CampaignStatusChip({ status }: { status: string }) {
   const def = STATUS_DEF[status as StatusFilter] ?? { label: status, chip: "neutral" };
@@ -84,9 +100,26 @@ export default function CampaignsPage() {
   const [budgetValue, setBudgetValue] = useState("");
   const [bulkPending, setBulkPending] = useState(false);
 
+  const { data: session } = useSession();
+  const browseMode = !!session?.browseMode;
   const q = useQuery({ queryKey: ["campaigns", period], queryFn: () => fetchCampaigns(period) });
   const control = useApiMutation<ControlParams, ControlResult>("/api/campaign/control");
-  const all = q.data ?? [];
+
+  // ADR-033 — Browse Mode: 발표자가 /create 로 만든 캠페인(localStorage)을 정적 mock 앞에 merge.
+  const [browseRows, setBrowseRows] = useState<CampaignSummary[]>([]);
+  useEffect(() => {
+    if (!browseMode) return;
+    seedAutoPilotDemo(); // ADR-034 — 자동 운영 데모용 호조/망조 시드(멱등)
+    const load = () => setBrowseRows(listBrowse().map(browseCampaignToSummary));
+    load();
+    window.addEventListener(BROWSE_CHANGE_EVENT, load);
+    return () => window.removeEventListener(BROWSE_CHANGE_EVENT, load);
+  }, [browseMode]);
+
+  const all = useMemo<CampaignSummary[]>(
+    () => (browseMode ? [...browseRows, ...(q.data ?? [])] : q.data ?? []),
+    [browseMode, browseRows, q.data],
+  );
   const isUnauthorized = (q.error as { code?: number } | null)?.code === 401;
 
   const filtered = useMemo(() => {
@@ -187,7 +220,7 @@ export default function CampaignsPage() {
         </div>
       </div>
 
-      {isUnauthorized ? (
+      {!browseMode && isUnauthorized ? (
         <ErrorCard
           icon="link"
           title="광고 계정을 먼저 연결해주세요"
@@ -195,7 +228,7 @@ export default function CampaignsPage() {
           ctaLabel="계정 연결로 가기"
           onAction={() => router.push("/setup")}
         />
-      ) : q.isError ? (
+      ) : !browseMode && q.isError ? (
         <ErrorCard
           title="캠페인을 불러오지 못했어요"
           reason={q.error instanceof Error ? q.error.message : "잠시 후 다시 시도해 주세요"}
@@ -284,7 +317,7 @@ export default function CampaignsPage() {
             </div>
           )}
 
-          {q.isLoading ? (
+          {!browseMode && q.isLoading ? (
             <TableSkeleton />
           ) : all.length === 0 ? (
             <EmptyState
@@ -321,7 +354,7 @@ export default function CampaignsPage() {
                     const isMenu = menuOpen === c.id;
                     const isIssue = c.status === "issue";
                     const { daysLine, progressLine } = campaignDateInfo(c.startDate, c.endDate, c.status);
-                    const spendPct = c.dailyBudget && c.dailyBudget > 0 ? Math.min(100, Math.round((c.spend / c.dailyBudget) * 100)) : null;
+                    const spendPct = dailySpendPct(c);
                     const isFakePerf = isFakePerformance({ impressions: c.impressions, ctr: c.ctr, linkClick: c.linkClick ?? 0, landingPageView: c.landingPageView }, campaignRunDays(c.startDate, c.endDate)).fake;
                     return (
                       <tr
@@ -335,9 +368,6 @@ export default function CampaignsPage() {
                         <td className="py-3.5 px-3.5 border-b border-[var(--w-line-alternative)] font-medium text-[13px] leading-[1.4] text-[var(--w-fg-strong)] align-middle"><Checkbox checked={isSel} onChange={() => toggleSelect(c.id)} /></td>
                         <td className="py-3.5 px-3.5 border-b border-[var(--w-line-alternative)] font-medium text-[13px] leading-[1.4] text-[var(--w-fg-strong)] align-middle" onClick={() => goDetail(c.id)} style={{ cursor: "pointer" }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                            <div style={{ width: 38, height: 38, borderRadius: 8, background: campaignGradient(c.id), flex: "0 0 auto", position: "relative" }}>
-                              {isIssue && <span style={{ position: "absolute", top: -4, right: -4, width: 12, height: 12, borderRadius: "50%", background: "var(--w-status-negative)", border: "2px solid var(--w-bg-elevated)" }} />}
-                            </div>
                             <div style={{ minWidth: 0 }}>
                               <div style={{ font: "600 13.5px/1.35 var(--w-font-sans)", color: "var(--w-fg-strong)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.headline}</div>
                               {isIssue && c.issueReason && (
@@ -523,12 +553,9 @@ function TableSkeleton() {
             <tr key={i} className="group">
               <td className="py-3.5 px-3.5 border-b border-[var(--w-line-alternative)] font-medium text-[13px] leading-[1.4] text-[var(--w-fg-strong)] align-middle"><Skeleton className="w-[18px] h-[18px] rounded-[5px]" /></td>
               <td className="py-3.5 px-3.5 border-b border-[var(--w-line-alternative)] font-medium text-[13px] leading-[1.4] text-[var(--w-fg-strong)] align-middle">
-                <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-                  <Skeleton className="w-[38px] h-[38px] rounded-[8px]" />
-                  <div style={{ flex: 1 }}>
-                    <Skeleton className="h-[14px] w-[70%] mb-1.5" />
-                    <Skeleton className="h-[11px] w-[40%]" />
-                  </div>
+                <div style={{ flex: 1 }}>
+                  <Skeleton className="h-[14px] w-[70%] mb-1.5" />
+                  <Skeleton className="h-[11px] w-[40%]" />
                 </div>
               </td>
               <td className="py-3.5 px-3.5 border-b border-[var(--w-line-alternative)] font-medium text-[13px] leading-[1.4] text-[var(--w-fg-strong)] align-middle"><Skeleton className="h-[22px] w-[60px] rounded-full mx-auto" /></td>

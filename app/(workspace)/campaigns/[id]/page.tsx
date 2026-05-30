@@ -14,12 +14,18 @@ import { fmt, fmtKRW, shortDate, campaignDateInfo, campaignRunDays, campaignGrad
 import { useApiMutation } from "@shared/lib/api/useApiMutation";
 import { useToast } from "@shared/ui/Toast";
 import ConfirmModal from "@shared/ui/ConfirmModal";
-import { suggestOptimizations, assessAutomationReadiness, type Suggestion } from "@entities/insights/optimization";
+import { suggestOptimizations, assessAutomationReadiness, type Suggestion, type AutomationReadiness } from "@entities/insights/optimization";
 import { isFakePerformance, type FakePerformanceEvidence } from "@entities/insights/fake-performance";
 import { abVariantLabel, type AbTestAxis } from "@entities/campaign/model";
 import { loadLaunchedCampaign } from "@entities/campaign/launched-storage";
+import { getBrowse, upsertBrowse, BROWSE_CHANGE_EVENT } from "@entities/campaign/browse/store";
+import { createBrowseRelaunchChild } from "@entities/campaign/browse/seed";
+import { browseCampaignToSummary } from "@entities/campaign/browse/summary";
+import { buildBrowseInsights, type BrowseQuality } from "@entities/campaign/browse/insights";
+import type { BrowseCampaign, AutomationPolicy, AutoPilotAction } from "@entities/campaign/browse/types";
+import PresenterFastForwardBar from "@widgets/presenter-fast-forward";
 import { judgeAbTest, rowToKpi } from "@entities/insights/ab-verdict";
-import { getMockCampaignAdIds, seedMockAdRows, MOCK_CAMPAIGN_SUMMARIES } from "@/lib/mock-campaigns";
+import { getMockCampaignAdIds, seedMockAdRows } from "@/lib/mock-campaigns";
 import AbTestResultCard from "@widgets/performance-step/AbTestResultCard";
 import type { CampaignSummary, InsightsPeriod } from "@/lib/meta-ads";
 import type { AdInsightsRow } from "@entities/insights/types";
@@ -55,9 +61,17 @@ type AbInfo = {
   startDate: string;
 };
 
+// ADR-034 — DetailBody 에 주입하는 Auto-Pilot 상태 묶음. Browse Mode 에서만 전달(실제 경로는 undefined → 버튼 disabled 유지).
+type AutoPilotUi = {
+  on: boolean;
+  actions: AutoPilotAction[];
+  onRequestEnable: () => void;
+  onDisable: () => void;
+};
+
 const STATUS_CHIP: Record<string, { label: string; chip: string }> = {
   live: { label: "게재 중", chip: "live" }, review: { label: "검토 중", chip: "review" },
-  paused: { label: "일시정지", chip: "paused" }, ended: { label: "종료", chip: "ended" }, issue: { label: "문제 있음", chip: "issue" },
+  paused: { label: "일시정지", chip: "paused" }, ended: { label: "종료", chip: "ended" }, issue: { label: "이슈", chip: "issue" },
 };
 
 async function fetchJson<T>(url: string, notFoundIs401Msg = "광고 계정을 먼저 연결해주세요."): Promise<T> {
@@ -79,8 +93,11 @@ export default function CampaignDetailPage() {
   const initialPeriod = (searchParams.get("period") ?? "all") as Period;
   const [period, setPeriod] = useState<Period>(initialPeriod === "7d" || initialPeriod === "30d" ? initialPeriod : "all");
   const rawTab = searchParams.get("tab");
-  const initialTab = rawTab === "performance" ? "performance" : rawTab === "ab-test" ? "ab-test" : "info";
-  const [activeTab, setActiveTab] = useState<"info" | "performance" | "ab-test">(initialTab);
+  const initialTab = rawTab === "performance" ? "performance" : "info";
+  const [activeTab, setActiveTab] = useState<"info" | "performance">(initialTab);
+
+  // ADR-033 — Browse Mode 성과 탭: 기간 토글 대신 좋은/나쁜 성과 예시 토글.
+  const [quality, setQuality] = useState<BrowseQuality>("good");
 
   const [showRelaunchModal, setShowRelaunchModal] = useState(false);
   const [relaunchOnlyOnce, setRelaunchOnlyOnce] = useState(false);
@@ -88,6 +105,10 @@ export default function CampaignDetailPage() {
   const [relaunchError, setRelaunchError] = useState<string | null>(null);
   const { get: getAutoRelaunch, setEnabled: setAutoRelaunch, inheritFromParent } = useAutoRelaunch();
   const { notifs } = useNotifications();
+
+  // ADR-034 — Auto-Pilot(AI 자동 운영). Browse Mode 한정. 확인 모달에서 부진 대응 정책 선택 후 켬.
+  const [showAutoPilotModal, setShowAutoPilotModal] = useState(false);
+  const [autoPilotPolicy, setAutoPilotPolicy] = useState<AutomationPolicy>("decrease");
 
   useEffect(() => {
     if (searchParams.get("relaunch") === "1") {
@@ -103,6 +124,17 @@ export default function CampaignDetailPage() {
 
   const handleRelaunch = async () => {
     setRelaunchError(null);
+    // ADR-033 — Browse Mode: 서버 /api/campaign/relaunch 대신 localStorage 레이어에 자식 생성.
+    if (browseCamp) {
+      const childId = createBrowseRelaunchChild(browseCamp.id);
+      if (!childId) { setRelaunchError("재게재에 실패했어요"); return; }
+      inheritFromParent(id, childId, !relaunchOnlyOnce);
+      setShowRelaunchModal(false);
+      const base = browseCamp.name.replace(/ \(자동 재게재 #\d+\)$/, "");
+      showToast(`'${base} (자동 재게재 #${browseCamp.cycle + 1})' 게재됐어요`);
+      router.push(`/campaigns/${childId}`);
+      return;
+    }
     setRelaunchBusy(true);
     try {
       const cycleCount = (autoRelaunchEntry?.cycleCount ?? 1) + 1;
@@ -131,10 +163,20 @@ export default function CampaignDetailPage() {
   // PRD-ab-testing.md §5.1 — 사용자 생성 캠페인은 adflow:launched:{id} 에서 A/B 정보. 1회 load (SSR-safe).
   const [launchedSnapshot] = useState(() => (typeof window !== "undefined" ? loadLaunchedCampaign(id) : null));
 
-  const metaQ = useQuery({ queryKey: ["campaign-meta", id], queryFn: () => fetchJson<{ campaign: CampaignSummary }>(`/api/campaign/${id}`).then((d) => d.campaign) });
+  // ADR-033 — Browse Mode 시연 캠페인이면 API 대신 localStorage 레이어 + buildBrowseInsights 를 소스로.
+  // fastForwardDays 가 바뀌면(빨리감기 바) BROWSE_CHANGE_EVENT 로 재읽기.
+  const [browseCamp, setBrowseCamp] = useState<BrowseCampaign | null>(() => (typeof window !== "undefined" ? getBrowse(id) : null));
+  useEffect(() => {
+    const reload = () => setBrowseCamp(getBrowse(id));
+    window.addEventListener(BROWSE_CHANGE_EVENT, reload);
+    return () => window.removeEventListener(BROWSE_CHANGE_EVENT, reload);
+  }, [id]);
 
-  const c = metaQ.data;
-  const metaUnauthorized = (metaQ.error as { code?: number } | null)?.code === 401;
+  const metaQ = useQuery({ queryKey: ["campaign-meta", id], queryFn: () => fetchJson<{ campaign: CampaignSummary }>(`/api/campaign/${id}`).then((d) => d.campaign), enabled: !browseCamp });
+
+  const browseSummary = useMemo(() => (browseCamp ? browseCampaignToSummary(browseCamp) : null), [browseCamp]);
+  const c = browseSummary ?? metaQ.data;
+  const metaUnauthorized = !browseCamp && (metaQ.error as { code?: number } | null)?.code === 401;
 
   // launched-storage(사용자 생성) → mock 시연 entry 순으로 A/B 정보 도출.
   const abInfo = useMemo<AbInfo | null>(() => {
@@ -156,16 +198,22 @@ export default function CampaignDetailPage() {
   }, [launchedSnapshot, c, id]);
 
   const adIdsParam = abInfo ? `&adIds=${abInfo.adIds[0]},${abInfo.adIds[1]}` : "";
-  const insQ = useQuery({ queryKey: ["insights", id, period, abInfo?.adIds?.join(",")], queryFn: () => fetchJson<Insights>(`/api/insights/${id}?period=${period}${adIdsParam}`) });
+  const insQ = useQuery({ queryKey: ["insights", id, period, abInfo?.adIds?.join(",")], queryFn: () => fetchJson<Insights>(`/api/insights/${id}?period=${period}${adIdsParam}`), enabled: !browseCamp });
   const control = useApiMutation<ControlParams, ControlResult>("/api/campaign/control");
+
+  // ADR-033 — Browse Mode: 성과는 buildBrowseInsights(fastForwardDays) 로, 로딩·에러는 API 대신 즉시 해소.
+  const insData = browseCamp ? (buildBrowseInsights(browseCamp, quality) as Insights) : insQ.data;
+  const insLoading = browseCamp ? false : insQ.isLoading;
+  const insError = browseCamp ? false : insQ.isError;
+  const metaLoading = browseCamp ? false : metaQ.isLoading;
 
   // PRD-ab-testing.md §7.5 — fake adIds 면 server 가 ads 비움. client 가 startDate 로 합성.
   const insightsWithAds = useMemo<Insights | undefined>(() => {
-    if (!insQ.data || !abInfo) return insQ.data;
-    if (insQ.data.ads) return insQ.data;
+    if (!insData || !abInfo) return insData;
+    if (insData.ads) return insData;
     const ads = seedMockAdRows(id, abInfo.startDate, abInfo.adIds);
-    return { ...insQ.data, ads };
-  }, [insQ.data, abInfo, id]);
+    return { ...insData, ads };
+  }, [insData, abInfo, id]);
 
   const applyControl = (p: Omit<ControlParams, "campaignId">, msg: string) => {
     control.mutate({ campaignId: id, ...p }, {
@@ -173,6 +221,21 @@ export default function CampaignDetailPage() {
       onError: (e) => showToast(e instanceof Error ? e.message : "적용에 실패했어요"),
     });
   };
+
+  const enableAutoPilot = () => {
+    if (!browseCamp) return;
+    upsertBrowse({ ...browseCamp, automationOn: true, automationPolicy: autoPilotPolicy });
+    setShowAutoPilotModal(false);
+    showToast("AI 자동 운영을 켰어요 — 빨리감기로 AI가 조치하는 걸 확인해보세요");
+  };
+  const disableAutoPilot = () => {
+    if (!browseCamp) return;
+    upsertBrowse({ ...browseCamp, automationOn: false });
+    showToast("AI 자동 운영을 껐어요");
+  };
+  const autoPilotUi: AutoPilotUi | undefined = browseCamp
+    ? { on: !!browseCamp.automationOn, actions: browseCamp.autoActions ?? [], onRequestEnable: () => setShowAutoPilotModal(true), onDisable: disableAutoPilot }
+    : undefined;
 
   const { daysLine, progressLine } = campaignDateInfo(c?.startDate ?? null, c?.endDate ?? null, c?.status ?? "");
   const adsManagerUrl = session?.adAccountId
@@ -195,6 +258,14 @@ export default function CampaignDetailPage() {
           onClose={() => { setShowRelaunchModal(false); setRelaunchError(null); const u = new URL(window.location.href); u.searchParams.delete("relaunch"); window.history.replaceState(null, "", u.toString()); }}
         />
       )}
+      {showAutoPilotModal && (
+        <AutoPilotConfirmModal
+          policy={autoPilotPolicy}
+          onPolicyChange={setAutoPilotPolicy}
+          onConfirm={enableAutoPilot}
+          onClose={() => setShowAutoPilotModal(false)}
+        />
+      )}
       <button type="button" onClick={() => router.push("/campaigns")} className="bg-transparent border-none p-0 cursor-pointer inline-flex items-center gap-1.5 font-semibold text-[12.5px] leading-none text-current hover:underline" style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "var(--w-fg-neutral)", marginBottom: 4 }}>
         <Icon name="arrow-left" size={13} /> 캠페인
       </button>
@@ -209,20 +280,14 @@ export default function CampaignDetailPage() {
       <div className="inline-flex gap-0.5 p-[3px] bg-[var(--w-bg-alternative)] rounded-[10px] mb-4">
         <button type="button" className={cn("border-none px-3.5 py-2 rounded-lg font-semibold text-[12.5px] leading-none cursor-pointer transition-[background,color] duration-[120ms]", activeTab === "info" ? "bg-[var(--w-bg-elevated)] text-[var(--w-fg-strong)] shadow-[0_1px_2px_rgba(23,23,23,0.08)]" : "bg-transparent text-[var(--w-fg-neutral)]")} onClick={() => setActiveTab("info")}>캠페인 정보</button>
         <button type="button" className={cn("border-none px-3.5 py-2 rounded-lg font-semibold text-[12.5px] leading-none cursor-pointer transition-[background,color] duration-[120ms]", activeTab === "performance" ? "bg-[var(--w-bg-elevated)] text-[var(--w-fg-strong)] shadow-[0_1px_2px_rgba(23,23,23,0.08)]" : "bg-transparent text-[var(--w-fg-neutral)]")} onClick={() => setActiveTab("performance")}>성과</button>
-        <button type="button" className={cn("border-none px-3.5 py-2 rounded-lg font-semibold text-[12.5px] leading-none cursor-pointer transition-[background,color] duration-[120ms]", activeTab === "ab-test" ? "bg-[var(--w-bg-elevated)] text-[var(--w-fg-strong)] shadow-[0_1px_2px_rgba(23,23,23,0.08)]" : "bg-transparent text-[var(--w-fg-neutral)]")} onClick={() => setActiveTab("ab-test")}>
-          A/B 테스트
-          {abInfo && <span style={{ marginLeft: 6, width: 6, height: 6, borderRadius: "50%", background: "var(--w-primary-normal)", display: "inline-block", verticalAlign: "middle" }} />}
-        </button>
       </div>
 
       {metaUnauthorized ? (
         <DetailErrorCard icon="link" title="광고 계정을 먼저 연결해주세요" reason="Meta 광고 계정과 페이지를 연결해야 캠페인을 볼 수 있어요." ctaLabel="계정 연결로 가기" onAction={() => router.push("/setup")} />
-      ) : metaQ.isError ? (
+      ) : !browseCamp && metaQ.isError ? (
         <DetailErrorCard title="캠페인 정보를 불러오지 못했어요" reason={metaQ.error instanceof Error ? metaQ.error.message : "잠시 후 다시 시도해 주세요"} ctaLabel="다시 시도" onAction={() => metaQ.refetch()} />
       ) : activeTab === "info" ? (
-        <CampaignConfigurationTab c={c} isLoading={metaQ.isLoading} campaignId={id} onRefetch={metaQ.refetch} isAbCampaign={abInfo !== null} />
-      ) : activeTab === "ab-test" ? (
-        <AbTestTab abInfo={abInfo} insightsWithAds={insightsWithAds} campaignId={id} onCreateWithWinner={() => router.push(`/create?prefill=campaign:${id}`)} />
+        <CampaignConfigurationTab c={c} isLoading={metaLoading} campaignId={id} onRefetch={metaQ.refetch} isAbCampaign={abInfo !== null} />
       ) : (
         <>
           <Card className="flex items-center justify-between gap-4 mb-4 flex-wrap">
@@ -240,21 +305,36 @@ export default function CampaignDetailPage() {
                 <div className="font-medium text-[12.5px] leading-none text-[var(--w-fg-neutral)]">{daysLine} · {progressLine}</div>
               </div>
             </div>
-            <SegControl
-              value={period}
-              onChange={setPeriod}
-              options={[{ value: "all", label: "전체" }, { value: "7d", label: "최근 7일" }, { value: "30d", label: "최근 30일" }]}
-            />
+            <div className="flex items-center gap-2.5 flex-wrap">
+              {!abInfo && (
+                <Button variant="secondary" type="button" onClick={() => router.push(`/ab-tests/new?from=${id}`)}>
+                  <Icon name="chart" size={14} /> 이 캠페인으로 A/B 테스트 생성
+                </Button>
+              )}
+              {browseCamp ? (
+                <SegControl
+                  value={quality}
+                  onChange={setQuality}
+                  options={[{ value: "good", label: "성과 좋음" }, { value: "bad", label: "성과 나쁨" }]}
+                />
+              ) : (
+                <SegControl
+                  value={period}
+                  onChange={setPeriod}
+                  options={[{ value: "all", label: "전체" }, { value: "7d", label: "최근 7일" }, { value: "30d", label: "최근 30일" }]}
+                />
+              )}
+            </div>
           </Card>
 
-          {metaQ.isLoading || insQ.isLoading ? (
+          {metaLoading || insLoading ? (
             <Card className="flex flex-col items-center gap-3 py-10 px-8">
               <div className="rounded-full border-[2.4px] border-[var(--w-line-normal)] border-t-[var(--w-primary-normal)] animate-[spin_0.85s_linear_infinite] w-7 h-7" />
               <div className="font-semibold text-[14px] leading-[1.3] text-[var(--w-fg-strong)]">성과를 불러오는 중…</div>
             </Card>
-          ) : insQ.isError ? (
+          ) : insError ? (
             <DetailErrorCard title="성과를 불러오지 못했어요" reason={insQ.error instanceof Error ? insQ.error.message : "Meta API 응답 오류 — 잠시 후 다시 시도해 주세요"} ctaLabel="다시 시도" onAction={() => insQ.refetch()} />
-          ) : !c ? null : c.status === "review" || !insQ.data || insQ.data.daily.length === 0 ? (
+          ) : !c ? null : c.status === "review" || !insData || insData.daily.length === 0 ? (
             <Card className="py-10 px-8 flex flex-col items-center gap-3 text-center">
               <div style={{ width: 56, height: 56, borderRadius: "50%", background: "var(--w-primary-soft)", color: "var(--w-primary-press)", display: "grid", placeItems: "center" }}><Icon name="clock" size={24} /></div>
               <div className="font-bold text-[17px] leading-[1.3] text-[var(--w-fg-strong)]">아직 성과 데이터가 없어요</div>
@@ -276,20 +356,23 @@ export default function CampaignDetailPage() {
                   demoMode={process.env.NEXT_PUBLIC_META_APP_MODE === "development"}
                 />
               )}
-              <DetailBody c={c} data={insQ.data} period={period} busy={control.isPending} adsManagerUrl={adsManagerUrl} onApply={applyControl} onRemake={() => router.push("/create")} />
+              <DetailBody c={c} data={insData} period={period} busy={control.isPending} adsManagerUrl={adsManagerUrl} onApply={applyControl} onRemake={() => router.push("/create")} autoPilot={autoPilotUi} lowPerformance={!!browseCamp && quality === "bad"} />
             </>
           )}
         </>
       )}
+
+      {browseCamp && <PresenterFastForwardBar camp={browseCamp} />}
     </div>
   );
 }
 
 function DetailBody({
-  c, data, busy, adsManagerUrl, onApply, onRemake,
+  c, data, busy, adsManagerUrl, onApply, onRemake, autoPilot, lowPerformance,
 }: {
   c: CampaignSummary; data: Insights; period: Period; busy: boolean; adsManagerUrl: string;
   onApply: (p: Omit<ControlParams, "campaignId">, msg: string) => void; onRemake: () => void;
+  autoPilot?: AutoPilotUi; lowPerformance?: boolean;
 }) {
   const labels = data.daily.map((x) => shortDate(x.date));
   const clicks = data.daily.map((x) => x.clicks);
@@ -298,7 +381,7 @@ function DetailBody({
   const isPaused = c.status === "paused";
   const isIssue = c.status === "issue";
   const metrics = { impressions: data.impressions, clicks: data.clicks, ctr: data.ctr, spend: data.spend };
-  const baseSuggestions = suggestOptimizations(metrics, dailyBudget);
+  const baseSuggestions = suggestOptimizations(metrics, dailyBudget, data.daily.length);
   // ADR-030 — 가짜 성과 의심은 CampaignSummary(actions[]) 기준. 감지 시 모순되는 예산 증액 제안은 숨기고 점검 카드를 앞세움.
   const fakePerf = isFakePerformance(
     { impressions: c.impressions, ctr: c.ctr, linkClick: c.linkClick ?? 0, landingPageView: c.landingPageView },
@@ -307,7 +390,10 @@ function DetailBody({
   const suggestions: Suggestion[] = fakePerf.fake && fakePerf.evidence
     ? [fakePerfSuggestion(fakePerf.evidence), ...baseSuggestions.filter((s) => s.kind !== "increase-budget")]
     : baseSuggestions;
-  const readiness = assessAutomationReadiness(metrics, data.daily.length);
+  // Browse Mode 성과 나쁨 탭 — 지표 자체가 부진하므로 데이터 충분성과 무관하게 자동화 보류로 고정.
+  const readiness = lowPerformance
+    ? { ready: false as const, reason: `노출 ${data.impressions.toLocaleString("ko-KR")}회 · 클릭 ${data.clicks.toLocaleString("ko-KR")}회 · CTR ${data.ctr.toFixed(2)}% — 클릭과 CTR이 낮아 자동 판단을 맡기기엔 성과가 아쉬워요.` }
+    : assessAutomationReadiness(metrics, data.daily.length);
 
   return (
     <>
@@ -356,8 +442,12 @@ function DetailBody({
                 const warn = s.severity === "warn";
                 return (
                   <OptCard key={i} icon={warn ? "warn" : "trend-up"} good={!warn} title={s.title} lines={s.detail}>
-                    {s.kind === "pause" && <Button variant="secondary" size="sm" type="button" disabled={busy} onClick={() => onApply({ action: "pause" }, "광고를 일시정지했어요")}>{busy ? "처리 중…" : "광고 일시정지"}</Button>}
-                    {s.kind === "increase-budget" && <Button variant="secondary" size="sm" type="button" disabled={busy || !c.adSetId} onClick={() => onApply({ adSetId: c.adSetId ?? undefined, action: "set-daily-budget", dailyBudget: s.toDailyBudget }, `일일예산을 ${fmtKRW(s.toDailyBudget)}로 올렸어요`)}>{busy ? "처리 중…" : `${fmtKRW(s.toDailyBudget)}로 올리기`}</Button>}
+                    {autoPilot?.on
+                      ? (s.kind === "pause" || s.kind === "increase-budget") && <AutoAppliedTag />
+                      : <>
+                          {s.kind === "pause" && <Button variant="secondary" size="sm" type="button" disabled={busy} onClick={() => onApply({ action: "pause" }, "광고를 일시정지했어요")}>{busy ? "처리 중…" : "광고 일시정지"}</Button>}
+                          {s.kind === "increase-budget" && <Button variant="secondary" size="sm" type="button" disabled={busy || !c.adSetId} onClick={() => onApply({ adSetId: c.adSetId ?? undefined, action: "set-daily-budget", dailyBudget: s.toDailyBudget }, `일일예산을 ${fmtKRW(s.toDailyBudget)}로 올렸어요`)}>{busy ? "처리 중…" : `${fmtKRW(s.toDailyBudget)}로 올리기`}</Button>}
+                        </>}
                   </OptCard>
                 );
               })}
@@ -368,20 +458,7 @@ function DetailBody({
             <h3 className="font-bold text-[17px] leading-[1.3] tracking-[-0.012em] text-[var(--w-fg-strong)] m-0">자동화 준비도</h3>
             <p className="font-medium text-[13px] leading-[1.5] text-[var(--w-fg-neutral)] mt-1">충분한 데이터가 쌓이면 AI가 자동으로 광고를 운영할 수 있어요.</p>
             <hr className="h-px bg-[var(--w-line-neutral)] my-[18px] border-0" />
-            {readiness.ready ? (
-              <div style={{ background: "rgba(0,191,64,0.06)", border: "1px solid rgba(0,191,64,0.20)", borderRadius: 12, padding: 18 }}>
-                <Chip variant="live" dot>자동화 준비 완료</Chip>
-                <div className="font-bold text-[16px] leading-[1.3] text-[var(--w-fg-strong)]" style={{ marginTop: 10 }}>AI 자동 운영을 켤 수 있어요</div>
-                <p className="font-medium text-[13px] leading-[1.55] text-[var(--w-fg-neutral)]" style={{ margin: "8px 0 14px" }}>{readiness.reason}</p>
-                <Button variant="primary" size="sm" type="button" disabled title="자동 실행 환경 연동 후 활성화돼요">자동화 켜기 (연동 준비 중)</Button>
-              </div>
-            ) : (
-              <div style={{ background: "var(--w-bg-alternative)", borderRadius: 12, padding: 18 }}>
-                <Chip variant="neutral">아직 지표가 아쉬워요</Chip>
-                <div className="font-bold text-[16px] leading-[1.3] text-[var(--w-fg-strong)]" style={{ marginTop: 10 }}>아직 자동화를 맡기기엔 지표가 아쉬워요</div>
-                <p className="font-medium text-[13px] leading-[1.55] text-[var(--w-fg-neutral)]" style={{ margin: "8px 0" }}>부족: {readiness.reason}. 데이터가 더 쌓이면 자동화를 제안해드릴게요.</p>
-              </div>
-            )}
+            <AutomationReadinessCard readiness={readiness} autoPilot={autoPilot} lowPerformance={lowPerformance} />
           </div>
         </Card>
       )}
@@ -437,6 +514,104 @@ function DetailBody({
   );
 }
 
+// ADR-034 — 자동 운영 켜진 동안, 수동 적용 버튼 자리에 "AI가 자동 적용" 표식. 수동→자동 전환을 직접 대비.
+function AutoAppliedTag() {
+  return (
+    <span className="inline-flex items-center gap-1.5 font-semibold text-[12px] leading-none" style={{ color: "var(--w-primary-press)", background: "var(--w-primary-soft)", borderRadius: 999, padding: "7px 12px", whiteSpace: "nowrap" }}>
+      🤖 AI가 자동 적용
+    </span>
+  );
+}
+
+// ADR-034 — 자동화 준비도 카드. Browse(autoPilot 전달)면 켜기/운영중 로그/끄기, 실제 경로면 disabled 버튼 유지.
+function AutomationReadinessCard({ readiness, autoPilot, lowPerformance }: { readiness: AutomationReadiness; autoPilot?: AutoPilotUi; lowPerformance?: boolean }) {
+  const ACTION_ICON: Record<AutoPilotAction["kind"], IconName> = { "increase-budget": "trend-up", "decrease-budget": "trend-down", pause: "pause" };
+  if (autoPilot?.on) {
+    return (
+      <div style={{ background: "rgba(0,191,64,0.06)", border: "1px solid rgba(0,191,64,0.20)", borderRadius: 12, padding: 18 }}>
+        <Chip variant="live" dot>자동 운영 중</Chip>
+        <div className="font-bold text-[16px] leading-[1.3] text-[var(--w-fg-strong)]" style={{ marginTop: 10 }}>AI가 광고를 자동 운영하고 있어요</div>
+        <p className="font-medium text-[13px] leading-[1.55] text-[var(--w-fg-neutral)]" style={{ margin: "8px 0 12px" }}>성과를 지켜보다 예산·게재를 자동으로 조정해요. 모든 조치는 알림으로 알려드려요.</p>
+        {autoPilot.actions.length === 0 ? (
+          <p className="font-medium text-[12.5px] leading-[1.5] text-[var(--w-fg-alternative)]" style={{ marginBottom: 14 }}>아직 조치 내역이 없어요 — 빨리감기로 시간을 넘기면 AI가 판단해요.</p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 7, margin: "0 0 14px" }}>
+            {autoPilot.actions.slice().reverse().map((a, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 7 }}>
+                <Icon name={ACTION_ICON[a.kind]} size={13} />
+                <span className="font-medium text-[12.5px] leading-[1.45] text-[var(--w-fg-neutral)]"><b className="text-[var(--w-fg-strong)]">{a.atDay}일차</b> · {a.detail}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        <Button variant="ghost" size="sm" type="button" onClick={autoPilot.onDisable}>자동 운영 끄기</Button>
+      </div>
+    );
+  }
+  if (readiness.ready) {
+    return (
+      <div style={{ background: "rgba(0,191,64,0.06)", border: "1px solid rgba(0,191,64,0.20)", borderRadius: 12, padding: 18 }}>
+        <Chip variant="live" dot>자동화 준비 완료</Chip>
+        <div className="font-bold text-[16px] leading-[1.3] text-[var(--w-fg-strong)]" style={{ marginTop: 10 }}>AI 자동 운영을 켤 수 있어요</div>
+        <p className="font-medium text-[13px] leading-[1.55] text-[var(--w-fg-neutral)]" style={{ margin: "8px 0 14px" }}>{readiness.reason}</p>
+        {autoPilot ? (
+          <Button variant="primary" size="sm" type="button" onClick={autoPilot.onRequestEnable}>자동화 켜기</Button>
+        ) : (
+          <Button variant="primary" size="sm" type="button" disabled title="자동 실행 환경 연동 후 활성화돼요">자동화 켜기</Button>
+        )}
+      </div>
+    );
+  }
+  return (
+    <div style={{ background: "var(--w-bg-alternative)", borderRadius: 12, padding: 18 }}>
+      <Chip variant="neutral">{lowPerformance ? "지표 개선 먼저" : "아직 지표가 아쉬워요"}</Chip>
+      <div className="font-bold text-[16px] leading-[1.3] text-[var(--w-fg-strong)]" style={{ marginTop: 10 }}>자동화 하기엔 지표가 아쉬워요</div>
+      <p className="font-medium text-[13px] leading-[1.55] text-[var(--w-fg-neutral)]" style={{ margin: "8px 0" }}>{lowPerformance ? `${readiness.reason} 카피·타겟을 먼저 손보고 다시 살펴봐요.` : `부족: ${readiness.reason}. 데이터가 더 쌓이면 자동화를 제안해드릴게요.`}</p>
+    </div>
+  );
+}
+
+// ADR-034 — 자동 운영 확인 모달. 위임 범위를 명시하고 부진 대응 정책(감액/정지)을 라디오로 받음.
+function AutoPilotConfirmModal({ policy, onPolicyChange, onConfirm, onClose }: {
+  policy: AutomationPolicy; onPolicyChange: (p: AutomationPolicy) => void; onConfirm: () => void; onClose: () => void;
+}) {
+  const radio = (value: AutomationPolicy, title: string, desc: string) => (
+    <label style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "12px 14px", borderRadius: 10, cursor: "pointer", border: `1px solid ${policy === value ? "var(--w-primary-normal)" : "var(--w-line-alternative)"}`, background: policy === value ? "var(--w-primary-soft)" : "transparent" }}>
+      <input type="radio" name="autopilot-policy" checked={policy === value} onChange={() => onPolicyChange(value)} style={{ width: 15, height: 15, marginTop: 2 }} />
+      <span>
+        <span className="font-semibold text-[13.5px] leading-[1.3] text-[var(--w-fg-strong)] block">{title}</span>
+        <span className="font-medium text-[12.5px] leading-[1.45] text-[var(--w-fg-neutral)] block" style={{ marginTop: 2 }}>{desc}</span>
+      </span>
+    </label>
+  );
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center" }} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={{ background: "var(--w-bg-elevated)", borderRadius: 16, boxShadow: "0 8px 32px rgba(0,0,0,0.18)", padding: "28px 28px 24px", maxWidth: 500, width: "calc(100vw - 32px)", display: "flex", flexDirection: "column", gap: 18 }}>
+        <div>
+          <div className="font-bold text-[18px] leading-[1.25] tracking-[-0.016em] text-[var(--w-fg-strong)]">AI 자동 운영 켜기</div>
+          <div className="font-medium text-[13px] leading-[1.5] text-[var(--w-fg-neutral)]" style={{ marginTop: 6 }}>켜면 AI가 성과를 지켜보다 아래 조치를 직접 적용해요.</div>
+        </div>
+        <div style={{ padding: "14px 16px", borderRadius: 10, background: "var(--w-bg-alternative)", display: "flex", flexDirection: "column", gap: 8 }}>
+          <div className="font-medium text-[13px] leading-[1.5] text-[var(--w-fg-neutral)]">📈 성과가 우수하면(목표 CTR 이상) 일일예산을 단계적으로 증액해요.</div>
+          <div className="font-medium text-[13px] leading-[1.5] text-[var(--w-fg-neutral)]">📉 성과가 목표에 못 미치면 아래에서 고른 방식으로 대응해요.</div>
+          <div className="font-medium text-[13px] leading-[1.5] text-[var(--w-fg-neutral)]">🔔 모든 조치는 알림으로 보고하고, 언제든 끌 수 있어요.</div>
+        </div>
+        <div>
+          <div className="font-semibold text-[13px] leading-none text-[var(--w-fg-strong)]" style={{ marginBottom: 10 }}>성과가 부진하면</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {radio("decrease", "예산 줄이기", "광고는 유지하면서 일일예산을 낮춰 지출을 아껴요.")}
+            {radio("pause", "광고 멈추기", "광고를 정지해 지출을 즉시 막아요.")}
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <Button variant="ghost" type="button" onClick={onClose}>취소</Button>
+          <Button variant="primary" type="button" onClick={onConfirm}>자동 운영 켜기</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ADR-030 — 증거 + 점검 3갈래. "의심" 을 항상 포함하고 별도 액션 버튼은 두지 않음.
 function fakePerfSuggestion(e: FakePerformanceEvidence): Suggestion {
   return {
@@ -459,260 +634,7 @@ function OptCard({ icon, good, title, lines, children }: { icon: IconName; good:
       <div style={{ flex: 1, minWidth: 0 }}>
         <div className="font-semibold text-[14px] leading-[1.4] text-[var(--w-fg-strong)]">{title}</div>
         {lines.map((l, j) => <div key={j} className="font-medium text-[12.5px] leading-[1.55] text-[var(--w-fg-neutral)]" style={{ marginTop: 4 }}>{l}</div>)}
-      </div>
-      {children && <div style={{ flex: "0 0 auto", alignSelf: "center" }}>{children}</div>}
-    </div>
-  );
-}
-
-const MOCK_AB_DEMO = (() => {
-  const mc = MOCK_CAMPAIGN_SUMMARIES.find((c) => c.abTestEnabled && c.abTestAxis && c.abTestVariantA && c.abTestVariantB && c.startDate);
-  if (!mc) return null;
-  const adIds = getMockCampaignAdIds(mc.id);
-  if (!adIds) return null;
-  const ads = seedMockAdRows(mc.id, mc.startDate!, adIds);
-  return {
-    abInfo: { adIds, axis: mc.abTestAxis as AbTestAxis, variantA: mc.abTestVariantA!, variantB: mc.abTestVariantB!, startDate: mc.startDate! },
-    ads,
-  };
-})();
-
-const AXIS_LABEL: Record<string, string> = { headline: "헤드라인", primary_text: "광고 문구", image: "이미지" };
-
-type CreateMode = null | "existing" | "new";
-
-function AbTestTab({
-  abInfo, insightsWithAds, campaignId, onCreateWithWinner,
-}: {
-  abInfo: AbInfo | null;
-  insightsWithAds: Insights | undefined;
-  campaignId: string;
-  onCreateWithWinner: () => void;
-}) {
-  const router = useRouter();
-  const [createMode, setCreateMode] = useState<CreateMode>(null);
-
-  // A/B 테스트 있을 때: 실험 설정 + 결과 카드
-  if (abInfo) {
-    return (
-      <>
-        <Card style={{ marginBottom: 16 }}>
-          <h3 className="font-bold text-[17px] leading-[1.3] tracking-[-0.012em] text-[var(--w-fg-strong)] m-0">실험 설정</h3>
-          <hr className="h-px bg-[var(--w-line-neutral)] my-[18px] border-0" />
-          <div className="font-medium text-[13px] leading-[1.5]" style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "10px 16px" }}>
-            <span style={{ color: "var(--w-fg-alternative)" }}>비교 축</span>
-            <span style={{ color: "var(--w-fg-strong)", fontWeight: 600 }}>{AXIS_LABEL[abInfo.axis] ?? abInfo.axis}</span>
-            <span style={{ color: "var(--w-fg-alternative)" }}>A안</span>
-            <span style={{ color: "var(--w-fg-neutral)" }}>{abInfo.variantA}</span>
-            <span style={{ color: "var(--w-fg-alternative)" }}>B안</span>
-            <span style={{ color: "var(--w-fg-neutral)" }}>{abInfo.variantB}</span>
-            <span style={{ color: "var(--w-fg-alternative)" }}>시작일</span>
-            <span style={{ color: "var(--w-fg-neutral)" }}>{abInfo.startDate}</span>
-          </div>
-        </Card>
-        {insightsWithAds?.ads ? (
-          <AbTestResultCard
-            axis={abInfo.axis}
-            variantA={abInfo.variantA}
-            variantB={abInfo.variantB}
-            verdict={judgeAbTest(rowToKpi(insightsWithAds.ads[0]), rowToKpi(insightsWithAds.ads[1]))}
-            onCreateWithWinner={onCreateWithWinner}
-            demoMode={process.env.NEXT_PUBLIC_META_APP_MODE === "development"}
-          />
-        ) : (
-          <Card className="flex flex-col items-center gap-2.5 text-center" style={{ padding: "32px" }}>
-            <div className="rounded-full border-[2.4px] border-[var(--w-line-normal)] border-t-[var(--w-primary-normal)] animate-[spin_0.85s_linear_infinite] w-6 h-6" />
-            <div className="font-medium text-[13px] leading-[1.3] text-[var(--w-fg-neutral)]">성과 데이터를 불러오는 중…</div>
-          </Card>
-        )}
-      </>
-    );
-  }
-
-  // A/B 테스트 없을 때: 생성 UI + 예시 섹션
-  return (
-    <>
-      {/* 생성 섹션 */}
-      <Card style={{ marginBottom: 16 }}>
-        <h3 className="font-bold text-[17px] leading-[1.3] tracking-[-0.012em] text-[var(--w-fg-strong)] m-0">A/B 테스트 시작하기</h3>
-        <p className="font-medium text-[13px] leading-[1.5] text-[var(--w-fg-neutral)] mt-1">같은 캠페인에서 두 가지 소재를 비교해 더 좋은 광고를 찾아요.</p>
-        <hr className="h-px bg-[var(--w-line-neutral)] my-[18px] border-0" />
-
-        {createMode === null && (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <CreateOptionCard
-              icon="folder"
-              title="기존 광고 두 개로 비교"
-              desc="이미 집행 중이거나 저장된 광고 두 개를 A안·B안으로 지정해요."
-              onClick={() => setCreateMode("existing")}
-            />
-            <CreateOptionCard
-              icon="sparkles"
-              title="새 광고 만들면서 시작"
-              desc="광고 만들기 STEP 02에서 A/B 테스트 옵션을 켜고 두 가지 소재를 설정해요."
-              onClick={() => setCreateMode("new")}
-            />
-          </div>
-        )}
-
-        {createMode === "existing" && (
-          <ExistingAdsForm campaignId={campaignId} onCancel={() => setCreateMode(null)} />
-        )}
-
-        {createMode === "new" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            <div style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: 14, borderRadius: 10, background: "var(--w-bg-alternative)" }}>
-              <div style={{ width: 36, height: 36, borderRadius: 10, background: "var(--w-primary-soft)", color: "var(--w-primary-normal)", display: "grid", placeItems: "center", flex: "0 0 auto" }}>
-                <Icon name="sparkles" size={18} />
-              </div>
-              <div>
-                <div className="font-semibold text-[14px] leading-[1.3] text-[var(--w-fg-strong)]" style={{ marginBottom: 4 }}>광고 만들기로 이동해요</div>
-                <p className="font-medium text-[13px] leading-[1.55] text-[var(--w-fg-neutral)]" style={{ margin: 0 }}>
-                  STEP 02 → "A/B 시험으로 집행" 체크 → 비교 축(헤드라인 / 카피 / 이미지) 선택 → STEP 03에서 집행하면 자동으로 A/B 테스트가 등록돼요.
-                </p>
-              </div>
-            </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <Button variant="primary" type="button" onClick={() => router.push(`/create?prefill=campaign:${campaignId}`)}>
-                <Icon name="sparkles" size={14} /> 광고 만들기로 이동
-              </Button>
-              <Button variant="ghost" type="button" onClick={() => setCreateMode(null)}>취소</Button>
-            </div>
-          </div>
-        )}
-      </Card>
-
-      {/* 예시 섹션 */}
-      {MOCK_AB_DEMO && (
-        <>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderRadius: 8, background: "var(--w-bg-alternative)", marginBottom: 12 }}>
-            <Icon name="eye" size={14} style={{ color: "var(--w-fg-alternative)" }} />
-            <span className="font-medium text-[12.5px] leading-[1.4] text-[var(--w-fg-neutral)]">아래는 A/B 테스트 결과 예시예요.</span>
-          </div>
-          <Card style={{ marginBottom: 16, opacity: 0.85 }}>
-            <h3 className="font-bold text-[17px] leading-[1.3] tracking-[-0.012em] text-[var(--w-fg-strong)] m-0">실험 설정 (예시)</h3>
-            <hr className="h-px bg-[var(--w-line-neutral)] my-[18px] border-0" />
-            <div className="font-medium text-[13px] leading-[1.5]" style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "10px 16px" }}>
-              <span style={{ color: "var(--w-fg-alternative)" }}>비교 축</span>
-              <span style={{ color: "var(--w-fg-strong)", fontWeight: 600 }}>{AXIS_LABEL[MOCK_AB_DEMO.abInfo.axis]}</span>
-              <span style={{ color: "var(--w-fg-alternative)" }}>A안</span>
-              <span style={{ color: "var(--w-fg-neutral)" }}>{MOCK_AB_DEMO.abInfo.variantA}</span>
-              <span style={{ color: "var(--w-fg-alternative)" }}>B안</span>
-              <span style={{ color: "var(--w-fg-neutral)" }}>{MOCK_AB_DEMO.abInfo.variantB}</span>
-            </div>
-          </Card>
-          <AbTestResultCard
-            axis={MOCK_AB_DEMO.abInfo.axis}
-            variantA={MOCK_AB_DEMO.abInfo.variantA}
-            variantB={MOCK_AB_DEMO.abInfo.variantB}
-            verdict={judgeAbTest(rowToKpi(MOCK_AB_DEMO.ads[0]), rowToKpi(MOCK_AB_DEMO.ads[1]))}
-            onCreateWithWinner={onCreateWithWinner}
-            demoMode
-          />
-        </>
-      )}
-    </>
-  );
-}
-
-function CreateOptionCard({ icon, title, desc, onClick }: { icon: IconName; title: string; desc: string; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="bg-[var(--w-bg-elevated)] border border-[var(--w-line-normal)] rounded-2xl text-left cursor-pointer flex flex-col gap-2.5 p-[18px_16px] transition-[border-color] duration-[160ms] hover:border-[var(--w-line-normal)]"
-    >
-      <div style={{ width: 40, height: 40, borderRadius: 10, background: "var(--w-primary-soft)", color: "var(--w-primary-normal)", display: "grid", placeItems: "center" }}>
-        <Icon name={icon} size={20} />
-      </div>
-      <div>
-        <div className="font-semibold text-[14px] leading-[1.4] text-[var(--w-fg-strong)]" style={{ marginBottom: 4 }}>{title}</div>
-        <p className="font-medium text-[12.5px] leading-[1.55] text-[var(--w-fg-neutral)]" style={{ margin: 0 }}>{desc}</p>
-      </div>
-      <div className="flex items-center gap-1 font-semibold text-[12.5px] leading-none text-[var(--w-primary-normal)]" style={{ marginTop: 4 }}>
-        선택하기 <Icon name="arrow-right" size={13} />
-      </div>
-    </button>
-  );
-}
-
-const AXIS_OPTIONS: { id: string; label: string }[] = [
-  { id: "headline", label: "헤드라인" },
-  { id: "primary_text", label: "카피 문구" },
-  { id: "image", label: "이미지" },
-];
-
-function ExistingAdsForm({ campaignId, onCancel }: { campaignId: string; onCancel: () => void }) {
-  const [axis, setAxis] = useState("headline");
-  const [adA, setAdA] = useState("");
-  const [adB, setAdB] = useState("");
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div>
-        <div className="font-semibold text-[13px] leading-[1.3] text-[var(--w-fg-strong)]" style={{ marginBottom: 8 }}>비교 축</div>
-        <div style={{ display: "flex", gap: 8 }}>
-          {AXIS_OPTIONS.map((o) => (
-            <button
-              key={o.id}
-              type="button"
-              onClick={() => setAxis(o.id)}
-              style={{
-                padding: "6px 14px", borderRadius: 8,
-                border: axis === o.id ? "1.5px solid var(--w-primary-normal)" : "1.5px solid var(--w-line-alternative)",
-                background: axis === o.id ? "var(--w-primary-soft)" : "var(--w-bg-normal)",
-                color: axis === o.id ? "var(--w-primary-press)" : "var(--w-fg-neutral)",
-                font: "600 12.5px/1 var(--w-font-sans)", cursor: "pointer",
-              }}
-            >
-              {o.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <div>
-          <div className="font-semibold text-[13px] leading-[1.3] text-[var(--w-fg-strong)]" style={{ marginBottom: 6 }}>A안 — 광고 ID</div>
-          <input
-            type="text"
-            className="w-full bg-[var(--w-bg-elevated)] border border-[var(--w-line-normal)] rounded-xl px-3.5 py-3 font-medium text-[14px] leading-[1.5] text-[var(--w-fg-strong)] tracking-[0.004em] outline-none transition-[border-color,box-shadow] duration-[120ms] focus:border-[var(--w-primary-normal)] focus:shadow-[0_0_0_4px_rgba(0,102,255,0.14)] placeholder:text-[var(--w-fg-alternative)]"
-            placeholder="예: act_123456789"
-            value={adA}
-            onChange={(e) => setAdA(e.target.value)}
-          />
-        </div>
-        <div>
-          <div className="font-semibold text-[13px] leading-[1.3] text-[var(--w-fg-strong)]" style={{ marginBottom: 6 }}>B안 — 광고 ID</div>
-          <input
-            type="text"
-            className="w-full bg-[var(--w-bg-elevated)] border border-[var(--w-line-normal)] rounded-xl px-3.5 py-3 font-medium text-[14px] leading-[1.5] text-[var(--w-fg-strong)] tracking-[0.004em] outline-none transition-[border-color,box-shadow] duration-[120ms] focus:border-[var(--w-primary-normal)] focus:shadow-[0_0_0_4px_rgba(0,102,255,0.14)] placeholder:text-[var(--w-fg-alternative)]"
-            placeholder="예: act_987654321"
-            value={adB}
-            onChange={(e) => setAdB(e.target.value)}
-          />
-        </div>
-      </div>
-
-      <div style={{ padding: "10px 14px", borderRadius: 8, background: "rgba(255,146,0,0.08)", border: "1px solid rgba(255,146,0,0.25)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <Icon name="info" size={14} style={{ color: "var(--w-status-cautionary)", flex: "0 0 auto" }} />
-          <span className="font-medium text-[12.5px] leading-[1.4] text-[var(--w-fg-neutral)]">
-            실제 집행은 Meta 광고 관리자에서 이루어져요. 광고 ID 입력 후 결과 추적만 AdFlow에서 해요.
-          </span>
-        </div>
-      </div>
-
-      <div style={{ display: "flex", gap: 8 }}>
-        <Button
-          variant="primary"
-          type="button"
-          disabled={!adA.trim() || !adB.trim()}
-          title="추후 지원 예정"
-        >
-          <Icon name="chart" size={14} /> 결과 추적 시작 (준비 중)
-        </Button>
-        <Button variant="ghost" type="button" onClick={onCancel}>취소</Button>
+        {children && <div style={{ marginTop: 12 }}>{children}</div>}
       </div>
     </div>
   );
@@ -751,12 +673,17 @@ function ConfigRow({ label, value }: { label: string; value: React.ReactNode }) 
   );
 }
 
+function SettingsSubhead({ title, action }: { title: string; action?: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-3" style={{ minHeight: 28 }}>
+      <h4 className="font-bold text-[14px] leading-[1.3] tracking-[-0.008em] text-[var(--w-fg-strong)] m-0">{title}</h4>
+      {action}
+    </div>
+  );
+}
+
 function CampaignConfigurationTab({ c, isLoading, campaignId, onRefetch, isAbCampaign }: { c: CampaignSummary | undefined; isLoading: boolean; campaignId: string; onRefetch: () => void; isAbCampaign: boolean }) {
   const showToast = useToast();
-  const { get: getAutoRelaunch, setEnabled: setAutoRelaunchEnabled } = useAutoRelaunch();
-  const arEntry = getAutoRelaunch(campaignId);
-  const arEnabled = arEntry?.enabled ?? false;
-  const canToggleAr = !!c?.endDate && c?.status !== "ended";
   const [editingSchedule, setEditingSchedule] = useState(false);
   const [budgetVal, setBudgetVal] = useState("");
   const [startDateVal, setStartDateVal] = useState("");
@@ -978,73 +905,6 @@ function CampaignConfigurationTab({ c, isLoading, campaignId, onRefetch, isAbCam
 
   return (
     <>
-      <Card style={{ marginBottom: 16 }}>
-        <h3 className="font-bold text-[17px] leading-[1.3] tracking-[-0.012em] text-[var(--w-fg-strong)] m-0">기본 정보</h3>
-        <hr className="h-px bg-[var(--w-line-neutral)] my-[18px] border-0" />
-        <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "12px 24px", alignItems: "center" }}>
-          <ConfigRow label="캠페인 목표" value={c.goal} />
-          <ConfigRow label="상태" value={<Chip variant={(STATUS_CHIP[c.status]?.chip ?? "neutral") as ChipVariant} dot>{STATUS_CHIP[c.status]?.label ?? c.status}</Chip>} />
-          <ConfigRow label="Campaign ID" value={<span className="font-medium text-[12px] leading-none [font-family:var(--w-font-mono)] text-[var(--w-fg-neutral)]">{campaignId.slice(-10)}</span>} />
-        </div>
-      </Card>
-
-      <Card style={{ marginBottom: 16 }}>
-        <div className="flex items-center justify-between gap-3" style={{ marginBottom: 0 }}>
-          <h3 className="font-bold text-[17px] leading-[1.3] tracking-[-0.012em] text-[var(--w-fg-strong)] m-0" style={{ marginBottom: 0 }}>일정 · 예산</h3>
-          {!editingSchedule && c.status !== "ended" && (
-            <Button variant="ghost" size="sm" type="button" onClick={openScheduleEdit}>
-              <Icon name="edit" size={13} /> 수정
-            </Button>
-          )}
-        </div>
-        <hr className="h-px bg-[var(--w-line-neutral)] my-[18px] border-0" />
-        {editingSchedule ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            <div>
-              <div className="font-semibold text-[12.5px] leading-[1.3] text-[var(--w-fg-strong)]" style={{ marginBottom: 6 }}>일 예산 (₩)</div>
-              <input
-                className="w-full bg-[var(--w-bg-elevated)] border border-[var(--w-line-normal)] rounded-xl px-3.5 py-3 font-medium text-[14px] leading-[1.5] text-[var(--w-fg-strong)] tracking-[0.004em] outline-none transition-[border-color,box-shadow] duration-[120ms] focus:border-[var(--w-primary-normal)] focus:shadow-[0_0_0_4px_rgba(0,102,255,0.14)] placeholder:text-[var(--w-fg-alternative)]"
-                type="number"
-                min={10000}
-                step={1000}
-                value={budgetVal}
-                onChange={(e) => setBudgetVal(e.target.value)}
-                style={{ maxWidth: 220 }}
-              />
-              {bigBudgetChange && (
-                <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 6, padding: "6px 10px", borderRadius: 8, background: "rgba(255,146,0,0.08)", border: "1px solid rgba(255,146,0,0.25)" }}>
-                  <Icon name="warn" size={13} style={{ color: "var(--w-status-cautionary)", flex: "0 0 auto" }} />
-                  <span className="font-medium text-[12px] leading-[1.4] text-[var(--w-fg-neutral)]">큰 예산 변경은 성과 안정화 구간이 재시작될 수 있어요</span>
-                </div>
-              )}
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              <div>
-                <div className="font-semibold text-[12.5px] leading-[1.3] text-[var(--w-fg-strong)]" style={{ marginBottom: 6 }}>시작일</div>
-                <DatePicker value={startDateVal} onChange={setStartDateVal} aria-label="시작일" />
-              </div>
-              <div>
-                <div className="font-semibold text-[12.5px] leading-[1.3] text-[var(--w-fg-strong)]" style={{ marginBottom: 6 }}>종료일</div>
-                <DatePicker value={endDateVal} onChange={setEndDateVal} placeholder="종료일 없음" aria-label="종료일" />
-              </div>
-            </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <Button variant="primary" size="sm" type="button" disabled={saving} onClick={saveSchedule}>
-                {saving ? "저장 중…" : "저장"}
-              </Button>
-              <Button variant="ghost" size="sm" type="button" disabled={saving} onClick={() => setEditingSchedule(false)}>
-                취소
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "12px 24px", alignItems: "center" }}>
-            <ConfigRow label="시작일" value={c.startDate ?? dash} />
-            <ConfigRow label="종료일" value={c.endDate ?? dash} />
-            <ConfigRow label="일 예산" value={c.dailyBudget ? fmtKRW(c.dailyBudget) : dash} />
-          </div>
-        )}
-      </Card>
 
       <Card style={{ marginBottom: 16 }}>
         <div className="flex items-center justify-between gap-3" style={{ marginBottom: 0 }}>
@@ -1160,16 +1020,74 @@ function CampaignConfigurationTab({ c, isLoading, campaignId, onRefetch, isAbCam
         )}
       </Card>
 
-      <Card>
-        <div className="flex items-center justify-between gap-3" style={{ marginBottom: 0 }}>
-          <h3 className="font-bold text-[17px] leading-[1.3] tracking-[-0.012em] text-[var(--w-fg-strong)] m-0" style={{ marginBottom: 0 }}>타겟팅</h3>
-          {!editingTargeting && c.status !== "ended" && (
-            <Button variant="ghost" size="sm" type="button" onClick={openTargetingEdit}>
-              <Icon name="edit" size={13} /> 수정
-            </Button>
-          )}
-        </div>
+      <Card style={{ marginBottom: 16 }}>
+        <h3 className="font-bold text-[17px] leading-[1.3] tracking-[-0.012em] text-[var(--w-fg-strong)] m-0">설정</h3>
         <hr className="h-px bg-[var(--w-line-neutral)] my-[18px] border-0" />
+
+        <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "12px 24px", alignItems: "center" }}>
+          <ConfigRow label="캠페인 목표" value={c.goal} />
+          <ConfigRow label="상태" value={<Chip variant={(STATUS_CHIP[c.status]?.chip ?? "neutral") as ChipVariant} dot>{STATUS_CHIP[c.status]?.label ?? c.status}</Chip>} />
+          <ConfigRow label="Campaign ID" value={<span className="font-medium text-[12px] leading-none [font-family:var(--w-font-mono)] text-[var(--w-fg-alternative)]">{campaignId.slice(-10)}</span>} />
+        </div>
+
+        <hr className="h-px bg-[var(--w-line-alternative)] my-[18px] border-0" />
+        <SettingsSubhead title="일정 · 예산" action={!editingSchedule && c.status !== "ended" && (
+          <Button variant="ghost" size="sm" type="button" onClick={openScheduleEdit}><Icon name="edit" size={13} /> 수정</Button>
+        )} />
+        <div style={{ marginTop: 14 }}>
+        {editingSchedule ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <div>
+              <div className="font-semibold text-[12.5px] leading-[1.3] text-[var(--w-fg-strong)]" style={{ marginBottom: 6 }}>일 예산 (₩)</div>
+              <input
+                className="w-full bg-[var(--w-bg-elevated)] border border-[var(--w-line-normal)] rounded-xl px-3.5 py-3 font-medium text-[14px] leading-[1.5] text-[var(--w-fg-strong)] tracking-[0.004em] outline-none transition-[border-color,box-shadow] duration-[120ms] focus:border-[var(--w-primary-normal)] focus:shadow-[0_0_0_4px_rgba(0,102,255,0.14)] placeholder:text-[var(--w-fg-alternative)]"
+                type="number"
+                min={10000}
+                step={1000}
+                value={budgetVal}
+                onChange={(e) => setBudgetVal(e.target.value)}
+                style={{ maxWidth: 220 }}
+              />
+              {bigBudgetChange && (
+                <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 6, padding: "6px 10px", borderRadius: 8, background: "rgba(255,146,0,0.08)", border: "1px solid rgba(255,146,0,0.25)" }}>
+                  <Icon name="warn" size={13} style={{ color: "var(--w-status-cautionary)", flex: "0 0 auto" }} />
+                  <span className="font-medium text-[12px] leading-[1.4] text-[var(--w-fg-neutral)]">큰 예산 변경은 성과 안정화 구간이 재시작될 수 있어요</span>
+                </div>
+              )}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div>
+                <div className="font-semibold text-[12.5px] leading-[1.3] text-[var(--w-fg-strong)]" style={{ marginBottom: 6 }}>시작일</div>
+                <DatePicker value={startDateVal} onChange={setStartDateVal} aria-label="시작일" />
+              </div>
+              <div>
+                <div className="font-semibold text-[12.5px] leading-[1.3] text-[var(--w-fg-strong)]" style={{ marginBottom: 6 }}>종료일</div>
+                <DatePicker value={endDateVal} onChange={setEndDateVal} placeholder="종료일 없음" aria-label="종료일" />
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Button variant="primary" size="sm" type="button" disabled={saving} onClick={saveSchedule}>
+                {saving ? "저장 중…" : "저장"}
+              </Button>
+              <Button variant="ghost" size="sm" type="button" disabled={saving} onClick={() => setEditingSchedule(false)}>
+                취소
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "12px 24px", alignItems: "center" }}>
+            <ConfigRow label="시작일" value={c.startDate ?? dash} />
+            <ConfigRow label="종료일" value={c.endDate ?? dash} />
+            <ConfigRow label="일 예산" value={c.dailyBudget ? fmtKRW(c.dailyBudget) : dash} />
+          </div>
+        )}
+        </div>
+
+        <hr className="h-px bg-[var(--w-line-alternative)] my-[18px] border-0" />
+        <SettingsSubhead title="타겟팅" action={!editingTargeting && c.status !== "ended" && (
+          <Button variant="ghost" size="sm" type="button" onClick={openTargetingEdit}><Icon name="edit" size={13} /> 수정</Button>
+        )} />
+        <div style={{ marginTop: 14 }}>
         {editingTargeting ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
             <div>
@@ -1229,18 +1147,13 @@ function CampaignConfigurationTab({ c, isLoading, campaignId, onRefetch, isAbCam
             <ConfigRow label="국가" value={c.countries?.length ? c.countries.join(", ") : dash} />
           </div>
         )}
-      </Card>
-
-      <Card style={{ marginTop: 16 }}>
-        <div className="flex items-center justify-between gap-3" style={{ marginBottom: 0 }}>
-          <h3 className="font-bold text-[17px] leading-[1.3] tracking-[-0.012em] text-[var(--w-fg-strong)] m-0" style={{ marginBottom: 0 }}>입찰 · 배치</h3>
-          {!editingBid && c.status !== "ended" && (
-            <Button variant="ghost" size="sm" type="button" onClick={openBidEdit}>
-              <Icon name="edit" size={13} /> 수정
-            </Button>
-          )}
         </div>
-        <hr className="h-px bg-[var(--w-line-neutral)] my-[18px] border-0" />
+
+        <hr className="h-px bg-[var(--w-line-alternative)] my-[18px] border-0" />
+        <SettingsSubhead title="입찰 · 배치" action={!editingBid && c.status !== "ended" && (
+          <Button variant="ghost" size="sm" type="button" onClick={openBidEdit}><Icon name="edit" size={13} /> 수정</Button>
+        )} />
+        <div style={{ marginTop: 14 }}>
         {editingBid ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
             <div style={{ padding: "10px 14px", borderRadius: 8, background: "rgba(255,146,0,0.08)", border: "1px solid rgba(255,146,0,0.25)", display: "flex", alignItems: "center", gap: 8 }}>
@@ -1353,46 +1266,6 @@ function CampaignConfigurationTab({ c, isLoading, campaignId, onRefetch, isAbCam
             <ConfigRow label="배치" value={placementLabel} />
           </div>
         )}
-      </Card>
-
-      <Card style={{ marginBottom: 16 }}>
-        <h3 className="font-bold text-[17px] leading-[1.3] tracking-[-0.012em] text-[var(--w-fg-strong)] m-0">자동 재게재</h3>
-        <hr className="h-px bg-[var(--w-line-neutral)] my-[18px] border-0" />
-        <div className="flex items-start gap-3">
-          <div style={{ paddingTop: 2, flex: "0 0 auto" }}>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={arEnabled}
-              disabled={!canToggleAr}
-              onClick={() => canToggleAr && setAutoRelaunchEnabled(campaignId, !arEnabled)}
-              style={{
-                width: 36, height: 20, borderRadius: 999, border: "none",
-                cursor: canToggleAr ? "pointer" : "not-allowed",
-                background: !canToggleAr ? "var(--w-line-normal)" : arEnabled ? "var(--w-primary-normal)" : "var(--w-line-normal)",
-                position: "relative", transition: "background 160ms", padding: 0,
-              }}
-            >
-              <span style={{ position: "absolute", top: 2, left: arEnabled ? 18 : 2, width: 16, height: 16, borderRadius: "50%", background: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,0.18)", transition: "left 160ms" }} />
-            </button>
-          </div>
-          <div>
-            <div className="font-semibold text-[13.5px] leading-[1.3] text-[var(--w-fg-strong)]">
-              {arEnabled ? "켜져 있어요" : "꺼져 있어요"}
-            </div>
-            <p className="font-normal text-[13px] leading-[1.5] text-[var(--w-fg-neutral)] mt-[3px] mb-0">
-              {!canToggleAr && c?.status === "ended"
-                ? "종료된 캠페인은 자동 재게재를 변경할 수 없어요."
-                : !canToggleAr
-                ? "종료일을 설정해야 켤 수 있어요."
-                : "성과가 목표를 통과하면 종료 후 알림 받아요. 매번 직접 확인 후 게재돼요."}
-            </p>
-            {arEnabled && arEntry?.cycleCount && arEntry.cycleCount > 1 && (
-              <div className="font-medium text-[12px] leading-none text-[var(--w-fg-alternative)]" style={{ marginTop: 6 }}>
-                누적 {arEntry.cycleCount - 1}번 재게재됐어요
-              </div>
-            )}
-          </div>
         </div>
       </Card>
     </>
