@@ -7,8 +7,10 @@ import type { AdKpi } from "@entities/insights/ab-verdict";
 import type { Tournament, TourRound } from "./engine";
 
 // 영속화 (ADR-038 결정 2) — 서버 cron 폴러와 클라 UI 양쪽이 읽고 쓴다. 데모는 localStorage 동기 함수 유지.
+// list() = cron 전역 스캔, listByOwner() = API 라우트가 세션 유저 소유분만 조회(user_email 매칭).
 export interface TournamentStore {
   list(): Promise<Tournament[]>;
+  listByOwner(ownerKey: string): Promise<Tournament[]>;
   get(id: string): Promise<Tournament | null>;
   upsert(t: Tournament): Promise<void>;
   remove(id: string): Promise<void>;

@@ -27,6 +27,7 @@ function memStore(): TournamentStore & { _all: Map<string, Tournament> } {
   return {
     _all: all,
     async list() { return [...all.values()]; },
+    async listByOwner(key) { return [...all.values()].filter((t) => t.delivery?.ownerEmail === key); },
     async get(id) { return all.get(id) ?? null; },
     async upsert(t) { all.set(t.id, structuredClone(t)); },
     async remove(id) { all.delete(id); },

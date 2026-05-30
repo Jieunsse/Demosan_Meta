@@ -24,6 +24,16 @@ export const supabaseTournamentStore: TournamentStore = {
     return ((data as Row[]) ?? []).map((r) => r.data);
   },
 
+  async listByOwner(ownerKey) {
+    const { data, error } = await client()
+      .from(TABLE)
+      .select("data")
+      .eq("user_email", ownerKey)
+      .order("created_at", { ascending: false });
+    if (error) throw error;
+    return ((data as Row[]) ?? []).map((r) => r.data);
+  },
+
   async get(id) {
     const { data, error } = await client().from(TABLE).select("data").eq("id", id).maybeSingle();
     if (error) throw error;
@@ -35,6 +45,7 @@ export const supabaseTournamentStore: TournamentStore = {
       .from(TABLE)
       .upsert({
         id: t.id,
+        user_email: t.delivery?.ownerEmail ?? null, // 소유 매칭 키 (listByOwner). 데모는 delivery 없음
         brand_profile_id: t.brandProfileId,
         status: t.status,
         mode: t.mode,
