@@ -106,6 +106,11 @@ export function roundCampaignId(tournamentId: string, index: number): string {
   return `browse_tourn_${tournamentId}_r${index}`;
 }
 
+// id 생성 — 데모/실제 공용. 순수 함수라 서버 오케스트레이터·클라 store 양쪽이 쓴다.
+export function newTournamentId(): string {
+  return `tourn_${Math.random().toString(36).slice(2, 10)}`;
+}
+
 // 광고당 일평균 노출 기준치 — 빨리감기 1주면 광고당 ≈ 1.5만 노출 (z-검정 유의성 산출에 충분).
 const BASE_DAILY_IMP_PER_AD = 2200;
 
@@ -194,18 +199,12 @@ export type SettleResult = {
   rawWinner: "A" | "B";
 };
 
-// 결산 (ADR-037) — Meta 유의성(데모: z-검정 confidence) + traffic 결정 지표(cost per link click)로 승격 판정.
+// 판정 코어 (ADR-037) — KPI 두 셀 → verdict + 승격. 데모(시드 KPI)·실제(Meta insights) 공유.
 // confidence ≥ 임계 and 챌린저 CPLC 우위 → "B" 승격, 그 외(챔피언 유의 승리·inconclusive) → "A" 방어.
-// ff=0(미게재) 또는 최소 게재 기간 미달(미종료)이면 insufficient — 결산 보류.
-export function settleRound(
-  round: TourRound,
-  championCtr: number,
-  dailyBudget: number,
-  factorOverride?: number,
-): SettleResult {
-  const kpis = roundAdKpis(round, championCtr, dailyBudget, factorOverride);
+// 노출 0(미게재) 또는 최소 게재 기간(elapsedDays) 미달이면 insufficient — 결산 보류.
+export function judgeRoundKpis(kpis: [AdKpi, AdKpi], elapsedDays: number): SettleResult {
   const [a, b] = kpis;
-  if (a.impressions === 0 || b.impressions === 0 || round.fastForwardDays < MIN_ROUND_DAYS) {
+  if (a.impressions === 0 || b.impressions === 0 || elapsedDays < MIN_ROUND_DAYS) {
     return { kpis, verdict: { state: "insufficient", ctrA: a.ctr, ctrB: b.ctr, confidence: 0 }, rawWinner: "A" };
   }
   const confidence = confidenceFromZTest(a, b);
@@ -219,6 +218,18 @@ export function settleRound(
     verdict: { state: significant ? "winner" : "inconclusive", ctrA: a.ctr, ctrB: b.ctr, confidence },
     rawWinner,
   };
+}
+
+// 데모 결산 — 시드 KPI 생성기(roundAdKpis)로 KPI 만든 뒤 judgeRoundKpis 로 판정. 실 경로는
+// Meta KpiSource 가 만든 KPI 를 judgeRoundKpis 에 직접 넘긴다(서버 오케스트레이터).
+export function settleRound(
+  round: TourRound,
+  championCtr: number,
+  dailyBudget: number,
+  factorOverride?: number,
+): SettleResult {
+  const kpis = roundAdKpis(round, championCtr, dailyBudget, factorOverride);
+  return judgeRoundKpis(kpis, round.fastForwardDays);
 }
 
 function daysBetweenIso(start: string, end: string): number {

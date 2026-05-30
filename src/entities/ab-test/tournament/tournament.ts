@@ -55,7 +55,3 @@ export function resetTournaments(): void {
 export function removeTournament(id: string): void {
   write(read().filter((t) => t.id !== id));
 }
-
-export function newTournamentId(): string {
-  return `tourn_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
-}
