@@ -2,11 +2,13 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import Icon from "@shared/ui/Icon";
 import { Button } from "@shared/ui/Button";
 import { Chip } from "@shared/ui/Chip";
 import { MOCK_CAMPAIGN_SUMMARIES } from "@/lib/mock-campaigns";
 import type { IconName } from "@shared/ui/Icon";
+import TournamentSetup from "@widgets/tournament-setup";
 
 type Method = "existing" | "new";
 type AxisType = "headline" | "primary_text" | "image";
@@ -41,6 +43,15 @@ const STEP_LABELS: Record<Step, string> = {
 const STEP_ORDER: Step[] = ["method", "type", "config"];
 
 export default function AbTestNewPage() {
+  const { data: session } = useSession();
+
+  // ADR-033 — Browse Mode 시연: 단판 위저드 대신 A/B 토너먼트(흐름2) 셋업으로 분기.
+  if (session?.browseMode) return <TournamentSetup />;
+
+  return <AbTestSingleWizard />;
+}
+
+function AbTestSingleWizard() {
   const router = useRouter();
   const [step, setStep] = useState<Step>("method");
   const [method, setMethod] = useState<Method | null>(null);
