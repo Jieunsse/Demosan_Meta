@@ -67,3 +67,20 @@ create table if not exists tournaments (
 );
 
 create index if not exists tournaments_status on tournaments (status);
+
+-- axhub(Google) 신원에 매달리는 사용자 + Meta 연결 영속 (lib/user-store.ts).
+-- 신원=앵커, meta_connection=최초 Facebook 연결로 받은 토큰 묶음(2회차+ 자동 복원), role/workspace=자체 관리.
+create table if not exists app_users (
+  axhub_id        text primary key,
+  email           text not null,
+  name            text,
+  image           text,
+  role            text not null default '팀장',
+  workspace_id    text,
+  meta_connection jsonb,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now()
+);
+
+create index if not exists app_users_email_idx on app_users (email);
+create index if not exists app_users_workspace_idx on app_users (workspace_id);

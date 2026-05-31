@@ -3,6 +3,7 @@ import "next-auth/jwt"
 
 declare module "next-auth" {
   interface Session {
+    axhubId?: string
     accessToken?: string
     igAccessToken?: string
     adAccountId?: string
@@ -20,6 +21,7 @@ declare module "next-auth" {
 
 declare module "next-auth/jwt" {
   interface JWT {
+    axhubId?: string
     accessToken?: string
     igAccessToken?: string
     adAccountId?: string
