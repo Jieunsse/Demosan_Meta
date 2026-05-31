@@ -26,7 +26,7 @@ export const IG_MOCK_GOOD: IgAccountInsights = {
   reach: 45200,
   profileViews: 1830,
   engagementRate: 4.2,
-  igUsername: "brand_account",
+  igUsername: "greenroutine_official",
   mock: true,
   posts: [
     { id: "ig1", mediaUrl: "https://picsum.photos/seed/ig1/200/200", caption: "새로운 시즌 컬렉션 출시! ✨", likeCount: 847, commentCount: 63, savedCount: 124, timestamp: "2026-05-10T09:00:00Z" },
@@ -42,7 +42,7 @@ export const IG_MOCK_POOR: IgAccountInsights = {
   reach: 8100,
   profileViews: 290,
   engagementRate: 0.6,
-  igUsername: "brand_account",
+  igUsername: "greenroutine_official",
   mock: true,
   posts: [
     { id: "ip1", mediaUrl: "https://picsum.photos/seed/ip1/200/200", caption: "신제품 안내", likeCount: 28, commentCount: 2, savedCount: 3, timestamp: "2026-05-10T09:00:00Z" },

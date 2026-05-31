@@ -4,4 +4,5 @@ export const BROWSE_IG_ACCOUNT = {
   username: "greenroutine_official",
   name: "그린루틴 오피셜",
   followers: 12400,
+  profilePicture: "/demo/greenroutine-avatar.svg",
 } as const;
