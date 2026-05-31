@@ -5,8 +5,10 @@
 // page.tsx 는 step 진행·세션스토리지 입력값·generate mutation 결과를 props 로 전달.
 // PRD §13.10 — outcome 선택은 intro 페이지가 담당. STEP 01 은 SelectedGoalCard 만 노출.
 
+import { useState } from "react";
 import InputForm from "./InputForm";
 import ResultPanel from "./ResultPanel";
+import ImagePhase from "./ImagePhase";
 import type { CopyHook } from "@entities/creative/options";
 interface Props {
   brand: string;
@@ -29,6 +31,7 @@ interface Props {
   hooks: CopyHook[];
   setHooks: (hooks: CopyHook[]) => void;
   displayedHooks: [CopyHook, CopyHook, CopyHook] | null;
+  proofPointsCited: [boolean, boolean, boolean] | null;
   primaryTexts: [string, string, string] | null;
   primaryTextIdx: number;
   onSelectPrimaryText: (i: number) => void;
@@ -47,6 +50,21 @@ interface Props {
 }
 
 export default function CreativeStep(p: Props) {
+  // ADR-040 — 소재 만들기 내부 2-phase. 최상위 Stepper(STEP 02=집행)와 독립.
+  const [phase, setPhase] = useState<"copy" | "image">("copy");
+
+  if (phase === "image") {
+    return (
+      <ImagePhase
+        productId={p.productId}
+        imageDataUrl={p.imageDataUrl}
+        setImageDataUrl={p.setImageDataUrl}
+        onBackToCopy={() => setPhase("copy")}
+        onNext={p.onNext}
+      />
+    );
+  }
+
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, alignItems: "flex-start" }}>
       <InputForm
@@ -78,15 +96,14 @@ export default function CreativeStep(p: Props) {
         primaryTextIdx={p.primaryTextIdx}
         onSelectPrimaryText={p.onSelectPrimaryText}
         displayedHooks={p.displayedHooks}
+        proofPointsCited={p.proofPointsCited}
         primaryText={p.primaryText}
         setPrimaryText={p.setPrimaryText}
         elapsed={p.elapsed}
         onSaveToLibrary={p.onSaveToLibrary}
         saved={p.saved}
         goLibrary={p.goLibrary}
-        onNext={p.onNext}
-        imageDataUrl={p.imageDataUrl}
-        setImageDataUrl={p.setImageDataUrl}
+        onGoImage={() => setPhase("image")}
       />
     </div>
   );

@@ -18,7 +18,7 @@ export default function IdField({ label, id, desc }: Props) {
   const valid = !!id && id !== "—";
   const iconBtnClass = cn(
     "w-7 h-7 rounded-lg grid place-items-center border-none bg-transparent cursor-pointer",
-    "text-[var(--w-fg-neutral)] hover:bg-[var(--w-bg-neutral)] transition-colors duration-[120ms]"
+    "text-[var(--w-fg-neutral)] hover:bg-[var(--w-bg-neutral)] transition-colors duration-[120ms]",
   );
   const display = !valid ? "—" : revealed ? id : maskId(id);
 
@@ -35,8 +35,12 @@ export default function IdField({ label, id, desc }: Props) {
   return (
     <div className="flex flex-col gap-1.5">
       <div className="flex items-center gap-2 py-2 px-3 rounded-[10px] border border-[var(--w-line-alternative)] bg-[var(--w-bg-alternative)]">
-        <span className="font-semibold text-[12px] leading-none tracking-[0.008em] text-[var(--w-fg-neutral)] flex-none">{label}</span>
-        <span className="flex-1 font-medium text-[13px] leading-none [font-family:var(--w-font-mono)] text-[var(--w-fg-strong)] overflow-hidden text-ellipsis whitespace-nowrap min-w-0">{display}</span>
+        <span className="font-semibold text-[12px] leading-none tracking-[0.008em] text-[var(--w-fg-neutral)] flex-none">
+          {label}
+        </span>
+        <span className="flex-1 font-medium text-[13px] leading-none [font-family:var(--w-font-mono)] text-[var(--w-fg-strong)] overflow-hidden text-ellipsis whitespace-nowrap min-w-0">
+          {display}
+        </span>
         {valid && (
           <div className="flex items-center gap-0.5 flex-none">
             <button
@@ -60,7 +64,11 @@ export default function IdField({ label, id, desc }: Props) {
           </div>
         )}
       </div>
-      {desc && <div className="font-medium text-[12px] leading-[1.5] tracking-[0.008em] text-[var(--w-fg-neutral)]">{desc}</div>}
+      {desc && (
+        <div className="font-medium text-[12px] leading-[1.5] tracking-[0.008em] text-[var(--w-fg-neutral)]">
+          {desc}
+        </div>
+      )}
     </div>
   );
 }

@@ -14,81 +14,13 @@ import SopCard from "@features/sop/ui/SopCard";
 import PersonaCard from "@features/brand-profile/ui/PersonaCard";
 import ProductCard from "@features/brand-profile/ui/ProductCard";
 import { useProducts } from "@shared/lib/products";
-import CopyReferenceSection from "@features/brand-profile/ui/CopyReferenceSection";
+import EmptyCard from "@features/brand-profile/ui/EmptyCard";
+import StyleSection from "@features/brand-profile/ui/StyleSection";
+import Panel from "@features/brand-profile/ui/Panel";
+import StatTile from "@features/brand-profile/ui/StatTile";
+import { SegControl } from "@shared/ui/SegControl";
 
-function SectionLabel({ title }: { title: string }) {
-  return (
-    <div className="pt-2 border-t border-[var(--w-line-normal)]">
-      <span className="font-semibold text-[11px] uppercase tracking-[0.04em] text-[var(--w-fg-alternative)]">
-        {title}
-      </span>
-    </div>
-  );
-}
-
-type ViewFieldVariant = "default" | "chip" | "prose" | "accent" | "accent-neutral" | "quote";
-
-function ViewField({ label, value, variant = "default" }: { label: string; value?: string; variant?: ViewFieldVariant }) {
-  const empty = <p className="m-0 font-medium text-[13px] text-[var(--w-fg-alternative)] italic">미입력</p>;
-
-  function renderValue() {
-    if (!value) return empty;
-    switch (variant) {
-      case "chip":
-        return (
-          <span className="inline-flex self-start items-center px-3 py-1.5 rounded-full bg-[var(--w-primary-soft)] font-semibold text-[13px] tracking-[0.008em] text-[var(--w-primary-normal)]">
-            {value}
-          </span>
-        );
-      case "prose":
-        return (
-          <div className="px-4 py-3 rounded-xl bg-[var(--w-bg-alternative)]">
-            <p className="m-0 font-medium text-[13.5px] leading-[1.75] tracking-[0.008em] text-[var(--w-fg-normal)] whitespace-pre-wrap">
-              {value}
-            </p>
-          </div>
-        );
-      case "accent":
-        return (
-          <div className="border-l-2 border-[var(--w-primary-normal)] pl-3">
-            <p className="m-0 font-medium text-[14px] leading-[1.6] text-[var(--w-fg-strong)] whitespace-pre-wrap">
-              {value}
-            </p>
-          </div>
-        );
-      case "accent-neutral":
-        return (
-          <div className="border-l-2 border-[var(--w-line-strong)] pl-3">
-            <p className="m-0 font-medium text-[14px] leading-[1.6] text-[var(--w-fg-strong)] whitespace-pre-wrap">
-              {value}
-            </p>
-          </div>
-        );
-      case "quote":
-        return (
-          <div className="relative px-4 pt-5 pb-3 rounded-xl bg-[var(--w-bg-alternative)]">
-            <span className="absolute top-2 left-4 font-bold text-[28px] leading-none text-[var(--w-fg-alternative)] select-none">"</span>
-            <p className="m-0 font-medium text-[13.5px] leading-[1.75] tracking-[0.008em] text-[var(--w-fg-normal)] whitespace-pre-wrap">
-              {value}
-            </p>
-          </div>
-        );
-      default:
-        return (
-          <p className="m-0 font-medium text-[14px] leading-[1.6] text-[var(--w-fg-strong)] whitespace-pre-wrap">
-            {value}
-          </p>
-        );
-    }
-  }
-
-  return (
-    <div className="flex flex-col gap-1.5">
-      <span className="font-semibold text-[12.5px] text-[var(--w-fg-neutral)]">{label}</span>
-      {renderValue()}
-    </div>
-  );
-}
+type ProfileTab = "identity" | "policy" | "audience";
 
 export default function BrandProfileViewPage() {
   const params = useParams<{ id: string }>();
@@ -101,6 +33,7 @@ export default function BrandProfileViewPage() {
   const { products } = useProducts(id);
 
   const [loaded, setLoaded] = useState(false);
+  const [tab, setTab] = useState<ProfileTab>("identity");
 
   useEffect(() => {
     if (profiles.length === 0 && !loaded) return;
@@ -117,104 +50,134 @@ export default function BrandProfileViewPage() {
   const entry = profiles.find((p) => p.id === id);
   if (!entry) return null;
 
+  const editHref = `/brand-profile/${id}/edit`;
   const policy = entry.policy ?? [];
   const filledPolicy = SOP_SECTION_ORDER.filter((type) =>
     policy.some((s) => s.type === type && isSectionFilled(s))
   );
+  const proofCount = entry.proofPoints?.length ?? 0;
+  const refCount = entry.copyReferences?.length ?? 0;
 
   return (
-    <div className="px-12 py-9 pb-16 max-w-[900px] w-full mx-auto flex flex-col gap-6">
+    <div className="px-12 py-9 pb-20 max-w-[1180px] w-full mx-auto">
+      {/* 뒤로가기 */}
+      <Link
+        href="/brand-profile"
+        className="inline-flex items-center gap-1.5 mb-4 font-medium text-[13px] leading-none text-[var(--w-fg-neutral)] hover:text-[var(--w-fg-strong)] transition-colors no-underline"
+      >
+        <Icon name="arrow-left" size={14} /> 브랜드 프로필 목록
+      </Link>
+
       {/* 헤더 */}
-      <div>
-        <Link
-          href="/brand-profile"
-          className="inline-flex items-center gap-1.5 font-medium text-[12.5px] text-[var(--w-fg-neutral)] hover:text-[var(--w-fg-strong)] transition-colors mb-3 no-underline"
-        >
-          <Icon name="arrow-left" size={13} /> 브랜드 프로필 목록
-        </Link>
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="m-0 font-bold text-[28px] leading-[1.25] tracking-[-0.024em] text-[var(--w-fg-strong)]">
-              {entry.name}
-            </h1>
-            {entry.isDefault && (
-              <span className="inline-flex items-center px-3 py-1 rounded-full bg-[var(--w-primary-soft)] font-semibold text-[12px] text-[var(--w-primary-normal)]">
-                기본값
-              </span>
-            )}
+      <div className="flex items-start justify-between gap-4 mb-8">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="grid place-items-center w-14 h-14 rounded-2xl bg-[var(--w-bg-inverse)] text-[var(--w-bg-elevated)] font-extrabold text-[24px] leading-none shrink-0">
+            {entry.name.slice(0, 1)}
           </div>
-          <Link href={`/brand-profile/${id}/edit`}>
-            <Button variant="secondary" type="button">수정</Button>
-          </Link>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="m-0 font-bold text-[28px] leading-[1.2] tracking-[-0.024em] text-[var(--w-fg-strong)]">
+                {entry.name}
+              </h1>
+              {entry.isDefault && (
+                <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-[var(--w-primary-soft)] font-semibold text-[12px] leading-none text-[var(--w-primary-normal)]">
+                  기본값
+                </span>
+              )}
+            </div>
+            <p className="m-0 mt-2 font-medium text-[13px] leading-[1.5] text-[var(--w-fg-neutral)]">
+              광고 카피·타깃·정책의 기준이 되는 브랜드 정체성이에요.
+            </p>
+          </div>
         </div>
+        <Link href={editHref} className="shrink-0">
+          <Button variant="secondary" type="button">
+            <Icon name="settings" size={15} /> 수정
+          </Button>
+        </Link>
       </div>
 
-      {/* 스타일 */}
-      <div className="flex flex-col gap-5">
-        <ViewField label="광고 느낌" value={entry.tone} variant="chip" />
-        <ViewField label="브랜드 설명" value={entry.brandDescription} variant="prose" />
-        <ViewField label="브랜드 보이스" value={entry.brandVoice} variant="accent" />
-        <ViewField label="브랜드 미감" value={entry.imageGuide} variant="accent-neutral" />
-        <ViewField label="고객 목소리 요약" value={entry.customerVoiceSummary} variant="quote" />
-        <CopyReferenceSection
-          refs={entry.copyReferences ?? []}
-          canEdit={false}
-          onSave={() => {}}
-        />
+      {/* KPI 요약 타일 */}
+      <div className="grid grid-cols-5 gap-3 mb-5">
+        <StatTile icon="lock" label="정책" value={filledPolicy.length} accent="var(--w-accent-violet)" />
+        <StatTile icon="users" label="페르소나" value={personas.length} accent="var(--w-primary-normal)" />
+        <StatTile icon="grid" label="제품" value={products.length} accent="var(--w-status-positive)" />
+        <StatTile icon="chart" label="근거 자료" value={proofCount} accent="var(--w-status-warning)" />
+        <StatTile icon="copy" label="카피 레퍼런스" value={refCount} accent="var(--w-fg-neutral)" />
       </div>
 
-      {/* 정책 */}
-      <SectionLabel title="정책" />
-      {filledPolicy.length > 0 ? (
-        <div className="grid grid-cols-2 gap-4">
-          {filledPolicy.map((type) => (
-            <SopCard
-              key={type}
-              type={type}
-              section={policy.find((s) => s.type === type)}
-              canEdit={false}
-              onEdit={() => {}}
-            />
-          ))}
-        </div>
-      ) : (
-        <p className="m-0 font-medium text-[13px] text-[var(--w-fg-alternative)] italic">미설정</p>
+      {/* 세부 탭 */}
+      <SegControl
+        value={tab}
+        onChange={setTab}
+        options={[
+          { value: "identity", label: "정체성" },
+          { value: "policy", label: `정책 ${filledPolicy.length}` },
+          { value: "audience", label: `타깃 · 제품 ${personas.length + products.length}` },
+        ]}
+        className="mb-4"
+      />
+
+      {/* 정체성 — 스타일 보드 */}
+      {tab === "identity" && <StyleSection entry={entry} />}
+
+      {/* 정책 — 풀폭 패널 */}
+      {tab === "policy" && (
+        <Panel
+          title="정책"
+          icon="lock"
+          count={filledPolicy.length}
+          desc="광고 카피에 적용되는 금지·필수 규칙이에요."
+        >
+          <div className="grid grid-cols-4 gap-3">
+            {filledPolicy.map((type) => (
+              <SopCard key={type} type={type} section={policy.find((s) => s.type === type)} canEdit={false} onEdit={() => {}} />
+            ))}
+            <EmptyCard label="미설정" hint="새 정책 항목" href={editHref} />
+          </div>
+        </Panel>
       )}
 
-      {/* 페르소나 */}
-      <SectionLabel title="페르소나" />
-      {personas.length > 0 ? (
-        <div className="grid grid-cols-2 gap-3">
-          {personas.map((p) => (
-            <PersonaCard
-              key={p.id}
-              persona={p}
-              canEdit={false}
-              onEdit={() => {}}
-              onDelete={() => {}}
-            />
-          ))}
-        </div>
-      ) : (
-        <p className="m-0 font-medium text-[13px] text-[var(--w-fg-alternative)] italic">미설정</p>
-      )}
+      {/* 타깃 · 제품 */}
+      {tab === "audience" && (
+        <Panel
+          title="타깃 · 제품"
+          icon="users"
+          desc="이 브랜드가 겨냥하는 페르소나와 광고에 연결할 대표 제품이에요."
+          bodyClassName="grid grid-cols-12 gap-4 items-start"
+        >
+          <Panel
+            title="페르소나"
+            icon="users"
+            count={personas.length}
+            desc="이 브랜드가 가장 자주 겨냥하는 타깃이에요."
+            className="col-span-7"
+            nested
+          >
+            <div className="grid grid-cols-3 gap-3">
+              {personas.map((p) => (
+                <PersonaCard key={p.id} persona={p} canEdit={false} onEdit={() => {}} onDelete={() => {}} />
+              ))}
+              <EmptyCard label="미설정" hint="새 페르소나" href={editHref} />
+            </div>
+          </Panel>
 
-      {/* 제품 */}
-      <SectionLabel title="제품" />
-      {products.length > 0 ? (
-        <div className="grid grid-cols-2 gap-3">
-          {products.map((p) => (
-            <ProductCard
-              key={p.id}
-              product={p}
-              canEdit={false}
-              onEdit={() => {}}
-              onDelete={() => {}}
-            />
-          ))}
-        </div>
-      ) : (
-        <p className="m-0 font-medium text-[13px] text-[var(--w-fg-alternative)] italic">미등록</p>
+          <Panel
+            title="제품"
+            icon="grid"
+            count={products.length}
+            desc="광고에 연결할 수 있는 대표 제품이에요."
+            className="col-span-5"
+            nested
+          >
+            <div className="grid grid-cols-2 gap-3">
+              {products.map((p) => (
+                <ProductCard key={p.id} product={p} canEdit={false} onEdit={() => {}} onDelete={() => {}} />
+              ))}
+              <EmptyCard label="미등록" hint="새 제품" href={editHref} />
+            </div>
+          </Panel>
+        </Panel>
       )}
     </div>
   );

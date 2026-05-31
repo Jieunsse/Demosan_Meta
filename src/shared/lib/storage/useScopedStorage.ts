@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export type StorageArea = "local" | "session";
 
@@ -56,6 +56,11 @@ export function useScopedStorage<T>(
   // 실제 storage 값은 mount 후 useEffect 에서 hydrate.
   const [value, setValueState] = useState<T>(defaultValue);
 
+  // functional update 의 prev 값을 updater 바깥에서 읽기 위한 미러. updater 안에서 side effect
+  // (emitChange) 를 실행하면 render 단계에서 다른 구독자의 setState 를 유발하므로 금지.
+  const valueRef = useRef(value);
+  valueRef.current = value;
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     const storage = getStorage(area);
@@ -93,19 +98,19 @@ export function useScopedStorage<T>(
 
   const setValue = useCallback(
     (next: T | ((prev: T) => T)) => {
-      setValueState((prev) => {
-        const resolved = typeof next === "function" ? (next as (p: T) => T)(prev) : next;
-        const storage = getStorage(area);
-        if (storage) {
-          try {
-            storage.setItem(key, serde.stringify(resolved));
-            emitChange(area, key);
-          } catch {
-            // quota exceeded etc. — swallow; state update proceeds regardless
-          }
+      const resolved =
+        typeof next === "function" ? (next as (p: T) => T)(valueRef.current) : next;
+      valueRef.current = resolved;
+      setValueState(resolved);
+      const storage = getStorage(area);
+      if (storage) {
+        try {
+          storage.setItem(key, serde.stringify(resolved));
+          emitChange(area, key);
+        } catch {
+          // quota exceeded etc. — swallow; state update proceeds regardless
         }
-        return resolved;
-      });
+      }
     },
     [area, key, serde],
   );
@@ -120,6 +125,7 @@ export function useScopedStorage<T>(
         // swallow
       }
     }
+    valueRef.current = defaultValue;
     setValueState(defaultValue);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [area, key]);

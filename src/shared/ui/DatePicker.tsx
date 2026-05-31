@@ -12,15 +12,28 @@ interface Props {
 
 const DOW = ["일", "월", "화", "수", "목", "금", "토"];
 
-function pad(n: number) { return String(n).padStart(2, "0"); }
-function toStr(y: number, m: number, d: number) { return `${y}-${pad(m)}-${pad(d)}`; }
+function pad(n: number) {
+  return String(n).padStart(2, "0");
+}
+function toStr(y: number, m: number, d: number) {
+  return `${y}-${pad(m)}-${pad(d)}`;
+}
 
-export default function DatePicker({ value, onChange, placeholder = "날짜 선택", "aria-label": ariaLabel }: Props) {
+export default function DatePicker({
+  value,
+  onChange,
+  placeholder = "날짜 선택",
+  "aria-label": ariaLabel,
+}: Props) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   const today = new Date();
-  const todayStr = toStr(today.getFullYear(), today.getMonth() + 1, today.getDate());
+  const todayStr = toStr(
+    today.getFullYear(),
+    today.getMonth() + 1,
+    today.getDate(),
+  );
 
   const initYear = value ? parseInt(value.slice(0, 4)) : today.getFullYear();
   const initMonth = value ? parseInt(value.slice(5, 7)) : today.getMonth() + 1;
@@ -37,19 +50,24 @@ export default function DatePicker({ value, onChange, placeholder = "날짜 선�
   useEffect(() => {
     if (!open) return;
     function onDown(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (ref.current && !ref.current.contains(e.target as Node))
+        setOpen(false);
     }
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
   }, [open]);
 
   const prevMonth = () => {
-    if (viewMonth === 1) { setViewYear((y) => y - 1); setViewMonth(12); }
-    else setViewMonth((m) => m - 1);
+    if (viewMonth === 1) {
+      setViewYear((y) => y - 1);
+      setViewMonth(12);
+    } else setViewMonth((m) => m - 1);
   };
   const nextMonth = () => {
-    if (viewMonth === 12) { setViewYear((y) => y + 1); setViewMonth(1); }
-    else setViewMonth((m) => m + 1);
+    if (viewMonth === 12) {
+      setViewYear((y) => y + 1);
+      setViewMonth(1);
+    } else setViewMonth((m) => m + 1);
   };
 
   const daysInMonth = new Date(viewYear, viewMonth, 0).getDate();
@@ -76,36 +94,56 @@ export default function DatePicker({ value, onChange, placeholder = "날짜 선�
           borderRadius: 12,
           padding: "11px 14px",
           font: "500 14px/1.5 var(--w-font-sans)",
-          color: displayValue ? "var(--w-fg-strong)" : "var(--w-fg-alternative)",
+          color: displayValue
+            ? "var(--w-fg-strong)"
+            : "var(--w-fg-alternative)",
           cursor: "pointer",
           textAlign: "left",
           whiteSpace: "nowrap",
           transition: "border-color 120ms, box-shadow 120ms",
         }}
       >
-        <Icon name="calendar" size={15} style={{ color: "var(--w-fg-neutral)", flexShrink: 0 }} />
+        <Icon
+          name="calendar"
+          size={15}
+          style={{ color: "var(--w-fg-neutral)", flexShrink: 0 }}
+        />
         <span style={{ flex: 1 }}>{displayValue || placeholder}</span>
       </button>
 
       {open && (
-        <div style={{
-          position: "absolute",
-          top: "calc(100% + 6px)",
-          left: 0,
-          zIndex: 300,
-          background: "var(--w-bg-elevated)",
-          border: "1px solid var(--w-line-normal)",
-          borderRadius: 16,
-          boxShadow: "var(--w-shadow-strong)",
-          padding: "14px 12px",
-          width: 272,
-        }}>
+        <div
+          style={{
+            position: "absolute",
+            top: "calc(100% + 6px)",
+            left: 0,
+            zIndex: 300,
+            background: "var(--w-bg-elevated)",
+            border: "1px solid var(--w-line-normal)",
+            borderRadius: 16,
+            boxShadow: "var(--w-shadow-strong)",
+            padding: "14px 12px",
+            width: 272,
+          }}
+        >
           {/* 월 네비게이션 */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              marginBottom: 10,
+            }}
+          >
             <button type="button" onClick={prevMonth} style={NAV_BTN}>
               <Icon name="arrow-left" size={14} />
             </button>
-            <span style={{ font: "600 14px/1 var(--w-font-sans)", color: "var(--w-fg-strong)" }}>
+            <span
+              style={{
+                font: "600 14px/1 var(--w-font-sans)",
+                color: "var(--w-fg-strong)",
+              }}
+            >
               {viewYear}년 {viewMonth}월
             </span>
             <button type="button" onClick={nextMonth} style={NAV_BTN}>
@@ -114,17 +152,38 @@ export default function DatePicker({ value, onChange, placeholder = "날짜 선�
           </div>
 
           {/* 요일 헤더 */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", marginBottom: 4 }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(7, 1fr)",
+              marginBottom: 4,
+            }}
+          >
             {DOW.map((d) => (
-              <div key={d} style={{ textAlign: "center", font: "500 11px/2 var(--w-font-sans)", color: "var(--w-fg-neutral)" }}>
+              <div
+                key={d}
+                style={{
+                  textAlign: "center",
+                  font: "500 11px/2 var(--w-font-sans)",
+                  color: "var(--w-fg-neutral)",
+                }}
+              >
                 {d}
               </div>
             ))}
           </div>
 
           {/* 날짜 그리드 */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2 }}>
-            {Array.from({ length: firstDow }).map((_, i) => <div key={`e${i}`} />)}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(7, 1fr)",
+              gap: 2,
+            }}
+          >
+            {Array.from({ length: firstDow }).map((_, i) => (
+              <div key={`e${i}`} />
+            ))}
             {Array.from({ length: daysInMonth }, (_, i) => {
               const day = i + 1;
               const str = toStr(viewYear, viewMonth, day);
@@ -134,7 +193,10 @@ export default function DatePicker({ value, onChange, placeholder = "날짜 선�
                 <button
                   key={day}
                   type="button"
-                  onClick={() => { onChange(str); setOpen(false); }}
+                  onClick={() => {
+                    onChange(str);
+                    setOpen(false);
+                  }}
                   style={{
                     width: "100%",
                     aspectRatio: "1",
@@ -159,11 +221,14 @@ export default function DatePicker({ value, onChange, placeholder = "날짜 선�
                     transition: "background 80ms",
                   }}
                   onMouseEnter={(e) => {
-                    if (!selected) (e.currentTarget as HTMLButtonElement).style.background = "var(--w-bg-neutral)";
+                    if (!selected)
+                      (e.currentTarget as HTMLButtonElement).style.background =
+                        "var(--w-bg-neutral)";
                   }}
                   onMouseLeave={(e) => {
-                    if (!selected) (e.currentTarget as HTMLButtonElement).style.background =
-                      isToday ? "var(--w-accent-violet-soft)" : "transparent";
+                    if (!selected)
+                      (e.currentTarget as HTMLButtonElement).style.background =
+                        isToday ? "var(--w-accent-violet-soft)" : "transparent";
                   }}
                 >
                   {day}
@@ -173,18 +238,45 @@ export default function DatePicker({ value, onChange, placeholder = "날짜 선�
           </div>
 
           {/* 빠른 선택 버튼 */}
-          <div style={{ borderTop: "1px solid var(--w-line-alternative)", marginTop: 8, paddingTop: 8, display: "flex", gap: 6, justifyContent: "center" }}>
+          <div
+            style={{
+              borderTop: "1px solid var(--w-line-alternative)",
+              marginTop: 8,
+              paddingTop: 8,
+              display: "flex",
+              gap: 6,
+              justifyContent: "center",
+            }}
+          >
             {[
               { label: "오늘", getDate: () => new Date() },
-              { label: "일주일", getDate: () => { const d = new Date(); d.setDate(d.getDate() + 7); return d; } },
-              { label: "한달", getDate: () => { const d = new Date(); d.setMonth(d.getMonth() + 1); return d; } },
+              {
+                label: "일주일",
+                getDate: () => {
+                  const d = new Date();
+                  d.setDate(d.getDate() + 7);
+                  return d;
+                },
+              },
+              {
+                label: "한달",
+                getDate: () => {
+                  const d = new Date();
+                  d.setMonth(d.getMonth() + 1);
+                  return d;
+                },
+              },
             ].map(({ label, getDate }) => (
               <button
                 key={label}
                 type="button"
                 onClick={() => {
                   const d = getDate();
-                  const str = toStr(d.getFullYear(), d.getMonth() + 1, d.getDate());
+                  const str = toStr(
+                    d.getFullYear(),
+                    d.getMonth() + 1,
+                    d.getDate(),
+                  );
                   onChange(str);
                   setViewYear(d.getFullYear());
                   setViewMonth(d.getMonth() + 1);

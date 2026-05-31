@@ -6,6 +6,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import Icon from "@shared/ui/Icon";
 import type { IconName } from "@shared/ui/Icon";
 import { Button } from "@shared/ui/Button";
@@ -14,13 +15,28 @@ import { Select } from "@shared/ui/Select";
 import { DEMO_INPUTS } from "@/lib/demo/content";
 import { DEMO_AD_IMAGES } from "@/lib/demo/mock-images";
 import { startTournament, setManualChallenger } from "@entities/ab-test/tournament/runner";
+import { tournamentClient } from "@entities/ab-test/tournament/client";
 import type { TourAxis, TourVariant } from "@entities/ab-test/tournament/tournament";
 import { MOCK_CAMPAIGN_SUMMARIES } from "@/lib/mock-campaigns";
+import { fetchCampaigns } from "@entities/campaign/api";
 import { listBrowse, BROWSE_CHANGE_EVENT } from "@entities/campaign/browse/store";
 import { browseCampaignToSummary } from "@entities/campaign/browse/summary";
 import type { CampaignSummary } from "@/lib/meta-ads";
 import { useBrandProfileStorage } from "@features/brand-profile/model/useBrandProfileStorage";
 import { useProducts } from "@shared/lib/products";
+
+// 실 게재 delivery 옵션 — 셋업이 cron 에 넘길 최소 타겟/링크/CTA. 데모는 미사용.
+const COUNTRY_OPTIONS = [
+  { value: "KR", label: "대한민국" },
+  { value: "US", label: "미국" },
+  { value: "JP", label: "일본" },
+];
+const CTA_OPTIONS = [
+  { value: "LEARN_MORE", label: "더 알아보기" },
+  { value: "SHOP_NOW", label: "지금 구매하기" },
+  { value: "SIGN_UP", label: "가입하기" },
+  { value: "CONTACT_US", label: "문의하기" },
+];
 
 type Tone = "warm" | "pro" | "trendy";
 
@@ -41,15 +57,28 @@ const OBJECTIVE_OPTIONS = [
 const STARTING_CTR = 1.8; // AI 부트스트랩 시 출발 챔피언 CTR 기준선(%) — existing 은 광고 실제 CTR 사용.
 
 type ChampionMode = "existing" | "ai";
-type WizardStep = "method" | "config";
-const STEP_LABELS: Record<WizardStep, string> = { method: "방식 선택", config: "세부 설정" };
-const STEP_ORDER: WizardStep[] = ["method", "config"];
+type WizardStep = "method" | "design" | "delivery";
+const STEP_LABELS: Record<WizardStep, string> = { method: "방식 선택", design: "A/B 설계", delivery: "게재 조건" };
+const STEP_ORDER: WizardStep[] = ["method", "design", "delivery"];
 
 const CHALLENGER_AXIS_OPTIONS: { value: TourAxis; label: string }[] = [
   { value: "headline", label: "헤드라인" },
   { value: "primary_text", label: "카피" },
   { value: "image", label: "이미지" },
 ];
+
+// 챌린저(B) AI 생성 시 챔피언 대비 변화 폭 — A/B 는 한 요소만 바꾸므로 그 한 요소를 "얼마나" 바꿀지 유저가 고른다.
+type Degree = "slight" | "moderate" | "bold";
+const DEGREE_OPTIONS: { value: Degree; label: string }[] = [
+  { value: "slight", label: "살짝" },
+  { value: "moderate", label: "적당히" },
+  { value: "bold", label: "많이" },
+];
+const DEGREE_HINT: Record<Degree, string> = {
+  slight: "기존 챔피언과 결을 거의 유지하면서 표현만 미세하게 다듬어줘.",
+  moderate: "핵심 메시지는 지키되 표현과 각도를 눈에 띄게 바꿔줘.",
+  bold: "같은 제품이지만 접근 방식 자체를 과감히 다르게 가져가줘.",
+};
 
 // 기존 광고 objective(OUTCOME_*) → 셋업 목표 매핑. 미매핑이면 traffic 폴백.
 const OBJECTIVE_FROM_META: Record<string, string> = {
@@ -59,10 +88,16 @@ const OBJECTIVE_FROM_META: Record<string, string> = {
   OUTCOME_LEADS: "leads",
 };
 
-export default function TournamentSetup() {
+export default function TournamentSetup({ real = false }: { real?: boolean }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const fromCampaignId = searchParams.get("from");
+  // 실 게재 봉투 — Meta 라운드 게재에 필요한 타겟/링크/CTA (데모는 미사용).
+  const [landingUrl, setLandingUrl] = useState("");
+  const [country, setCountry] = useState("KR");
+  const [ctaType, setCtaType] = useState("LEARN_MORE");
+  const [ageMin, setAgeMin] = useState(18);
+  const [ageMax, setAgeMax] = useState(65);
   const [productName, setProductName] = useState("수분 가득 비건 크림");
   const [productId, setProductId] = useState("");
   const [description, setDescription] = useState(DEMO_INPUTS.brand);
@@ -78,31 +113,48 @@ export default function TournamentSetup() {
   const [chHeadline, setChHeadline] = useState("");
   const [chPrimary, setChPrimary] = useState("");
   const [chImage, setChImage] = useState("");
+  const [chDegree, setChDegree] = useState<Degree>("moderate");
   const [chGenning, setChGenning] = useState(false);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState("");
 
   const stepIdx = STEP_ORDER.indexOf(step);
-  const goBack = () => (step === "config" ? setStep("method") : router.push("/ab-tests"));
-  const pickMode = (m: ChampionMode) => { setChampionMode(m); setStep("config"); };
+  const goBack = () =>
+    step === "delivery" ? setStep("design")
+    : step === "design" ? setStep("method")
+    : router.push("/ab-tests");
+  const pickMode = (m: ChampionMode) => { setChampionMode(m); setStep("design"); };
 
-  // 기존 광고 후보 = browse localStorage + 정적 mock (/campaigns 와 동일 merge).
+  // 기존 광고 후보 — 실: 연결 계정의 실 캠페인(fetchCampaigns) / 데모: browse localStorage + 정적 mock.
   const [browseRows, setBrowseRows] = useState<CampaignSummary[]>([]);
   useEffect(() => {
+    if (real) return;
     const load = () => setBrowseRows(listBrowse().map(browseCampaignToSummary));
     load();
     window.addEventListener(BROWSE_CHANGE_EVENT, load);
     return () => window.removeEventListener(BROWSE_CHANGE_EVENT, load);
-  }, []);
-  const campaigns = useMemo(() => [...browseRows, ...MOCK_CAMPAIGN_SUMMARIES], [browseRows]);
+  }, [real]);
+  const realCampaignsQ = useQuery({
+    queryKey: ["campaigns", "all"],
+    queryFn: () => fetchCampaigns("all"),
+    enabled: real && championMode === "existing",
+    retry: false,
+  });
+  const campaigns = useMemo(
+    () => (real ? (realCampaignsQ.data ?? []) : [...browseRows, ...MOCK_CAMPAIGN_SUMMARIES]),
+    [real, realCampaignsQ.data, browseRows],
+  );
   const selected = campaigns.find((c) => c.id === campaignId) ?? null;
+
+  // 실 게재는 image 축 A/B 를 지원하지 않는다(launcher 가 헤드라인으로 폴백). 데모만 image 챌린저 노출.
+  const axisOptions = real ? CHALLENGER_AXIS_OPTIONS.filter((o) => o.value !== "image") : CHALLENGER_AXIS_OPTIONS;
 
   // 캠페인 상세 "이 캠페인으로 A/B 테스트 생성" → ?from=<id> 로 진입. 기존 광고 모드로 그 캠페인을 출발 챔피언에 프리셀렉트.
   useEffect(() => {
     if (!fromCampaignId) return;
     setChampionMode("existing");
     setCampaignId(fromCampaignId);
-    setStep("config");
+    setStep("design");
   }, [fromCampaignId]);
 
   // 프리셀렉트 캠페인이 후보 목록에서 해소되면 광고 목표를 그 광고 기준으로 매핑.
@@ -136,7 +188,7 @@ export default function TournamentSetup() {
 
   // 출발 챔피언 = 고른 광고. 이미지는 광고 자체 것 우선, 없으면 mock 풀 첫 장.
   const champVariant: TourVariant | null = selected
-    ? { headline: selected.headline, primaryText: selected.primaryText ?? "", imageUrl: selected.imageUrl || DEMO_AD_IMAGES[0] }
+    ? { headline: selected.headline, primaryText: selected.primaryText ?? "", imageUrl: selected.imageUrl || (real ? "" : DEMO_AD_IMAGES[0]) }
     : null;
 
   // 바꿀 요소가 채워졌는지 — 챌린저 대진 성립 조건.
@@ -170,13 +222,16 @@ export default function TournamentSetup() {
       const res = await fetch("/api/generate-creative", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ brand: description.trim() || productName.trim(), target: productName.trim(), tone, outcome: objective }),
+        body: JSON.stringify({ brand: description.trim() || productName.trim(), target: productName.trim(), tone, outcome: objective, hint: DEGREE_HINT[chDegree] }),
       });
       if (!res.ok) throw new Error();
       const data = await res.json();
       const pool: string[] = chAxis === "headline" ? data.headlines : data.primaryTexts;
       const cur = chAxis === "headline" ? champVariant.headline : champVariant.primaryText;
-      const pick = pool.find((x: string) => x.trim() && x.trim() !== cur.trim()) ?? pool[0] ?? "";
+      // 변화 정도 → 풀에서 위치 선택(살짝=가장 가까운 첫 후보, 많이=가장 먼 끝 후보). 실 경로는 위 hint 로 프롬프트가 반영.
+      const filtered = pool.filter((x: string) => x.trim() && x.trim() !== cur.trim());
+      const idx = chDegree === "slight" ? 0 : chDegree === "bold" ? filtered.length - 1 : Math.floor(filtered.length / 2);
+      const pick = filtered[idx] ?? filtered[0] ?? pool[0] ?? "";
       if (chAxis === "headline") setChHeadline(pick); else setChPrimary(pick);
     } catch {
       setError("챌린저 생성에 실패했어요. 직접 입력하거나 다시 시도해주세요.");
@@ -185,9 +240,14 @@ export default function TournamentSetup() {
     }
   }
 
+  // A/B 설계 스텝 통과 조건 — existing: 챔피언+챌린저 한 요소 / ai: 출발 챔피언 생성 재료.
+  const canAdvanceDesign = championMode === "ai"
+    ? !!(productName.trim() && description.trim())
+    : !!selected && challengerReady;
+  // 게재 조건 스텝까지 채워야 시작 가능.
   const canStart =
-    productName.trim() && description.trim() && maxRounds >= 1 && dailyBudget > 0 &&
-    (championMode === "ai" || (!!selected && challengerReady));
+    canAdvanceDesign && maxRounds >= 1 && dailyBudget > 0 &&
+    (!real || !!landingUrl.trim());
 
   async function handleStart() {
     if (!canStart || starting) return;
@@ -195,6 +255,48 @@ export default function TournamentSetup() {
     setError("");
     try {
       const fromExisting = championMode === "existing" && selected && champVariant;
+
+      // 실 유저 — POST /api/tournaments(Supabase + Meta delivery 봉투). 기존 광고 출발이면 라운드1 챌린저를 set-challenger 로 시드.
+      if (real) {
+        const res = await fetch("/api/tournaments", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            brandProfileId: activeId || "default",
+            productId: productId || "manual",
+            productName: productName.trim(),
+            brandDescription: description.trim(),
+            productDescription: description.trim(),
+            tone,
+            objective,
+            mode: "manual-n",
+            maxRounds,
+            dailyBudget,
+            startingCtr: fromExisting ? selected!.ctr : STARTING_CTR,
+            championSource: fromExisting ? "existing" : "ai",
+            startingChampion: fromExisting ? champVariant! : undefined,
+            championSourceName: fromExisting ? selected!.name : undefined,
+            goalId: objective,
+            linkUrl: landingUrl.trim(),
+            ctaType,
+            countries: [country],
+            ageMin,
+            ageMax,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.error || "토너먼트 생성에 실패했어요.");
+        const id = data.id as string;
+        if (fromExisting) {
+          const challenger: TourVariant =
+            chAxis === "primary_text" ? { ...champVariant!, primaryText: chPrimary.trim() }
+            : { ...champVariant!, headline: chHeadline.trim() };
+          await tournamentClient(false).setChallenger(id, challenger);
+        }
+        router.push(`/ab-tests/${id}`);
+        return;
+      }
+
       const id = await startTournament({
         brandProfileId: "browse",
         productId: "browse",
@@ -219,16 +321,18 @@ export default function TournamentSetup() {
         setManualChallenger(id, challenger);
       }
       router.push(`/ab-tests/${id}`);
-    } catch {
-      setError("출발 챔피언 생성에 실패했어요. 잠시 후 다시 시도해주세요.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "출발 챔피언 생성에 실패했어요. 잠시 후 다시 시도해주세요.");
       setStarting(false);
     }
   }
 
-  const shellWidth = step === "config" ? "max-w-[1140px]" : "max-w-[760px]";
+  const shellWidth = step === "method" ? "max-w-[760px]" : "max-w-[1140px]";
+  // STEP 1(방식 선택)은 콘텐츠가 짧아 세로 중앙 정렬로 균형을 맞춘다. STEP 2 폼은 길어 상단 정렬 유지.
+  const shellVertical = step === "method" ? "min-h-[calc(100vh-2rem)] justify-center" : "";
 
   return (
-    <div className={`px-12 py-9 pb-16 ${shellWidth} w-full mx-auto flex flex-col gap-7`} data-screen-label="A/B 토너먼트 셋업">
+    <div className={`px-12 py-9 pb-16 ${shellWidth} w-full mx-auto flex flex-col gap-7 ${shellVertical}`} data-screen-label="A/B 토너먼트 셋업">
       <button
         type="button"
         onClick={goBack}
@@ -253,9 +357,9 @@ export default function TournamentSetup() {
 
       {step === "method" && <MethodStep onPick={pickMode} />}
 
-      {step === "config" && (
+      {step === "design" && (
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_minmax(340px,380px)] gap-7 items-start">
-          {/* ── 좌: 입력 폼 ── */}
+          {/* ── 좌: A/B 설계 — 출발 챔피언 + 바꿀 한 요소 ── */}
           <div className="flex flex-col gap-7 min-w-0">
             <SectionCard title="출발 챔피언" hint="1라운드의 A — 챌린저가 이 광고 위로 진화해요">
               {championMode === "existing" ? (
@@ -296,7 +400,7 @@ export default function TournamentSetup() {
 
             {championMode === "existing" && selected && champVariant && (
               <SectionCard title="챌린저 (B)" hint="같은 제품, 한 요소만 바꿔 비교해요">
-                <SegControl options={CHALLENGER_AXIS_OPTIONS} value={chAxis} onChange={(v) => setChAxis(v as TourAxis)} />
+                <SegControl options={axisOptions} value={chAxis} onChange={(v) => setChAxis(v as TourAxis)} />
 
                 <div className="mt-3">
                   {chAxis === "image" ? (
@@ -342,16 +446,23 @@ export default function TournamentSetup() {
                   )}
 
                   {chAxis !== "image" && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      type="button"
-                      disabled={chGenning}
-                      onClick={generateChallenger}
-                      className="inline-flex items-center gap-1.5 text-[var(--w-accent-violet)] mt-2"
-                    >
-                      {chGenning ? <><Icon name="spinner" size={13} spin /> 생성 중…</> : <><Icon name="sparkles" size={13} /> AI 로 B안 생성</>}
-                    </Button>
+                    <div className="mt-3.5 flex flex-col gap-2">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="font-semibold text-[12.5px] leading-none text-[var(--w-fg-strong)]">변화 정도</span>
+                        <span className="font-medium text-[11.5px] leading-none text-[var(--w-fg-alternative)]">AI 가 챔피언을 얼마나 바꿀지</span>
+                      </div>
+                      <SegControl options={DEGREE_OPTIONS} value={chDegree} onChange={(v) => setChDegree(v as Degree)} />
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        type="button"
+                        disabled={chGenning}
+                        onClick={generateChallenger}
+                        className="inline-flex items-center gap-1.5 text-[var(--w-accent-violet)] self-start mt-1"
+                      >
+                        {chGenning ? <><Icon name="spinner" size={13} spin /> 생성 중…</> : <><Icon name="sparkles" size={13} /> AI 로 B안 생성</>}
+                      </Button>
+                    </div>
                   )}
                 </div>
 
@@ -361,68 +472,48 @@ export default function TournamentSetup() {
               </SectionCard>
             )}
 
-            <SectionCard title="토너먼트 설정" hint="AI 가 챔피언·챌린저를 만들 재료와 게재 조건">
-            <Field label="제품" hint="브랜드 프로필에 등록된 제품에서 선택해요">
-              {products.length > 0 ? (
-                <Select
-                  value={productId}
-                  onChange={handlePickProduct}
-                  options={[
-                    { value: "", label: "제품을 선택해주세요" },
-                    ...products.map((pr) => ({ value: pr.id, label: pr.name })),
-                  ]}
-                />
-              ) : (
-                <input
-                  type="text"
-                  value={productName}
-                  onChange={(e) => setProductName(e.target.value)}
-                  placeholder="예) 수분 가득 비건 크림"
-                  className="w-full bg-[var(--w-bg-elevated)] border border-[var(--w-line-normal)] rounded-xl px-3.5 py-3 font-medium text-[14px] leading-[1.5] text-[var(--w-fg-strong)] outline-none transition-[border-color,box-shadow] duration-[120ms] focus:border-[var(--w-primary-normal)] focus:shadow-[0_0_0_4px_rgba(0,102,255,0.14)] placeholder:text-[var(--w-fg-alternative)]"
-                />
-              )}
-            </Field>
+            {/* AI 모드 — 출발 챔피언이 아직 없으니 생성 재료가 필요. existing 모드는 챔피언이 이미 값을 가져 숨긴다. */}
+            {championMode === "ai" && (
+              <SectionCard title="출발 챔피언 재료" hint="AI 가 1라운드 챔피언을 만들 제품·설명·톤">
+                <Field label="제품" hint="브랜드 프로필에 등록된 제품에서 선택해요">
+                  {products.length > 0 ? (
+                    <Select
+                      value={productId}
+                      onChange={handlePickProduct}
+                      options={[
+                        { value: "", label: "제품을 선택해주세요" },
+                        ...products.map((pr) => ({ value: pr.id, label: pr.name })),
+                      ]}
+                    />
+                  ) : (
+                    <input
+                      type="text"
+                      value={productName}
+                      onChange={(e) => setProductName(e.target.value)}
+                      placeholder="예) 수분 가득 비건 크림"
+                      className="w-full bg-[var(--w-bg-elevated)] border border-[var(--w-line-normal)] rounded-xl px-3.5 py-3 font-medium text-[14px] leading-[1.5] text-[var(--w-fg-strong)] outline-none transition-[border-color,box-shadow] duration-[120ms] focus:border-[var(--w-primary-normal)] focus:shadow-[0_0_0_4px_rgba(0,102,255,0.14)] placeholder:text-[var(--w-fg-alternative)]"
+                    />
+                  )}
+                </Field>
 
-            <Field label="브랜드·제품 설명" hint="AI 가 챔피언·챌린저 카피를 만들 때 주입하는 컨텍스트">
-              <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                rows={3}
-                placeholder="브랜드 톤·핵심 가치·타겟 고객을 한두 문장으로"
-                className="w-full bg-[var(--w-bg-elevated)] border border-[var(--w-line-normal)] rounded-xl px-3.5 py-3 font-medium text-[14px] leading-[1.55] text-[var(--w-fg-strong)] outline-none transition-[border-color,box-shadow] duration-[120ms] focus:border-[var(--w-primary-normal)] focus:shadow-[0_0_0_4px_rgba(0,102,255,0.14)] placeholder:text-[var(--w-fg-alternative)] resize-none"
-              />
-            </Field>
-
-            <div className="grid grid-cols-2 gap-5">
-              <Field label="카피 톤">
-                <SegControl options={TONE_OPTIONS} value={tone} onChange={(v) => setTone(v as Tone)} />
-              </Field>
-              <Field label="광고 목표">
-                <Select value={objective} onChange={setObjective} options={OBJECTIVE_OPTIONS} />
-              </Field>
-            </div>
-
-            <div className="grid grid-cols-2 gap-5">
-              <Field label="라운드 수" hint="이 횟수만큼 챌린저를 붙이면 끝나요">
-                <Stepper value={maxRounds} min={1} max={6} onChange={setMaxRounds} suffix="라운드" />
-              </Field>
-              <Field label="일 예산">
-                <div className="relative">
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    value={dailyBudget ? dailyBudget.toLocaleString("ko-KR") : ""}
-                    onChange={(e) => setDailyBudget(Number(e.target.value.replace(/[^0-9]/g, "")) || 0)}
-                    className="w-full bg-[var(--w-bg-elevated)] border border-[var(--w-line-normal)] rounded-xl pl-3.5 pr-9 py-3 font-semibold text-[14px] leading-[1.5] text-[var(--w-fg-strong)] outline-none transition-[border-color,box-shadow] duration-[120ms] focus:border-[var(--w-primary-normal)] focus:shadow-[0_0_0_4px_rgba(0,102,255,0.14)]"
+                <Field label="브랜드·제품 설명" hint="AI 가 챔피언 카피를 만들 때 주입하는 컨텍스트">
+                  <textarea
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    rows={3}
+                    placeholder="브랜드 톤·핵심 가치·타겟 고객을 한두 문장으로"
+                    className="w-full bg-[var(--w-bg-elevated)] border border-[var(--w-line-normal)] rounded-xl px-3.5 py-3 font-medium text-[14px] leading-[1.55] text-[var(--w-fg-strong)] outline-none transition-[border-color,box-shadow] duration-[120ms] focus:border-[var(--w-primary-normal)] focus:shadow-[0_0_0_4px_rgba(0,102,255,0.14)] placeholder:text-[var(--w-fg-alternative)] resize-none"
                   />
-                  <span className="absolute right-3.5 top-1/2 -translate-y-1/2 font-medium text-[13px] text-[var(--w-fg-alternative)]">원</span>
-                </div>
-              </Field>
-            </div>
-            </SectionCard>
+                </Field>
+
+                <Field label="카피 톤">
+                  <SegControl options={TONE_OPTIONS} value={tone} onChange={(v) => setTone(v as Tone)} />
+                </Field>
+              </SectionCard>
+            )}
           </div>
 
-          {/* ── 우: 대진·진화·조건 미리보기 + 시작 ── */}
+          {/* ── 우: 1라운드 대진 미리보기 + 다음 ── */}
           <aside className="lg:sticky lg:top-6 flex flex-col gap-4">
             <MatchupCard
               championMode={championMode}
@@ -432,8 +523,99 @@ export default function TournamentSetup() {
               axisLabel={axisLabel}
               ctr={selected?.ctr ?? null}
             />
+
+            <div className="py-2.5 px-3.5 rounded-lg flex items-start gap-2" style={{ background: "var(--w-primary-soft)", border: "1px solid var(--w-primary-weak)" }}>
+              <Icon name="info" size={14} style={{ color: "var(--w-primary-normal)", flex: "0 0 auto", marginTop: 1 }} />
+              <span className="font-medium text-[12px] leading-[1.5] text-[var(--w-primary-press)]">
+                A/B 는 한 요소만 다르게, 나머지는 챔피언과 동일하게 게재해요. 게재 조건은 다음 단계에서 정합니다.
+              </span>
+            </div>
+
+            <Button variant="primary" type="button" disabled={!canAdvanceDesign} onClick={() => setStep("delivery")} className="w-full">
+              다음 — 게재 조건 <Icon name="arrow-right" size={15} />
+            </Button>
+          </aside>
+        </div>
+      )}
+
+      {step === "delivery" && (
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_minmax(340px,380px)] gap-7 items-start">
+          {/* ── 좌: 게재 조건 — A/B 변수와 별개인 토너먼트 전역 설정 ── */}
+          <div className="flex flex-col gap-7 min-w-0">
+            <SectionCard title="게재 조건" hint="토너먼트 전체에 적용돼요 — A/B 변수와 별개">
+              <Field label="광고 목표">
+                <Select value={objective} onChange={setObjective} options={OBJECTIVE_OPTIONS} />
+              </Field>
+
+              <div className="grid grid-cols-2 gap-5">
+                <Field label="라운드 수" hint="이 횟수만큼 챌린저를 붙이면 끝나요">
+                  <Stepper value={maxRounds} min={1} max={6} onChange={setMaxRounds} suffix="라운드" />
+                </Field>
+                <Field label="일 예산">
+                  <div className="relative">
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={dailyBudget ? dailyBudget.toLocaleString("ko-KR") : ""}
+                      onChange={(e) => setDailyBudget(Number(e.target.value.replace(/[^0-9]/g, "")) || 0)}
+                      className="w-full bg-[var(--w-bg-elevated)] border border-[var(--w-line-normal)] rounded-xl pl-3.5 pr-9 py-3 font-semibold text-[14px] leading-[1.5] text-[var(--w-fg-strong)] outline-none transition-[border-color,box-shadow] duration-[120ms] focus:border-[var(--w-primary-normal)] focus:shadow-[0_0_0_4px_rgba(0,102,255,0.14)]"
+                    />
+                    <span className="absolute right-3.5 top-1/2 -translate-y-1/2 font-medium text-[13px] text-[var(--w-fg-alternative)]">원</span>
+                  </div>
+                </Field>
+              </div>
+            </SectionCard>
+
+            {/* 실 게재 봉투 — cron 이 라운드를 실제 Meta 광고로 게재하는 데 필요한 타겟/링크/CTA. */}
+            {real && (
+              <SectionCard title="게재 설정" hint="실제 Meta 광고로 라운드를 게재해요 — 랜딩·타겟·CTA">
+                <Field label="랜딩 URL" hint="광고 클릭 시 이동할 페이지">
+                  <input
+                    type="url"
+                    value={landingUrl}
+                    onChange={(e) => setLandingUrl(e.target.value)}
+                    placeholder="https://example.com/product"
+                    className="w-full bg-[var(--w-bg-elevated)] border border-[var(--w-line-normal)] rounded-xl px-3.5 py-3 font-medium text-[14px] leading-[1.5] text-[var(--w-fg-strong)] outline-none transition-[border-color,box-shadow] duration-[120ms] focus:border-[var(--w-primary-normal)] focus:shadow-[0_0_0_4px_rgba(0,102,255,0.14)] placeholder:text-[var(--w-fg-alternative)]"
+                  />
+                </Field>
+                <div className="grid grid-cols-2 gap-5">
+                  <Field label="타겟 지역">
+                    <Select value={country} onChange={setCountry} options={COUNTRY_OPTIONS} />
+                  </Field>
+                  <Field label="행동 유도 버튼">
+                    <Select value={ctaType} onChange={setCtaType} options={CTA_OPTIONS} />
+                  </Field>
+                </div>
+                <Field label="타겟 연령">
+                  <div className="flex items-center gap-2.5">
+                    <input
+                      type="number"
+                      min={13}
+                      max={65}
+                      value={ageMin}
+                      onChange={(e) => setAgeMin(Number(e.target.value) || 18)}
+                      className="w-20 bg-[var(--w-bg-elevated)] border border-[var(--w-line-normal)] rounded-xl px-3 py-3 font-semibold text-[14px] text-center text-[var(--w-fg-strong)] outline-none focus:border-[var(--w-primary-normal)]"
+                    />
+                    <span className="font-medium text-[13px] text-[var(--w-fg-alternative)]">~</span>
+                    <input
+                      type="number"
+                      min={13}
+                      max={65}
+                      value={ageMax}
+                      onChange={(e) => setAgeMax(Number(e.target.value) || 65)}
+                      className="w-20 bg-[var(--w-bg-elevated)] border border-[var(--w-line-normal)] rounded-xl px-3 py-3 font-semibold text-[14px] text-center text-[var(--w-fg-strong)] outline-none focus:border-[var(--w-primary-normal)]"
+                    />
+                    <span className="font-medium text-[13px] text-[var(--w-fg-alternative)]">세</span>
+                  </div>
+                </Field>
+              </SectionCard>
+            )}
+          </div>
+
+          {/* ── 우: 진화·조건 미리보기 + 시작 ── */}
+          <aside className="lg:sticky lg:top-6 flex flex-col gap-4">
             <EvolutionChain maxRounds={maxRounds} />
-            <ConditionSummary toneLabel={toneLabel} objectiveLabel={objectiveLabel} maxRounds={maxRounds} dailyBudget={dailyBudget} />
+            <ConditionSummary toneLabel={championMode === "ai" ? toneLabel : ""} objectiveLabel={objectiveLabel} maxRounds={maxRounds} dailyBudget={dailyBudget} />
 
             <div className="py-2.5 px-3.5 rounded-lg flex items-start gap-2" style={{ background: "var(--w-primary-soft)", border: "1px solid var(--w-primary-weak)" }}>
               <Icon name="info" size={14} style={{ color: "var(--w-primary-normal)", flex: "0 0 auto", marginTop: 1 }} />
@@ -461,15 +643,6 @@ export default function TournamentSetup() {
 function MethodStep({ onPick }: { onPick: (m: ChampionMode) => void }) {
   return (
     <div>
-      {/* 흐름 힌트 — A ⚔ B → 우세 안이 다음 챔피언 */}
-      <div className="flex items-center justify-center gap-3 py-3 px-4 rounded-xl mb-5 bg-[var(--w-bg-alternative)]">
-        <FlowChip label="A" color="var(--w-primary-normal)" />
-        <span className="font-bold text-[11px] leading-none px-2 py-1 rounded-full bg-[var(--w-bg-elevated)] text-[var(--w-fg-neutral)] border border-[var(--w-line-normal)]">VS</span>
-        <FlowChip label="B" color="var(--w-accent-violet)" />
-        <Icon name="arrow-right" size={14} style={{ color: "var(--w-fg-alternative)" }} />
-        <span className="font-semibold text-[12.5px] leading-none text-[var(--w-fg-neutral)]">우세 안이 다음 챔피언</span>
-      </div>
-
       <div className="font-semibold text-[14px] leading-[1.3] text-[var(--w-fg-strong)] mb-3.5">
         출발 챔피언을 어떻게 정할까요?
       </div>
@@ -491,18 +664,44 @@ function MethodStep({ onPick }: { onPick: (m: ChampionMode) => void }) {
           onClick={() => onPick("ai")}
         />
       </div>
+
+      <FlowStrip />
     </div>
   );
 }
 
-function FlowChip({ label, color }: { label: string; color: string }) {
+// 카드 결정을 가리지 않는 선에서 하단을 채우는 가벼운 진행 흐름 안내. 도메인 동작 원리를 3단계로.
+function FlowStrip() {
+  const steps: { icon: IconName; title: string; desc: string }[] = [
+    { icon: "edit", title: "챌린저 붙이기", desc: "한 요소만 바꾼 B안을 챔피언과 나란히 게재해요." },
+    { icon: "chart", title: "게재·측정", desc: "트래픽·CTR 을 실측해 어느 쪽이 우세한지 판정해요." },
+    { icon: "target", title: "우세안 승격", desc: "이긴 안이 다음 라운드 챔피언이 돼 다시 진화해요." },
+  ];
   return (
-    <span
-      className="font-bold text-[12px] leading-none grid place-items-center"
-      style={{ width: 26, height: 26, borderRadius: 8, color, background: `color-mix(in srgb, ${color} 12%, transparent)`, border: `1px solid color-mix(in srgb, ${color} 30%, transparent)` }}
-    >
-      {label}
-    </span>
+    <div className="mt-9">
+      <div className="font-semibold text-[13px] leading-[1.3] text-[var(--w-fg-neutral)] mb-3.5 flex items-center gap-2">
+        <span className="h-px flex-1 bg-[var(--w-line-normal)]" />
+        이렇게 진행돼요
+        <span className="h-px flex-1 bg-[var(--w-line-normal)]" />
+      </div>
+      <div className="grid grid-cols-3 gap-3">
+        {steps.map((s, i) => (
+          <div key={s.title} className="rounded-xl border border-[var(--w-line-normal)] bg-[var(--w-bg-elevated)] p-4 flex flex-col gap-2.5">
+            <div className="flex items-center gap-2">
+              <span
+                className="font-bold text-[11px] leading-none grid place-items-center w-6 h-6 rounded-lg bg-[var(--w-primary-soft)] text-[var(--w-primary-press)]"
+                style={{ flex: "0 0 auto" }}
+              >
+                {i + 1}
+              </span>
+              <Icon name={s.icon} size={15} style={{ color: "var(--w-fg-alternative)" }} />
+            </div>
+            <div className="font-bold text-[13px] leading-[1.4] text-[var(--w-fg-strong)]">{s.title}</div>
+            <p className="font-medium text-[12px] leading-[1.55] text-[var(--w-fg-neutral)] m-0">{s.desc}</p>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -629,7 +828,7 @@ function ConditionSummary({ toneLabel, objectiveLabel, maxRounds, dailyBudget }:
   return (
     <div className="rounded-2xl border border-[var(--w-line-normal)] bg-[var(--w-bg-elevated)] p-4 flex flex-col gap-2">
       <div className="font-bold text-[13px] leading-none text-[var(--w-fg-strong)] mb-1">조건 요약</div>
-      <SummaryRow label="카피 톤" value={toneLabel} />
+      {toneLabel && <SummaryRow label="카피 톤" value={toneLabel} />}
       <SummaryRow label="광고 목표" value={objectiveLabel} />
       <SummaryRow label="라운드" value={`${maxRounds}라운드`} />
       <SummaryRow label="일 예산" value={`${dailyBudget.toLocaleString("ko-KR")}원`} />

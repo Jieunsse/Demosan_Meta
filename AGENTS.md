@@ -15,7 +15,6 @@
 - DO NOT `.env.local` 커밋 (`.gitignore` 막혀있지만 force-add 도 금지).
 - DO NOT 사용자 동의 없이 destructive git (`reset --hard`, `push --force`, `branch -D`).
 - DO NOT 새 npm 패키지 사용자 확인 없이 설치.
-- DO NOT 빌드/타입/린트 명령 사용자가 묻기 전에 실행.
 - DO NOT 코드가 스스로 설명하는 내용을 주석으로 반복. 주석은 "왜"가 비자명할 때만 (숨은 제약·workaround·놀라운 동작).
 - DO NOT `Co-Authored-By:` 형식의 트레일러를 커밋 메시지에 포함하지 말 것.
 

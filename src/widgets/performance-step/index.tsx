@@ -201,7 +201,7 @@ export default function PerformanceStep({ onRestart }: { onRestart: () => void }
     reach: data.reach, frequency: data.frequency, cpm: data.cpm,
     postEngagement: data.postEngagement, postReaction: data.postReaction, postComment: data.postComment, postShare: data.postShare,
   };
-  const suggestions = suggestOptimizations(ins, dailyBudget, objective, goalId);
+  const suggestions = suggestOptimizations(ins, dailyBudget, data.daily.length, objective, goalId);
   const readiness = assessAutomationReadiness(ins, data.daily.length, objective, goalId);
 
   const notifiedOptRef = useRef(false);

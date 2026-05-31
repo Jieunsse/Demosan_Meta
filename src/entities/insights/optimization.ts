@@ -240,7 +240,6 @@ export type Suggestion =
     };
 
 import {
-  MIN_IMPRESSIONS,
   MIN_DAYS as AUTOMATION_MIN_DAYS,
   GOOD_CTR_PCT,
   HIGH_CPC_KRW,
@@ -249,13 +248,28 @@ import {
   GOOD_ENGAGEMENT_RATE,
 } from "./thresholds";
 
-const MIN_IMPRESSIONS_FOR_JUDGEMENT = MIN_IMPRESSIONS;
 const LOW_CTR_PCT = 0.8;
 const BUDGET_BUMP_RATIO = 1.3;               // +30% bump — small enough to avoid re-entering Meta's learning phase
 const MAX_SUGGESTED_DAILY_BUDGET = 1_000_000;
 
 const AUTOMATION_MIN_IMPRESSIONS = 10_000;
 const AUTOMATION_MIN_CLICKS = 50;  // near Meta's ~50-event learning phase exit
+
+// 성과를 신뢰성 있게 판단할 만큼 데이터가 쌓였는지 — 제안 엔진(suggestOptimizations)과
+// 자동화 준비도(assessAutomationReadiness)가 공유하는 단일 게이트. 두 패널이 항상 일치하도록.
+function automationDataGaps(ins: OptimizationInsights, daysOfData: number, objective: OptimizationObjective): string[] {
+  const gaps: string[] = [];
+  if (ins.impressions < AUTOMATION_MIN_IMPRESSIONS) {
+    gaps.push(`노출 ${ins.impressions.toLocaleString("ko-KR")}회 (목표 ${AUTOMATION_MIN_IMPRESSIONS.toLocaleString("ko-KR")}회)`);
+  }
+  if (daysOfData < AUTOMATION_MIN_DAYS) {
+    gaps.push(`집행 ${daysOfData}일 (목표 ${AUTOMATION_MIN_DAYS}일)`);
+  }
+  if (objective !== "OUTCOME_AWARENESS" && objective !== "OUTCOME_ENGAGEMENT" && ins.clicks < AUTOMATION_MIN_CLICKS) {
+    gaps.push(`클릭 ${ins.clicks.toLocaleString("ko-KR")}회 (목표 ${AUTOMATION_MIN_CLICKS}회)`);
+  }
+  return gaps;
+}
 
 const won = (n: number) => `₩${Math.round(n).toLocaleString("ko-KR")}`;
 const pct = (n: number) => `${n.toFixed(2)}%`;
@@ -266,6 +280,7 @@ const LOW_ENGAGEMENT_RATE = 0.5;     // reactions/impressions below 0.5% = under
 export function suggestOptimizations(
   ins: OptimizationInsights,
   currentDailyBudget: number,
+  daysOfData: number,
   objective: OptimizationObjective = "OUTCOME_TRAFFIC",
   goalId?: string,
 ): Suggestion[] {
@@ -285,14 +300,16 @@ export function suggestOptimizations(
     return out;
   }
 
-  if (ins.impressions < MIN_IMPRESSIONS_FOR_JUDGEMENT) {
+  // 준비도와 동일한 데이터 게이트 — 둘 다 충분/부족을 같은 기준으로 판단해 모순 표시를 막는다.
+  const dataGaps = automationDataGaps(ins, daysOfData, objective);
+  if (dataGaps.length > 0) {
     out.push({
       kind: "note",
       severity: "info",
       title: "데이터를 조금 더 모아보세요",
       detail: [
-        `노출 ${ins.impressions.toLocaleString("ko-KR")}회로 아직 적어요.`,
-        `노출 ${MIN_IMPRESSIONS_FOR_JUDGEMENT.toLocaleString("ko-KR")}회 정도 쌓이면 성과 판단을 도와드릴 수 있어요.`,
+        `아직 성과를 판단하기엔 일러요 — 부족: ${dataGaps.join(" / ")}.`,
+        `조금 더 쌓이면 예산·소재 조정을 제안해드릴게요.`,
       ],
     });
     out.push({
@@ -483,13 +500,8 @@ export function assessAutomationReadiness(
   if (goalId && NEW_GOAL_IDS.has(goalId)) {
     return { ready: false, reason: "이 광고 목표의 자동 판단 룰은 곧 추가돼요. 우선은 KPI 추세를 보고 직접 조정해주세요." };
   }
-  const gaps: string[] = [];
-  if (ins.impressions < AUTOMATION_MIN_IMPRESSIONS) {
-    gaps.push(`노출 ${ins.impressions.toLocaleString("ko-KR")}회 (목표 ${AUTOMATION_MIN_IMPRESSIONS.toLocaleString("ko-KR")}회)`);
-  }
-  if (daysOfData < AUTOMATION_MIN_DAYS) {
-    gaps.push(`집행 ${daysOfData}일 (목표 ${AUTOMATION_MIN_DAYS}일)`);
-  }
+  // 데이터 충분성은 제안 엔진과 공유하는 게이트로 — 두 패널 일치 보장. 성과(CTR·빈도·참여) 게이트만 별도.
+  const gaps = automationDataGaps(ins, daysOfData, objective);
   if (objective === "OUTCOME_AWARENESS") {
     if (ins.frequency != null && ins.frequency > HIGH_FREQUENCY) {
       gaps.push(`빈도 ${ins.frequency.toFixed(2)}회 — 피로도 높아 자동화 보류`);
@@ -502,9 +514,6 @@ export function assessAutomationReadiness(
       gaps.push(`참여율 ${engagementRate.toFixed(2)}% — 낮아서 먼저 개선 필요`);
     }
   } else {
-    if (ins.clicks < AUTOMATION_MIN_CLICKS) {
-      gaps.push(`클릭 ${ins.clicks.toLocaleString("ko-KR")}회 (목표 ${AUTOMATION_MIN_CLICKS}회)`);
-    }
     if (ins.ctr < LOW_CTR_PCT) {
       gaps.push(`CTR ${pct(ins.ctr)} — 낮아서 먼저 개선 필요`);
     }

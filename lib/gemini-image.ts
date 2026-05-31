@@ -7,10 +7,19 @@ export interface ReferenceImage {
   dataBase64: string; // base64 string without the "data:...;base64," prefix
 }
 
-export interface GenerateImageParams {
+// 생성될 이미지 1장 = variant 1개. prompt 차이가 다양성의 뿌리(Image Concept).
+export interface ImageVariant {
   prompt: string;
-  referenceImages?: ReferenceImage[];
-  count?: number;
+  referenceImages?: ReferenceImage[]; // variant 전용 (예: brief 의 연출컷)
+}
+
+export interface GenerateImageParams {
+  variants: ImageVariant[];
+  referenceImages?: ReferenceImage[]; // 전 variant 공통 (Package Reference 등)
+  // ADR-041 — 공통 referenceImages 의 해석을 가른다.
+  //   true(Product Staging): 제품을 원본 보존(라벨 포함), 주변 씬만 생성.
+  //   false/생략(brief·기본): 기존 style guide 해석(피사체·구도·색감 근사).
+  preserveReference?: boolean;
 }
 
 export interface GenerateImageResult {
@@ -35,7 +44,6 @@ function resolveModels(): string[] {
 // Remembers the first successful model so subsequent calls skip the 404 fallback round-trip.
 // Resets on process restart.
 let preferredModel: string | null = null;
-const DEFAULT_COUNT = 3;
 const MAX_COUNT = 4;
 // 100 ms stagger is enough for 3 concurrent calls without hitting Gemini RPM limits.
 const STAGGER_MS = 100;
@@ -56,9 +64,18 @@ export function sanitizeRefs(raw: unknown): ReferenceImage[] | undefined {
 // TODO(PRD): fix output aspect ratio to 1:1 via config.imageConfig.aspectRatio once confirmed
 //            supported by this SDK version. (Current model default is approximately square.)
 
-const AD_CONTEXT = "Generate a high-quality commercial ad image for Meta.";
+const AD_CONTEXT =
+  "Generate a high-quality commercial product ad image for a social media campaign. " +
+  "Do NOT render any text, letters, words, numbers, logos, watermarks, or brand names anywhere in the image — " +
+  "not on the product packaging, label, or background. The product must be clean and unbranded.";
 const REF_STYLE_GUIDE =
   "Use the reference image as the primary visual style guide. Keep the subject, composition, and color palette close to the reference.";
+// ADR-041 — Product Staging. 레퍼런스 = 실제 제품. 다시 그리지 말고 원본 보존, 주변 씬만 생성.
+const PRESERVE_PRODUCT =
+  "Generate a high-quality commercial product ad image for a social media campaign. " +
+  "The reference image is the ACTUAL product. Preserve the product exactly as shown — keep its real label, logo, text, packaging, shape, and colors completely unchanged. Do NOT redraw, restyle, or remove any branding on the product. " +
+  "There must be EXACTLY ONE product in the image — the product from the reference. Do NOT add, draw, duplicate, or invent any other or additional product, bottle, jar, tube, pump, or container. If the scene direction mentions a product, it refers ONLY to this same reference product, never a second one. " +
+  "Generate only the surrounding scene around the product. Do NOT add any other text, letters, words, numbers, watermarks, or third-party logos anywhere in the background.";
 
 type ContentPart =
   | { text: string }
@@ -72,12 +89,16 @@ function requireEnv(key: string): string {
   return v;
 }
 
-function buildContents(prompt: string, refs: ReferenceImage[]): ContentPart[] {
+// variant prompt + (공통 + variant 전용) 레퍼런스를 합쳐 한 슬롯의 contents 를 만든다.
+// preserve(ADR-041): 레퍼런스가 있을 때만 의미 — 제품 원본 보존 프롬프트로 분기.
+export function buildVariantContents(prompt: string, refs: ReferenceImage[], preserve = false): ContentPart[] {
   const hasRefs = refs.length > 0;
   const hasPrompt = !!prompt;
 
   let text: string;
-  if (hasRefs && hasPrompt) {
+  if (preserve && hasRefs) {
+    text = hasPrompt ? `${PRESERVE_PRODUCT}\nScene direction: ${prompt}` : PRESERVE_PRODUCT;
+  } else if (hasRefs && hasPrompt) {
     text = `${AD_CONTEXT}\n${REF_STYLE_GUIDE}\nAdditional creative direction: ${prompt}`;
   } else if (hasRefs) {
     text = `${AD_CONTEXT}\n${REF_STYLE_GUIDE}`;
@@ -178,6 +199,32 @@ async function generateSlot(
   return null;
 }
 
+interface NormalizedVariant {
+  prompt: string;
+  referenceImages: ReferenceImage[];
+}
+
+// variants[] + 공통 referenceImages 를 정규화한다. variant 가 없거나 전부 (prompt·공통ref·전용ref)
+// 무엇도 없으면 throw — SSE/route 에서 400 으로 surface. count 는 MAX_COUNT 로 cap.
+export function normalizeVariants(params: GenerateImageParams): {
+  variants: NormalizedVariant[];
+  common: ReferenceImage[];
+} {
+  const common = sanitizeRefs(params.referenceImages) ?? [];
+  const list = Array.isArray(params.variants) ? params.variants : [];
+  const variants: NormalizedVariant[] = list.slice(0, MAX_COUNT).map((v) => ({
+    prompt: typeof v?.prompt === "string" ? v.prompt.trim() : "",
+    referenceImages: sanitizeRefs(v?.referenceImages) ?? [],
+  }));
+  const renderable = variants.some(
+    (v) => v.prompt || v.referenceImages.length > 0 || common.length > 0,
+  );
+  if (variants.length === 0 || !renderable) {
+    throw new Error("프롬프트 또는 레퍼런스 이미지를 입력해주세요.");
+  }
+  return { variants, common };
+}
+
 export const geminiImage = {
   get isConfigured() {
     return !!process.env.GOOGLE_AI_API_KEY;
@@ -187,19 +234,16 @@ export const geminiImage = {
     params: GenerateImageParams,
     onImage: (index: number, dataUrl: string) => void,
   ): Promise<void> {
-    const prompt = params.prompt?.trim() ?? "";
-    const refs = Array.isArray(params.referenceImages) ? params.referenceImages : [];
-    if (!prompt && refs.length === 0) throw new Error("프롬프트 또는 레퍼런스 이미지를 입력해주세요.");
-
+    const { variants, common } = normalizeVariants(params);
+    const preserve = !!params.preserveReference;
     const apiKey = requireEnv("GOOGLE_AI_API_KEY");
-    const count = Math.max(1, Math.min(MAX_COUNT, params.count ?? DEFAULT_COUNT));
     const ai = new GoogleGenAI({ apiKey });
-    const contents = buildContents(prompt, refs);
 
     let hasAny = false;
     await Promise.all(
-      Array.from({ length: count }, (_, i) =>
+      variants.map((v, i) =>
         sleep(i * STAGGER_MS).then(async () => {
+          const contents = buildVariantContents(v.prompt, [...common, ...v.referenceImages], preserve);
           const img = await generateSlot(ai, contents, i);
           if (img) {
             hasAny = true;
@@ -216,19 +260,16 @@ export const geminiImage = {
   },
 
   async generate(params: GenerateImageParams): Promise<GenerateImageResult> {
-    const prompt = params.prompt?.trim() ?? "";
-    const refs = Array.isArray(params.referenceImages) ? params.referenceImages : [];
-    if (!prompt && refs.length === 0) throw new Error("프롬프트 또는 레퍼런스 이미지를 입력해주세요.");
-
+    const { variants, common } = normalizeVariants(params);
+    const preserve = !!params.preserveReference;
     const apiKey = requireEnv("GOOGLE_AI_API_KEY");
-    const count = Math.max(1, Math.min(MAX_COUNT, params.count ?? DEFAULT_COUNT));
-
     const ai = new GoogleGenAI({ apiKey });
-    const contents = buildContents(prompt, refs);
 
     const results = await Promise.all(
-      Array.from({ length: count }, (_, i) =>
-        sleep(i * STAGGER_MS).then(() => generateSlot(ai, contents, i)),
+      variants.map((v, i) =>
+        sleep(i * STAGGER_MS).then(() =>
+          generateSlot(ai, buildVariantContents(v.prompt, [...common, ...v.referenceImages], preserve), i),
+        ),
       ),
     );
 

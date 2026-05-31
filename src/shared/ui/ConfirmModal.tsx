@@ -36,8 +36,14 @@ export default function ConfirmModal({
               width: 44,
               height: 44,
               borderRadius: 12,
-              background: tone === "danger" ? "rgba(255,66,66,0.10)" : "var(--w-primary-soft)",
-              color: tone === "danger" ? "var(--w-status-negative)" : "var(--w-primary-press)",
+              background:
+                tone === "danger"
+                  ? "rgba(255,66,66,0.10)"
+                  : "var(--w-primary-soft)",
+              color:
+                tone === "danger"
+                  ? "var(--w-status-negative)"
+                  : "var(--w-primary-press)",
               display: "grid",
               placeItems: "center",
               marginBottom: 14,
@@ -45,10 +51,23 @@ export default function ConfirmModal({
           >
             <Icon name={tone === "danger" ? "warn" : "info"} size={20} />
           </div>
-          <h3 style={{ font: "700 17px/1.35 var(--w-font-display)", color: "var(--w-fg-strong)", letterSpacing: "-0.01em", margin: 0 }}>
+          <h3
+            style={{
+              font: "700 17px/1.35 var(--w-font-display)",
+              color: "var(--w-fg-strong)",
+              letterSpacing: "-0.01em",
+              margin: 0,
+            }}
+          >
             {title}
           </h3>
-          <div style={{ font: "500 13.5px/1.6 var(--w-font-sans)", color: "var(--w-fg-neutral)", margin: "10px 0 0" }}>
+          <div
+            style={{
+              font: "500 13.5px/1.6 var(--w-font-sans)",
+              color: "var(--w-fg-neutral)",
+              margin: "10px 0 0",
+            }}
+          >
             {desc}
           </div>
         </div>
@@ -56,7 +75,11 @@ export default function ConfirmModal({
           <Button variant="ghost" type="button" onClick={onClose}>
             {cancelLabel}
           </Button>
-          <Button variant={tone === "danger" ? "danger" : "primary"} type="button" onClick={onConfirm}>
+          <Button
+            variant={tone === "danger" ? "danger" : "primary"}
+            type="button"
+            onClick={onConfirm}
+          >
             {confirmLabel}
           </Button>
         </div>
