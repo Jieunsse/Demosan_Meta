@@ -7,6 +7,7 @@ import Icon from "./Icon";
 export interface SelectOption {
   value: string;
   label: string;
+  disabled?: boolean;
 }
 
 interface Props {
@@ -16,9 +17,18 @@ interface Props {
   placeholder?: string;
 }
 
-export function Select({ value, onChange, options, placeholder = "선택해주세요" }: Props) {
+export function Select({
+  value,
+  onChange,
+  options,
+  placeholder = "선택해주세요",
+}: Props) {
   const [open, setOpen] = useState(false);
-  const [rect, setRect] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [rect, setRect] = useState<{
+    top: number;
+    left: number;
+    width: number;
+  } | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -31,7 +41,8 @@ export function Select({ value, onChange, options, placeholder = "선택해주�
     reposition();
     function onDown(e: MouseEvent) {
       const t = e.target as Node;
-      if (triggerRef.current?.contains(t) || menuRef.current?.contains(t)) return;
+      if (triggerRef.current?.contains(t) || menuRef.current?.contains(t))
+        return;
       setOpen(false);
     }
     document.addEventListener("mousedown", onDown);
@@ -84,58 +95,90 @@ export function Select({ value, onChange, options, placeholder = "선택해주�
         />
       </button>
 
-      {open && rect && createPortal(
-        <div
-          ref={menuRef}
-          className="adflow"
-          style={{
-            position: "fixed",
-            top: rect.top,
-            left: rect.left,
-            width: rect.width,
-            zIndex: 1000,
-            background: "var(--w-bg-elevated)",
-            border: "1px solid var(--w-line-normal)",
-            borderRadius: 12,
-            boxShadow: "0 8px 24px rgba(23,23,23,0.10)",
-            padding: 4,
-            display: "flex",
-            flexDirection: "column",
-          }}
-        >
-          {options.map((o) => {
-            const active = o.value === value;
-            return (
-              <button
-                key={o.value}
-                type="button"
-                onClick={() => { onChange(o.value); setOpen(false); }}
-                style={{
-                  width: "100%",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  padding: "10px 12px",
-                  borderRadius: 8,
-                  border: "none",
-                  background: active ? "var(--w-primary-soft)" : "transparent",
-                  color: active ? "var(--w-primary-press)" : "var(--w-fg-normal)",
-                  font: "500 14px/1 var(--w-font-sans)",
-                  cursor: "pointer",
-                  textAlign: "left",
-                  transition: "background 100ms ease",
-                }}
-                onMouseEnter={(e) => { if (!active) (e.currentTarget as HTMLButtonElement).style.background = "var(--w-bg-neutral)"; }}
-                onMouseLeave={(e) => { if (!active) (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
-              >
-                <span>{o.label}</span>
-                {active && <Icon name="check" size={14} style={{ color: "var(--w-primary-normal)", flexShrink: 0 }} />}
-              </button>
-            );
-          })}
-        </div>,
-        document.body
-      )}
+      {open &&
+        rect &&
+        createPortal(
+          <div
+            ref={menuRef}
+            className="adflow"
+            style={{
+              position: "fixed",
+              top: rect.top,
+              left: rect.left,
+              width: rect.width,
+              minHeight: 0,
+              zIndex: 1000,
+              background: "var(--w-bg-elevated)",
+              border: "1px solid var(--w-line-normal)",
+              borderRadius: 12,
+              boxShadow: "0 8px 24px rgba(23,23,23,0.10)",
+              padding: 4,
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
+            {options.map((o) => {
+              const active = o.value === value;
+              const disabled = !!o.disabled;
+              return (
+                <button
+                  key={o.value}
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => {
+                    if (disabled) return;
+                    onChange(o.value);
+                    setOpen(false);
+                  }}
+                  style={{
+                    width: "100%",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    padding: "10px 12px",
+                    borderRadius: 8,
+                    border: "none",
+                    background: active
+                      ? "var(--w-primary-soft)"
+                      : "transparent",
+                    color: disabled
+                      ? "var(--w-fg-alternative)"
+                      : active
+                        ? "var(--w-primary-press)"
+                        : "var(--w-fg-normal)",
+                    font: "500 14px/1 var(--w-font-sans)",
+                    cursor: disabled ? "not-allowed" : "pointer",
+                    textAlign: "left",
+                    transition: "background 100ms ease",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!active && !disabled)
+                      (e.currentTarget as HTMLButtonElement).style.background =
+                        "var(--w-bg-neutral)";
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!active && !disabled)
+                      (e.currentTarget as HTMLButtonElement).style.background =
+                        "transparent";
+                  }}
+                >
+                  <span>{o.label}</span>
+                  {active && (
+                    <Icon
+                      name="check"
+                      size={14}
+                      style={{
+                        color: "var(--w-primary-normal)",
+                        flexShrink: 0,
+                      }}
+                    />
+                  )}
+                </button>
+              );
+            })}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

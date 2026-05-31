@@ -65,7 +65,9 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
               animation: "toast-in 0.2s ease",
             }}
           >
-            <span aria-hidden="true" style={{ color: "var(--warning)" }}>⚠</span>
+            <span aria-hidden="true" style={{ color: "var(--warning)" }}>
+              ⚠
+            </span>
             {t.message}
           </p>
         ))}
