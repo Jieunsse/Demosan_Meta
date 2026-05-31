@@ -1,42 +1,9 @@
 // Server-side only. IG 포스트 페이지 전용 — 캡션 / 이미지 프롬프트를 짧게 제안.
 
-import { GoogleGenerativeAI } from "@google/generative-ai";
-
-const TEXT_MODELS = ["gemini-2.0-flash", "gemini-2.5-flash"];
-
-function requireEnv(key: string): string {
-  const v = process.env[key];
-  if (!v) throw new Error(`${key} 가 .env.local 에 설정되지 않았어요.`);
-  return v;
-}
-
-function is503(err: unknown): boolean {
-  return err instanceof Error && err.message.includes("503");
-}
+import { generateGeminiText, isGeminiConfigured } from "./gemini-client";
 
 function stripHanja(text: string): string {
   return text.replace(/[一-鿿]/g, "");
-}
-
-async function generateText(prompt: string, json: boolean): Promise<string> {
-  const apiKey = requireEnv("GOOGLE_AI_API_KEY");
-  for (const modelName of TEXT_MODELS) {
-    try {
-      const model = new GoogleGenerativeAI(apiKey).getGenerativeModel({
-        model: modelName,
-        generationConfig: json ? { responseMimeType: "application/json" } : undefined,
-      });
-      const result = await model.generateContent(prompt);
-      return result.response.text();
-    } catch (err) {
-      if (is503(err) && modelName !== TEXT_MODELS[TEXT_MODELS.length - 1]) {
-        await new Promise((r) => setTimeout(r, 1500));
-        continue;
-      }
-      throw err;
-    }
-  }
-  throw new Error("모든 AI 모델이 일시적으로 응답하지 않아요. 잠시 후 다시 시도해주세요.");
 }
 
 export interface BrandContext {
@@ -87,11 +54,11 @@ JSON 만 출력:
 
 export const geminiPostSuggest = {
   get isConfigured() {
-    return !!process.env.GOOGLE_AI_API_KEY;
+    return isGeminiConfigured();
   },
 
   async suggestCaption(hint: string, ctx?: BrandContext): Promise<string> {
-    const text = await generateText(CAPTION_PROMPT(hint, ctx), true);
+    const text = await generateGeminiText(CAPTION_PROMPT(hint, ctx), { json: true });
     let parsed: { caption?: unknown };
     try { parsed = JSON.parse(text); } catch { throw new Error("AI 응답을 파싱할 수 없어요."); }
     const caption = typeof parsed.caption === "string" ? stripHanja(parsed.caption).trim() : "";
@@ -100,7 +67,7 @@ export const geminiPostSuggest = {
   },
 
   async suggestImagePrompt(hint: string, caption: string, ctx?: BrandContext): Promise<string> {
-    const text = await generateText(IMAGE_PROMPT_PROMPT(hint, caption, ctx), true);
+    const text = await generateGeminiText(IMAGE_PROMPT_PROMPT(hint, caption, ctx), { json: true });
     let parsed: { prompt?: unknown };
     try { parsed = JSON.parse(text); } catch { throw new Error("AI 응답을 파싱할 수 없어요."); }
     const prompt = typeof parsed.prompt === "string" ? stripHanja(parsed.prompt).trim() : "";
