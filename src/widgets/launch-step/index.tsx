@@ -10,15 +10,14 @@ import { useCreativeDraft } from "@entities/creative/model";
 import { useLaunchDraft, type LaunchParams, type LaunchResponse } from "@entities/campaign/model";
 import { saveLaunchedCampaign } from "@entities/campaign/launched-storage";
 import { createBrowseCampaign } from "@entities/campaign/browse/seed";
-import type { MetaObjectiveParam } from "@/lib/meta-ads";
 import { type ObjectivePhase1Id } from "@entities/creative/options";
 import { isBoost, goalDefOf } from "@entities/creative/outcome-routing";
-import { LAUNCH_PROFILES } from "@entities/launch-objective/profile";
+import { profileOf } from "@entities/launch-objective/profile";
 import { useApiMutation } from "@shared/lib/api/useApiMutation";
 import { addNotification } from "@shared/lib/notifications";
 import { useAutoRelaunch } from "@shared/lib/autoRelaunch";
 import { useToast } from "@shared/ui/Toast";
-import { validateAdImage, buildLaunchParams, buildLaunchedCampaign, launchSuccessMessage } from "@features/launch-campaign/build";
+import { validateAdImage, buildLaunchParams, buildLaunchedCampaign, launchSuccessMessage, planBrowseLaunch } from "@features/launch-campaign/build";
 import { Card } from "@shared/ui/Card";
 import { Button } from "@shared/ui/Button";
 import Icon from "@shared/ui/Icon";
@@ -72,9 +71,7 @@ export default function LaunchStep({ onNext, goSettings, goCreative, brandName }
   const outcomeChip = creative.state.outcome;
   const isBoostPost = isBoost(outcomeChip);
   const goalDef = goalDefOf(outcomeChip);
-  const profile = outcomeChip && outcomeChip in LAUNCH_PROFILES
-    ? LAUNCH_PROFILES[outcomeChip as ObjectivePhase1Id]
-    : null;
+  const profile = profileOf(outcomeChip);
 
   // PRD-objective-aware-launch §5.2 — 목표 변경 시 호환 보존·종속 리셋 + toast.
   const prevOutcomeRef = useRef(outcomeChip);
@@ -124,38 +121,13 @@ export default function LaunchStep({ onNext, goSettings, goCreative, brandName }
     }
     const params = buildLaunchParams(creative.state, state, { skipAdCreation, brandName });
     if (browseMode) {
-      const ts = Date.now();
-      const abEnabled = !!params.abTestEnabled && !!params.abTestAxis && !!params.abTestVariantB;
-      const mock = {
-        campaignId: `cmp_browse_${ts}`,
-        adSetId: `adset_browse_${ts}`,
-        ...(abEnabled
-          ? { adIds: [`ad_browse_${ts}_a`, `ad_browse_${ts}_b`] as [string, string] }
-          : skipAdCreation ? {} : { adId: `ad_browse_${ts}` }),
-      };
-      const launched = buildLaunchedCampaign(mock, params);
-      dispatch({ type: "SET_LAUNCHED_CAMPAIGN", value: launched });
-      saveLaunchedCampaign(launched);
       // ADR-033 — Browse Mode 시연 레이어. 목록 merge·상세 빨리감기가 이 레코드를 단일 소스로 사용.
-      const BROWSE_OBJECTIVES = new Set<MetaObjectiveParam>(["OUTCOME_TRAFFIC", "OUTCOME_AWARENESS", "OUTCOME_ENGAGEMENT", "OUTCOME_LEADS"]);
-      const objective = BROWSE_OBJECTIVES.has(params.objective as MetaObjectiveParam) ? (params.objective as MetaObjectiveParam) : "OUTCOME_TRAFFIC";
-      createBrowseCampaign({
-        id: mock.campaignId,
-        name: `${(brandName ?? "내 캠페인").trim()} — ${params.headline}`,
-        headline: params.headline,
-        primaryText: params.primaryText,
-        cta: params.cta,
-        imageUrl: params.imageDataUrl ?? "",
-        objective,
-        dailyBudget: params.dailyBudget,
-        startDate: params.startDate,
-        ageMin: params.ageMin,
-        ageMax: params.ageMax,
-        genders: params.genders,
-        countries: params.countries,
-      });
-      addNotification({ type: "launch", message: launchSuccessMessage(params) });
-      if (state.autoRelaunchEnabled) setAutoRelaunch(mock.campaignId, true);
+      const plan = planBrowseLaunch(params, { brandName, ts: Date.now() });
+      dispatch({ type: "SET_LAUNCHED_CAMPAIGN", value: plan.launched });
+      saveLaunchedCampaign(plan.launched);
+      createBrowseCampaign(plan.browseCampaign);
+      addNotification({ type: "launch", message: plan.message });
+      if (state.autoRelaunchEnabled) setAutoRelaunch(plan.launched.campaignId, true);
       // 둘러보기 모드 — 기술적 ID 패널을 건너뛰고 바로 STEP 03 마무리 점검으로.
       onNext();
       return;
