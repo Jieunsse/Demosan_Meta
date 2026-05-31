@@ -9,6 +9,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useCreativeDraft } from "@entities/creative/model";
 import { useLaunchDraft, type LaunchParams, type LaunchResponse } from "@entities/campaign/model";
 import { saveLaunchedCampaign } from "@entities/campaign/launched-storage";
+import { createBrowseCampaign } from "@entities/campaign/browse/seed";
+import type { MetaObjectiveParam } from "@/lib/meta-ads";
 import { OBJECTIVES_PHASE1, type ObjectivePhase1Id } from "@entities/creative/options";
 import { LAUNCH_PROFILES } from "@entities/launch-objective/profile";
 import { useApiMutation } from "@shared/lib/api/useApiMutation";
@@ -43,9 +45,10 @@ interface Props {
   goSettings: () => void;
   /** PRD §5.4.1 — 디테일에서 목표 변경했을 때 STEP 01 카피 다시 만들기 링크 (Q6 결정). */
   goCreative: () => void;
+  brandName?: string;
 }
 
-export default function LaunchStep({ onNext, goSettings, goCreative }: Props) {
+export default function LaunchStep({ onNext, goSettings, goCreative, brandName }: Props) {
   const creative = useCreativeDraft();
   const launch = useLaunchDraft();
   const state = launch.state;
@@ -118,7 +121,7 @@ export default function LaunchStep({ onNext, goSettings, goCreative }: Props) {
       const result = await validateAdImage(state.imageDataUrl);
       if (!result.ok) { showToast(result.reason); return; }
     }
-    const params = buildLaunchParams(creative.state, state, { skipAdCreation });
+    const params = buildLaunchParams(creative.state, state, { skipAdCreation, brandName });
     if (browseMode) {
       const ts = Date.now();
       const abEnabled = !!params.abTestEnabled && !!params.abTestAxis && !!params.abTestVariantB;
@@ -132,8 +135,28 @@ export default function LaunchStep({ onNext, goSettings, goCreative }: Props) {
       const launched = buildLaunchedCampaign(mock, params);
       dispatch({ type: "SET_LAUNCHED_CAMPAIGN", value: launched });
       saveLaunchedCampaign(launched);
+      // ADR-033 — Browse Mode 시연 레이어. 목록 merge·상세 빨리감기가 이 레코드를 단일 소스로 사용.
+      const BROWSE_OBJECTIVES = new Set<MetaObjectiveParam>(["OUTCOME_TRAFFIC", "OUTCOME_AWARENESS", "OUTCOME_ENGAGEMENT", "OUTCOME_LEADS"]);
+      const objective = BROWSE_OBJECTIVES.has(params.objective as MetaObjectiveParam) ? (params.objective as MetaObjectiveParam) : "OUTCOME_TRAFFIC";
+      createBrowseCampaign({
+        id: mock.campaignId,
+        name: `${(brandName ?? "내 캠페인").trim()} — ${params.headline}`,
+        headline: params.headline,
+        primaryText: params.primaryText,
+        cta: params.cta,
+        imageUrl: params.imageDataUrl ?? "",
+        objective,
+        dailyBudget: params.dailyBudget,
+        startDate: params.startDate,
+        ageMin: params.ageMin,
+        ageMax: params.ageMax,
+        genders: params.genders,
+        countries: params.countries,
+      });
       addNotification({ type: "launch", message: launchSuccessMessage(params) });
       if (state.autoRelaunchEnabled) setAutoRelaunch(mock.campaignId, true);
+      // 둘러보기 모드 — 기술적 ID 패널을 건너뛰고 바로 STEP 03 마무리 점검으로.
+      onNext();
       return;
     }
     launchMutation.mutate(params, {
@@ -177,6 +200,7 @@ export default function LaunchStep({ onNext, goSettings, goCreative }: Props) {
   const canSkipLaunch = baseLaunchOk;
 
   const [subStep, setSubStep] = useState<1 | 2 | 3 | 4 | 5>(1);
+  const [modeConfirmed, setModeConfirmed] = useState(false);
   const subSteps = state.mode === "detailed"
     ? [{ n: 1, label: "소재 확인" }, { n: 2, label: "예산 · 일정" }, { n: 3, label: "타겟" }, { n: 4, label: "고급 설정" }, { n: 5, label: "최종 확인" }]
     : [{ n: 1, label: "소재 확인" }, { n: 2, label: "예산 · 일정" }, { n: 3, label: "타겟" }, { n: 4, label: "최종 확인" }];
@@ -186,69 +210,102 @@ export default function LaunchStep({ onNext, goSettings, goCreative }: Props) {
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1.25fr 1fr", gap: 20, alignItems: "flex-start" }}>
       <Card variant="lg">
-        <SubStepIndicator steps={subSteps} current={subStep} onStepClick={(n) => setSubStep(n as 1 | 2 | 3 | 4 | 5)} />
-        <hr className="h-px bg-[var(--w-line-neutral)] border-0" style={{ margin: "0 0 20px" }} />
-
-        {subStep === 1 && (
+        {!modeConfirmed ? (
           <>
+            <div className="mb-4">
+              <p className="font-bold text-[15px] leading-[1.4] text-[var(--w-fg-strong)] mb-1">집행 방식을 선택해 주세요</p>
+              <p className="font-medium text-[13px] leading-[1.5] text-[var(--w-fg-neutral)] m-0">나중에도 변경할 수 있어요.</p>
+            </div>
             <ModeToggle />
-            <CreativePreview />
-            <hr className="h-px bg-[var(--w-line-neutral)] my-[18px] border-0" />
-            <DestinationField />
-            {profile?.uniqueSections.includes("call_schedule") && (
-              <><hr className="h-px bg-[var(--w-line-neutral)] my-[18px] border-0" /><CallScheduleSection /></>
-            )}
-            {profile?.uniqueSections.includes("messages_auto_reply") && (
-              <><hr className="h-px bg-[var(--w-line-neutral)] my-[18px] border-0" /><MessagesAutoReplyCallout /></>
-            )}
-            {profile?.uniqueSections.includes("page_activity") && (
-              <><hr className="h-px bg-[var(--w-line-neutral)] my-[18px] border-0" /><PageActivityCallout /></>
-            )}
-            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 24 }}>
-              <Button variant="primary" type="button" onClick={() => setSubStep(2)}>
-                다음 <Icon name="arrow-right" size={14} />
+            <div style={{ display: "flex", justifyContent: "center", marginTop: 8 }}>
+              <Button variant="primary" size="lg" type="button" onClick={() => setModeConfirmed(true)} style={{ minWidth: 240 }}>
+                다음
               </Button>
             </div>
           </>
-        )}
-
-        {subStep === 2 && (
-          <BudgetScheduleStep onBack={() => setSubStep(1)} onNext={() => setSubStep(3)} />
-        )}
-
-        {subStep === 3 && (
-          <TargetStep onBack={() => setSubStep(2)} onNext={() => setSubStep(4)} />
-        )}
-
-        {subStep === 4 && state.mode === "detailed" && (
+        ) : (
           <>
-            <ObjectivePicker goCreative={goCreative} />
-            <hr className="h-px bg-[var(--w-line-neutral)] my-[18px] border-0" />
-            <DetailKnobs />
-            <div className="flex items-center justify-between gap-3" style={{ marginTop: 24 }}>
-              <Button variant="secondary" type="button" onClick={() => setSubStep(3)}>
-                <Icon name="arrow-left" size={14} /> 이전
-              </Button>
-              <Button variant="primary" type="button" onClick={() => setSubStep(5)}>
-                다음 <Icon name="arrow-right" size={14} />
-              </Button>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <span className="font-semibold text-[13px] text-[var(--w-fg-neutral)]">집행 방식</span>
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[var(--w-accent-violet-soft)] text-[var(--w-accent-violet)] font-semibold text-[12px]">
+                  {state.mode === "simple" ? "간단 설정" : "디테일 설정"}
+                </span>
+              </div>
+              <button
+                type="button"
+                className="font-medium text-[12px] text-[var(--w-fg-neutral)] underline underline-offset-2 cursor-pointer"
+                onClick={() => setModeConfirmed(false)}
+              >
+                변경
+              </button>
             </div>
-          </>
-        )}
+            <SubStepIndicator steps={subSteps} current={subStep} onStepClick={(n) => setSubStep(n as 1 | 2 | 3 | 4 | 5)} />
+            <hr className="h-px bg-[var(--w-line-neutral)] border-0" style={{ margin: "0 0 20px" }} />
 
-        {((subStep === 4 && state.mode !== "detailed") || subStep === 5) && (
-          <ConfirmStep
-            onBack={() => setSubStep(state.mode === "detailed" ? 4 : 3)}
-            canLaunch={canLaunch}
-            canSkipLaunch={canSkipLaunch}
-            onLaunch={handleLaunch}
-            onSkipLaunch={handleSkipAdLaunch}
-            mutation={launchMutation}
-            goSettings={goSettings}
-            devModeOn={devModeOn}
-            testAccountActive={testAccountActive}
-            testAccountId={testAccountId}
-          />
+            {subStep === 1 && (
+              <>
+                <CreativePreview />
+                <hr className="h-px bg-[var(--w-line-neutral)] my-[18px] border-0" />
+                <DestinationField />
+                {profile?.uniqueSections.includes("call_schedule") && (
+                  <><hr className="h-px bg-[var(--w-line-neutral)] my-[18px] border-0" /><CallScheduleSection /></>
+                )}
+                {profile?.uniqueSections.includes("messages_auto_reply") && (
+                  <><hr className="h-px bg-[var(--w-line-neutral)] my-[18px] border-0" /><MessagesAutoReplyCallout /></>
+                )}
+                {profile?.uniqueSections.includes("page_activity") && (
+                  <><hr className="h-px bg-[var(--w-line-neutral)] my-[18px] border-0" /><PageActivityCallout /></>
+                )}
+                <div className="flex items-center justify-between gap-3" style={{ marginTop: 24 }}>
+                  <Button variant="secondary" type="button" onClick={() => setModeConfirmed(false)}>
+                    이전
+                  </Button>
+                  <Button variant="primary" type="button" onClick={() => setSubStep(2)}>
+                    다음
+                  </Button>
+                </div>
+              </>
+            )}
+
+            {subStep === 2 && (
+              <BudgetScheduleStep onBack={() => setSubStep(1)} onNext={() => setSubStep(3)} />
+            )}
+
+            {subStep === 3 && (
+              <TargetStep onBack={() => setSubStep(2)} onNext={() => setSubStep(4)} />
+            )}
+
+            {subStep === 4 && state.mode === "detailed" && (
+              <>
+                <ObjectivePicker goCreative={goCreative} />
+                <hr className="h-px bg-[var(--w-line-neutral)] my-[18px] border-0" />
+                <DetailKnobs />
+                <div className="flex items-center justify-between gap-3" style={{ marginTop: 24 }}>
+                  <Button variant="secondary" type="button" onClick={() => setSubStep(3)}>
+                    이전
+                  </Button>
+                  <Button variant="primary" type="button" onClick={() => setSubStep(5)}>
+                    다음
+                  </Button>
+                </div>
+              </>
+            )}
+
+            {((subStep === 4 && state.mode !== "detailed") || subStep === 5) && (
+              <ConfirmStep
+                onBack={() => setSubStep(state.mode === "detailed" ? 4 : 3)}
+                canLaunch={canLaunch}
+                canSkipLaunch={canSkipLaunch}
+                onLaunch={handleLaunch}
+                onSkipLaunch={handleSkipAdLaunch}
+                mutation={launchMutation}
+                goSettings={goSettings}
+                devModeOn={devModeOn}
+                testAccountActive={testAccountActive}
+              />
+            )}
+          </>
         )}
       </Card>
 

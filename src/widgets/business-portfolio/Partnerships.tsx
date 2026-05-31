@@ -111,12 +111,12 @@ function PartnershipCard({ item }: { item: BrandedContentItem }) {
               className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[var(--w-accent-violet)] font-semibold text-[12.5px] leading-none no-underline"
               style={{ color: "#fff" }}
             >
-              <Icon name="megaphone" size={13} /> 광고로 집행
+              광고집행
             </Link>
           ) : (
             <>
               <button type="button" disabled className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg font-semibold text-[12.5px] leading-none" style={{ background: "var(--w-bg-alternative)", color: "var(--w-fg-neutral)", border: "none", cursor: "not-allowed" }}>
-                <Icon name="megaphone" size={13} /> 광고로 집행
+                광고집행
               </button>
               <span style={{ font: "500 11.5px/1.4 var(--w-font-sans)", color: "var(--w-fg-neutral)" }}>{item.ineligibilityReason}</span>
             </>

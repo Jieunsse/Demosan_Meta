@@ -16,7 +16,7 @@ import { getMockCampaign, getMockCampaignAdIds, seedMockAdRows } from "@/lib/moc
 import Icon from "@shared/ui/Icon";
 import { useToast } from "@shared/ui/Toast";
 import { useLibrary } from "@shared/lib/library";
-import { TONES, CTAS, OBJECTIVES_ALL, type CtaId } from "@entities/creative/options";
+import { TONES, CTAS, OBJECTIVES_ALL, type CtaId, type CopyHook } from "@entities/creative/options";
 import Stepper from "./_components/Stepper";
 import GoalIntro from "@widgets/goal-intro";
 import CreativeStep from "@widgets/creative-step";
@@ -25,6 +25,7 @@ import PostLaunchChecklist from "@widgets/post-launch-checklist";
 import { autoModeFromObjective } from "@features/switch-mode/objective-routing";
 import { readBrandProfile, readActiveBrandProfileEntry } from "@features/brand-profile/model/useBrandProfileStorage";
 import { readPersonas } from "@features/brand-profile/model/usePersonasStorage";
+import { mergePersonaTargeting } from "@features/brand-profile/model/mergePersonaTargeting";
 
 const GRADIENTS = [
   "linear-gradient(135deg, #0066ff 0%, #6541f2 60%, #00bdde 100%)",
@@ -150,9 +151,14 @@ export default function CreatePage() {
   const [productIdRaw, setProductIdRaw] = useSessionStorage("adflow_productId", "");
   const productId = productIdRaw || null;
   const setProductId = (id: string | null) => setProductIdRaw(id ?? "");
+  const [selectedCopyRefIds, setSelectedCopyRefIds] = useState<string[]>([]);
+  // 카피 훅 (ADR-029) — outcome 추천 풀이 기본값. 디테일 유저가 InputForm 에서 교체 가능.
+  const [hooks, setHooks] = useState<CopyHook[]>([]);
   const [displayedHeadlines, setDisplayedHeadlines] = useState<string[] | null>(null);
   const [headlineIdx, setHeadlineIdx] = useState(0);
   const [displayedPrimaryTexts, setDisplayedPrimaryTexts] = useState<[string, string, string] | null>(null);
+  const [displayedHooks, setDisplayedHooks] = useState<[CopyHook, CopyHook, CopyHook] | null>(null);
+  const [proofPointsCited, setProofPointsCited] = useState<[boolean, boolean, boolean] | null>(null);
   const [primaryTextIdx, setPrimaryTextIdx] = useState(0);
   const [elapsed, setElapsed] = useState(0);
   const [savedId, setSavedId] = useState<string | null>(null);
@@ -165,6 +171,11 @@ export default function CreatePage() {
   useEffect(() => {
     setSavedId(null);
   }, [displayedHeadlines, headlineIdx, creative.state.primaryText, creative.state.cta]);
+
+  // 카피 훅 = 사용자가 칩으로 직접 채움. outcome 바뀌면 비움(빈 칸은 생성 시 AI가 결정).
+  useEffect(() => {
+    setHooks([]);
+  }, [creative.state.outcome]);
 
   // 둘러보기 모드 1회 자동 시드 — 비어있는 입력값에만 placeholder 텍스트를 채워 데모 진입을 매끄럽게.
   useEffect(() => {
@@ -225,7 +236,7 @@ export default function CreatePage() {
     const startedAt = Date.now();
     const bp = readBrandProfile();
     const bpEntry = readActiveBrandProfileEntry();
-    const isCustomBrandMode = (() => { try { return sessionStorage.getItem("adflow_brand_mode") === "custom"; } catch { return false; } })();
+    const isCustomBrandMode = (() => { try { return sessionStorage.getItem("adflow_input_mode") === "custom"; } catch { return false; } })();
     const personaEntry = personaId ? readPersonas().find((pe) => pe.id === personaId) : undefined;
     const productEntry = productId
       ? (() => {
@@ -235,6 +246,12 @@ export default function CreatePage() {
           } catch { return undefined; }
         })()
       : undefined;
+    const selectedCopyTexts = selectedCopyRefIds.length > 0
+      ? (bpEntry?.copyReferences ?? [])
+          .filter((r) => selectedCopyRefIds.includes(r.id))
+          .map((r) => r.text)
+      : undefined;
+
     generateMutation.mutate(
       {
         brand: isCustomBrandMode ? (brand || bp.brandDescription || "") : (bp.brandDescription || brand),
@@ -242,15 +259,20 @@ export default function CreatePage() {
         tone: bp.tone ?? creative.state.tone,
         outcome: creative.state.outcome,
         hint: creative.state.outcomeHint,
+        hooks: hooks.length === 3 ? hooks : undefined,
         brandProfile: isCustomBrandMode ? {
           brandVoice: bp.brandVoice,
           customerVoiceSummary: bp.customerVoiceSummary,
           policy: bpEntry?.policy,
+          copyReferences: selectedCopyTexts,
+          proofPoints: bp.proofPoints,
         } : {
           brandDescription: bp.brandDescription,
           brandVoice: bp.brandVoice,
           customerVoiceSummary: bp.customerVoiceSummary,
           policy: bpEntry?.policy,
+          copyReferences: selectedCopyTexts,
+          proofPoints: bp.proofPoints,
         },
         persona: personaEntry
           ? {
@@ -272,13 +294,18 @@ export default function CreatePage() {
           setDisplayedHeadlines(data.headlines);
           setHeadlineIdx(0);
           setDisplayedPrimaryTexts(data.primaryTexts);
+          setDisplayedHooks(data.hooks);
+          setProofPointsCited(data.proofPointsCited ?? null);
           setPrimaryTextIdx(0);
           creative.dispatch({ type: "SET_HEADLINE", headline: data.headlines[0] });
           // PRD §5.4.2 (5) — STEP 02 디테일 A/B 시험 B안 풀로 사용. 재생성 시 후보 교체 → DetailKnobs 의 sync useEffect 가 B안 reset.
           creative.dispatch({ type: "SET_HEADLINE_CANDIDATES", candidates: data.headlines });
           creative.dispatch({ type: "SET_PRIMARY_TEXT_CANDIDATES", candidates: data.primaryTexts });
           creative.dispatch({ type: "SET_PRIMARY_TEXT", primaryText: data.primaryTexts[0] });
-          creative.dispatch({ type: "SET_TARGETING", targeting: data.targeting });
+          // ADR-022 — AI 추천 위에 페르소나 명시 필드만 override. 비운 필드는 AI 추천 유지.
+          const merged = mergePersonaTargeting(data.targeting, personaEntry);
+          creative.dispatch({ type: "SET_TARGETING", targeting: merged.targeting });
+          creative.dispatch({ type: "SET_TARGETING_SOURCE", source: merged.source });
           setElapsed(Math.round((Date.now() - startedAt) / 100) / 10);
         },
         onError: (err) => {
@@ -352,8 +379,11 @@ export default function CreatePage() {
   // PRD §13.10.6 — intro 완료 여부로 분기. 카드 클릭만으론 자동 진입 안 함, "다음" 버튼이 명시적 commit.
   const showIntro = !introCompleted;
 
+  // 둘러보기 모드 — 콘텐츠를 화면 세로 중앙에 배치 (빈 공간 있을 때만 중앙, 길면 위부터)
+  const browseMode = !!session?.browseMode;
+
   return (
-    <div className="px-12 py-9 pb-16 max-w-[1280px] w-full mx-auto flex flex-col gap-7 min-h-[calc(100vh-64px)]" data-screen-label="광고 만들기">
+    <div className={`px-12 py-9 pb-16 max-w-[1280px] w-full mx-auto flex flex-col gap-7 min-h-[calc(100vh-64px)]${browseMode ? " justify-center" : ""}`} data-screen-label="광고 만들기">
       <div className="flex justify-between items-end gap-6">
         <div>
           <span className="font-semibold text-[11px] leading-[1.45] tracking-[0.04em] uppercase text-[var(--w-fg-neutral)]">광고 만들기</span>
@@ -391,14 +421,10 @@ export default function CreatePage() {
       )}
 
       {showIntro ? (
-        <div className="flex flex-1 items-center justify-center">
-          <div className="w-full">
-            <GoalIntro onNext={() => {
-              setIntroCompleted(true);
-              setStep(creative.state.outcome === 'boost_post' ? 1 : 0);
-            }} />
-          </div>
-        </div>
+        <GoalIntro onNext={() => {
+          setIntroCompleted(true);
+          setStep(creative.state.outcome === 'boost_post' ? 1 : 0);
+        }} />
       ) : (
         <>
           <Stepper step={step} setStep={setStep} completed={completed} stepValid={stepValid} />
@@ -418,6 +444,12 @@ export default function CreatePage() {
               onChangeOutcome={handleChangeOutcome}
               generating={generating}
               generated={generated}
+              selectedCopyRefIds={selectedCopyRefIds}
+              setSelectedCopyRefIds={setSelectedCopyRefIds}
+              hooks={hooks}
+              setHooks={setHooks}
+              displayedHooks={displayedHooks}
+              proofPointsCited={proofPointsCited}
               headlines={displayedHeadlines}
               headlineIdx={headlineIdx}
               onSelectHeadline={handleSelectHeadline}
@@ -437,10 +469,13 @@ export default function CreatePage() {
                 if (personaId) {
                   const pe = readPersonas().find((p) => p.id === personaId);
                   if (pe) {
-                    creative.dispatch({
-                      type: "SET_TARGETING",
-                      targeting: { ageMin: pe.ageMin ?? 18, ageMax: pe.ageMax ?? 65, genders: pe.genders ?? [] },
-                    });
+                    // 생성을 안 했으면 AI 추천이 없으므로 기본값 baseline 위에 페르소나 override.
+                    // 생성했다면 onSuccess 에서 이미 merge 됐으니 그대로 둠.
+                    if (!creative.state.targeting) {
+                      const merged = mergePersonaTargeting({ ageMin: 18, ageMax: 65, genders: [] }, pe);
+                      creative.dispatch({ type: "SET_TARGETING", targeting: merged.targeting });
+                      creative.dispatch({ type: "SET_TARGETING_SOURCE", source: merged.source });
+                    }
                     launch.dispatch({ type: "SET_PERSONA_LOCATION", value: pe.location ?? [] });
                   }
                 }
@@ -456,6 +491,7 @@ export default function CreatePage() {
               onNext={() => setStep(2)}
               goSettings={() => router.push("/setup")}
               goCreative={handleChangeOutcome}
+              brandName={brand ? brand.slice(0, 20) : undefined}
             />
           )}
 

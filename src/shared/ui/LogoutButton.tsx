@@ -15,7 +15,8 @@ export default function LogoutButton() {
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (ref.current && !ref.current.contains(e.target as Node))
+        setOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
@@ -47,42 +48,54 @@ export default function LogoutButton() {
         onClick={handleToggle}
         title="로그아웃"
         style={{
-          width: 28, height: 28, borderRadius: 8,
+          width: 28,
+          height: 28,
+          borderRadius: 8,
           border: "1px solid var(--w-line-normal)",
           background: "var(--w-bg-elevated)",
           color: "var(--w-fg-neutral)",
-          display: "grid", placeItems: "center",
-          cursor: "pointer", flex: "0 0 auto",
+          display: "grid",
+          placeItems: "center",
+          cursor: "pointer",
+          flex: "0 0 auto",
         }}
       >
         <Icon name="logout" size={13} />
       </button>
 
       {open && (
-        <div style={{
-          position: "fixed",
-          bottom: popupPos.bottom,
-          left: popupPos.left,
-          width: 220,
-          background: "var(--w-bg-elevated)",
-          border: "1px solid var(--w-line-normal)",
-          borderRadius: 12,
-          boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
-          padding: 14,
-          zIndex: 200,
-        }}>
-          <div style={{
-            font: "600 13px/1.4 var(--w-font-sans)",
-            color: "var(--w-fg-strong)",
-            marginBottom: 4,
-          }}>
-            {browseMode ? "둘러보기 모드를 종료하시겠어요?" : "로그아웃하시겠어요?"}
+        <div
+          style={{
+            position: "fixed",
+            bottom: popupPos.bottom,
+            left: popupPos.left,
+            width: 220,
+            background: "var(--w-bg-elevated)",
+            border: "1px solid var(--w-line-normal)",
+            borderRadius: 12,
+            boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
+            padding: 14,
+            zIndex: 200,
+          }}
+        >
+          <div
+            style={{
+              font: "600 13px/1.4 var(--w-font-sans)",
+              color: "var(--w-fg-strong)",
+              marginBottom: 4,
+            }}
+          >
+            {browseMode
+              ? "둘러보기 모드를 종료하시겠어요?"
+              : "로그아웃하시겠어요?"}
           </div>
-          <div style={{
-            font: "500 11.5px/1.4 var(--w-font-sans)",
-            color: "var(--w-fg-neutral)",
-            marginBottom: 12,
-          }}>
+          <div
+            style={{
+              font: "500 11.5px/1.4 var(--w-font-sans)",
+              color: "var(--w-fg-neutral)",
+              marginBottom: 12,
+            }}
+          >
             다시 로그인해야 이용할 수 있어요.
           </div>
           <div style={{ display: "flex", gap: 6 }}>
@@ -114,7 +127,10 @@ export default function LogoutButton() {
                 color: "#fff",
                 font: "600 12.5px/1 var(--w-font-sans)",
                 cursor: "pointer",
-                display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 5,
               }}
             >
               <Icon name="logout" size={12} />

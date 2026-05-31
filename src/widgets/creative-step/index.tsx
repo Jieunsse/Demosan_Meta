@@ -7,6 +7,7 @@
 
 import InputForm from "./InputForm";
 import ResultPanel from "./ResultPanel";
+import type { CopyHook } from "@entities/creative/options";
 interface Props {
   brand: string;
   setBrand: (v: string) => void;
@@ -25,6 +26,9 @@ interface Props {
   headlines: string[] | null;
   headlineIdx: number;
   onSelectHeadline: (i: number) => void;
+  hooks: CopyHook[];
+  setHooks: (hooks: CopyHook[]) => void;
+  displayedHooks: [CopyHook, CopyHook, CopyHook] | null;
   primaryTexts: [string, string, string] | null;
   primaryTextIdx: number;
   onSelectPrimaryText: (i: number) => void;
@@ -32,6 +36,8 @@ interface Props {
   setPrimaryText: (v: string) => void;
   elapsed: number;
   onGenerate: () => void;
+  selectedCopyRefIds: string[];
+  setSelectedCopyRefIds: (ids: string[]) => void;
   onSaveToLibrary: () => void;
   saved: boolean;
   goLibrary: () => void;
@@ -57,6 +63,10 @@ export default function CreativeStep(p: Props) {
         onChangeOutcome={p.onChangeOutcome}
         generating={p.generating}
         onGenerate={p.onGenerate}
+        selectedCopyRefIds={p.selectedCopyRefIds}
+        setSelectedCopyRefIds={p.setSelectedCopyRefIds}
+        hooks={p.hooks}
+        setHooks={p.setHooks}
       />
       <ResultPanel
         generating={p.generating}
@@ -67,6 +77,7 @@ export default function CreativeStep(p: Props) {
         primaryTexts={p.primaryTexts}
         primaryTextIdx={p.primaryTextIdx}
         onSelectPrimaryText={p.onSelectPrimaryText}
+        displayedHooks={p.displayedHooks}
         primaryText={p.primaryText}
         setPrimaryText={p.setPrimaryText}
         elapsed={p.elapsed}

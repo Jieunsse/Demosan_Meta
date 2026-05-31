@@ -7,6 +7,7 @@ import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import Icon, { type IconName } from "@shared/ui/Icon";
 import { useTheme, type ThemeChoice } from "@shared/lib/useTheme";
+import { usePresenterConsole } from "@shared/lib/usePresenterConsole";
 import NotificationBell from "@shared/ui/NotificationBell";
 import LogoutButton from "@shared/ui/LogoutButton";
 import { fetchCampaigns } from "@entities/campaign/api";
@@ -124,6 +125,8 @@ export default function Sidebar() {
   const pathname = usePathname();
   const { data: session } = useSession();
   const [theme, setTheme] = useTheme();
+  const [consoleOn, setConsoleOn] = usePresenterConsole();
+  const browseMode = !!session?.browseMode;
 
   const userName = session?.user?.name ?? "";
   const userInitial = userName.trim().charAt(0).toUpperCase() || "M";
@@ -314,6 +317,38 @@ export default function Sidebar() {
             </div>
           )}
         </div>
+
+        {browseMode && (
+          <button
+            type="button"
+            onClick={() => setConsoleOn((v) => !v)}
+            className="flex items-center gap-2.5 px-3 py-2.5 rounded-[10px] bg-[var(--w-bg-alternative)] border-none cursor-pointer text-left w-full"
+            title="발표자 콘솔(빨리감기 바) 표시 전환"
+          >
+            <span className="grid place-items-center w-7 h-7 rounded-lg bg-[var(--w-bg-elevated)] text-[var(--w-fg-neutral)] shrink-0">
+              <Icon name="play" size={14} />
+            </span>
+            <span className="flex-1 min-w-0">
+              <span className="block font-semibold text-[12.5px] leading-[1.3] text-[var(--w-fg-strong)]">발표자 콘솔</span>
+              <span className="block font-medium text-[11px] leading-[1.3] text-[var(--w-fg-neutral)]">
+                빨리감기 바 {consoleOn ? "표시" : "숨김"}
+              </span>
+            </span>
+            <span
+              className={cn(
+                "relative w-9 h-5 rounded-full shrink-0 transition-colors duration-[160ms]",
+                consoleOn ? "bg-[var(--w-primary-normal)]" : "bg-[var(--w-line-neutral)]",
+              )}
+            >
+              <span
+                className={cn(
+                  "absolute top-0.5 w-4 h-4 rounded-full bg-white shadow-[0_1px_2px_rgba(0,0,0,0.2)] transition-[left] duration-[160ms]",
+                  consoleOn ? "left-[18px]" : "left-0.5",
+                )}
+              />
+            </span>
+          </button>
+        )}
 
         <div className="flex items-center gap-1.5 p-1 rounded-full bg-[var(--w-bg-alternative)]">
           {THEME_BUTTONS.map((b) => (

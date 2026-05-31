@@ -104,7 +104,6 @@ export default function DashboardPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="secondary" type="button"><Icon name="refresh" size={16} /> 새로고침</Button>
           <Button variant="primary" type="button" onClick={goCreate}><Icon name="plus" size={16} /> 새 광고 만들기</Button>
         </div>
       </div>
@@ -147,7 +146,7 @@ export default function DashboardPage() {
               <h2 className="m-0 font-bold text-[17px] leading-[1.3] tracking-[-0.012em] text-[var(--w-fg-strong)]">집행한 캠페인</h2>
               <p className="font-medium text-[13px] leading-[1.5] text-[var(--w-fg-neutral)] mt-1 mb-0">캠페인을 클릭하면 상세 성과를 볼 수 있어요.</p>
             </div>
-            <Button variant="ghost" size="sm" type="button" onClick={goCampaigns}>전체 보기 <Icon name="arrow-right" size={14} /></Button>
+            <Button variant="ghost" size="sm" type="button" onClick={goCampaigns}>전체 보기</Button>
           </div>
           {campaignsQ.isLoading ? (
             <div className="flex flex-col gap-2.5">
@@ -186,15 +185,14 @@ function CampaignRow({ c, onClick }: { c: CampaignSummary; onClick: () => void }
     <button
       onClick={onClick}
       type="button"
-      className="grid grid-cols-[1fr_88px_88px_88px_100px_110px] items-center gap-3 p-3.5 border border-[var(--w-line-alternative)] rounded-xl bg-[var(--w-bg-elevated)] cursor-pointer text-left w-full transition-[border-color,background] duration-[120ms] hover:border-[var(--w-line-normal)]"
+      className="grid grid-cols-[1fr_76px_76px_76px_88px_100px] items-center gap-3 p-3.5 border border-[var(--w-line-alternative)] rounded-xl bg-[var(--w-bg-elevated)] cursor-pointer text-left w-full transition-[border-color,background] duration-[120ms] hover:border-[var(--w-line-normal)]"
     >
       <div className="min-w-0">
         <div className="flex items-center gap-2 mb-1">
           <StatusChip status={c.status} />
-          <span className="font-medium text-[11.5px] leading-none [font-family:var(--w-font-mono)] text-[var(--w-fg-alternative)]">{c.id.slice(-10)}</span>
         </div>
         <div className="font-semibold text-[14.5px] leading-[1.4] text-[var(--w-fg-strong)] overflow-hidden text-ellipsis whitespace-nowrap">{c.headline}</div>
-        <div className="font-medium text-xs leading-none text-[var(--w-fg-neutral)] mt-1">{daysLine}</div>
+        <div className="font-medium text-xs leading-none text-[var(--w-fg-neutral)] mt-1 whitespace-nowrap">{daysLine}</div>
       </div>
       <Metric label="노출" value={c.impressions ? fmt(c.impressions) : "—"} />
       <Metric label="클릭" value={c.clicks ? fmt(c.clicks) : "—"} />

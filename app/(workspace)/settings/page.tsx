@@ -12,6 +12,7 @@ import { cn } from "@shared/lib/cn";
 import { useToast } from "@shared/ui/Toast";
 import { useNotifSettings } from "@shared/lib/notifications";
 import { notifyScopedStorageChange } from "@shared/lib/storage/useScopedStorage";
+import { onboardedKey } from "@widgets/onboarding-guard";
 
 type Tab = "account" | "notif" | "danger";
 const TABS: [Tab, string][] = [["account", "계정 연결"], ["notif", "알림"], ["danger", "계정 관리"]];
@@ -310,8 +311,25 @@ const LOCAL_KEYS = ["adflow_library_v1", "adflow_loaded_creative"];
 const SESSION_KEYS = ["adflow_brand", "adflow_target", "adflow_goal", "adflow_active_tab"];
 
 function DangerTab() {
+  const router = useRouter();
   const showToast = useToast();
+  const { data: session } = useSession();
   const [confirmClear, setConfirmClear] = useState(false);
+
+  async function restartOnboarding() {
+    try {
+      await fetch("/api/onboarding/status", { method: "DELETE" });
+    } catch {
+      /* 실패해도 진행 */
+    }
+    try {
+      localStorage.removeItem(onboardedKey(session?.user?.email));
+      localStorage.removeItem("adflow:onboarding-step");
+    } catch {
+      /* storage 사용 불가 — 무시 */
+    }
+    router.push("/onboarding");
+  }
 
   const clearLocalData = () => {
     try {
@@ -337,6 +355,15 @@ function DangerTab() {
         <p className="font-medium text-[13px] leading-[1.5] text-[var(--w-fg-neutral)] mt-1 mb-0">로그아웃하거나 이 브라우저에 저장된 데이터를 정리해요.</p>
         <hr className="h-px bg-[var(--w-line-neutral)] my-[18px] border-0" />
         <div className="flex items-center justify-between gap-3 py-4 px-[18px] rounded-xl border border-[var(--w-line-alternative)] bg-[var(--w-bg-elevated)]">
+          <div>
+            <div className="font-semibold text-[14px] leading-[1.3] text-[var(--w-fg-strong)]">온보딩 다시 보기</div>
+            <div className="font-medium text-[12.5px] leading-[1.4] text-[var(--w-fg-neutral)] mt-0.5">계정 연결·브랜드 프로필 설정 흐름을 처음부터 다시 진행해요.</div>
+          </div>
+          <Button variant="secondary" size="sm" type="button" onClick={restartOnboarding}>
+            <Icon name="refresh" size={13} /> 다시 보기
+          </Button>
+        </div>
+        <div className="flex items-center justify-between gap-3 py-4 px-[18px] rounded-xl border border-[var(--w-line-alternative)] bg-[var(--w-bg-elevated)] mt-2">
           <div>
             <div className="font-semibold text-[14px] leading-[1.3] text-[var(--w-fg-strong)]">로그아웃</div>
             <div className="font-medium text-[12.5px] leading-[1.4] text-[var(--w-fg-neutral)] mt-0.5">이 기기에서 AdFlow를 종료하고 로그인 화면으로 돌아가요.</div>

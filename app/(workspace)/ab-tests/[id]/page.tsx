@@ -1,0 +1,906 @@
+"use client";
+
+// ADR-032/033 — A/B 토너먼트(흐름2) 상세. lib/demo 엔진을 승격한 실제 라우트. 현재 Browse Mode 시연 전용.
+// journey 청사진(사람 의사결정 체인): setup → champion-review → [challenger-decision → live → result]×N → done.
+// 결정 지점 🧑(DecisionBanner) = 발표자가 직접 누르며 설명, 자동 단계 🤖(AutoBanner) = 엔진이 판정·승격.
+// 시간 경과(라이브 결산)는 하단 PresenterTournamentBar(+7일)가 구동한다.
+
+import { useEffect, useState, type ReactNode } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
+import Icon from "@shared/ui/Icon";
+import { Button } from "@shared/ui/Button";
+import { Card } from "@shared/ui/Card";
+import { Chip } from "@shared/ui/Chip";
+import { IgPostPreview } from "@shared/ui/IgPostPreview";
+import { useToast } from "@shared/ui/Toast";
+import {
+  getTournament,
+  roundAdKpis,
+  nextAxis,
+  deriveAxis,
+  deriveBeat,
+  detectAnomaly,
+  AXIS_LABEL,
+  TOURNAMENT_CHANGE_EVENT,
+  type Tournament,
+  type TourVariant,
+  type TourRound,
+  type TourAxis,
+} from "@entities/ab-test/tournament/tournament";
+import {
+  regenerateChampion,
+  confirmChampion,
+  proposeChallenger,
+  setManualChallenger,
+  launchRound,
+  endTournament,
+  resolveAnomaly,
+  discardPendingChallenger,
+  refillEnvelope,
+} from "@entities/ab-test/tournament/runner";
+import { buildRoundReport, type AdReport, type RoundReport } from "@entities/ab-test/tournament/report";
+import PresenterTournamentBar from "@widgets/presenter-fast-forward/tournament";
+
+// ADR-035 — 비트는 엔진 deriveBeat 단일 소스 (auto 무인 / manual-n 제어 분기).
+
+// 누적 실적 — settled 라운드는 저장된 adKpis, running 라운드는 현 챔피언 기준 즉석 산출.
+function tournamentTotals(t: Tournament): { spend: number; days: number } {
+  let spend = 0;
+  let days = 0;
+  for (const r of t.rounds) {
+    days += Math.max(0, r.fastForwardDays);
+    const k = r.status === "settled" ? r.adKpis : r.fastForwardDays > 0 ? roundAdKpis(r, t.championCtr, t.dailyBudget) : undefined;
+    if (k) {
+      spend += k[0].spend + k[1].spend;
+    }
+  }
+  return { spend, days };
+}
+
+const krw = (n: number) => `₩${n.toLocaleString("ko-KR")}`;
+
+export default function AbTournamentDetailPage() {
+  const { id } = useParams<{ id: string }>();
+  const router = useRouter();
+  const { data: session } = useSession();
+  const browseMode = !!session?.browseMode;
+  const showToast = useToast();
+
+  const [t, setT] = useState<Tournament | null>(() => (typeof window !== "undefined" ? getTournament(id) : null));
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    const reload = () => setT(getTournament(id));
+    reload();
+    window.addEventListener(TOURNAMENT_CHANGE_EVENT, reload);
+    return () => window.removeEventListener(TOURNAMENT_CHANGE_EVENT, reload);
+  }, [id]);
+
+  if (!browseMode) {
+    return (
+      <div className="px-12 py-9 max-w-[760px] mx-auto">
+        <Card className="py-12 px-8 flex flex-col items-center gap-3 text-center">
+          <div className="font-bold text-[17px] text-[var(--w-fg-strong)]">토너먼트 상세는 준비 중이에요</div>
+          <div className="font-medium text-[13px] text-[var(--w-fg-neutral)]">A/B 토너먼트 상세 화면은 곧 제공될 예정이에요.</div>
+          <Button variant="secondary" type="button" className="mt-2" onClick={() => router.push("/ab-tests")}>A/B 테스트로</Button>
+        </Card>
+      </div>
+    );
+  }
+
+  if (!t) {
+    return (
+      <div className="px-12 py-9 max-w-[760px] mx-auto">
+        <Card className="py-12 px-8 flex flex-col items-center gap-3 text-center">
+          <div className="font-bold text-[17px] text-[var(--w-fg-strong)]">토너먼트를 찾을 수 없어요</div>
+          <div className="font-medium text-[13px] text-[var(--w-fg-neutral)]">초기화되었거나 아직 시작하지 않았어요.</div>
+          <Button variant="primary" type="button" className="mt-2" onClick={() => router.push("/ab-tests/new")}>새 토너먼트 시작</Button>
+        </Card>
+      </div>
+    );
+  }
+
+  const beat = deriveBeat(t);
+  const settledRounds = t.rounds.filter((r) => r.status === "settled");
+  const lastSettled = settledRounds.at(-1) ?? null;
+  const totals = tournamentTotals(t);
+  const startCtr = t.rounds[0]?.verdict?.ctrA ?? t.championCtr;
+  const liftPct = startCtr > 0 ? ((t.championCtr - startCtr) / startCtr) * 100 : 0;
+  const promotionNote =
+    beat === "between" && lastSettled?.rawWinner === "B"
+      ? `R${lastSettled.index}에서 승격 · ${AXIS_LABEL[lastSettled.axis]} 교체`
+      : settledRounds.length === 0 && t.championSource === "existing"
+        ? `기존 광고 〈${t.championSourceName ?? "—"}〉에서 시작`
+        : undefined;
+  const nextAxisLabel = AXIS_LABEL[nextAxis(t.axisCursor)];
+
+  return (
+    <div className="px-12 py-9 pb-28 max-w-[860px] w-full mx-auto flex flex-col gap-6" data-screen-label="A/B 토너먼트 상세">
+      <button
+        type="button"
+        onClick={() => router.push("/ab-tests")}
+        className="bg-transparent border-none p-0 cursor-pointer inline-flex items-center gap-1.5 font-semibold text-[12.5px] leading-none text-[var(--w-fg-neutral)] hover:underline"
+      >
+        <Icon name="arrow-left" size={13} /> A/B 테스트
+      </button>
+
+      {/* 헤더 */}
+      <div className="flex justify-between items-start gap-6">
+        <div>
+          <div className="flex items-center gap-2 mb-1.5">
+            <Chip
+              variant={beat === "winner-handling" || beat === "anomaly" ? "paused" : beat === "done" ? "ended" : "live"}
+              dot
+            >
+              {beat === "done"
+                ? "완료"
+                : beat === "winner-handling"
+                  ? "위너 처리 대기"
+                  : beat === "anomaly"
+                    ? "이상 신호"
+                    : beat === "auto-running" || beat === "live"
+                      ? "🤖 자동 진행 중"
+                      : "진행 중"}
+            </Chip>
+            <Chip variant="neutral">
+              {settledRounds.length}
+              {t.maxRounds ? `/${t.maxRounds}` : ""}라운드
+            </Chip>
+          </div>
+          <h1 className="m-0 font-bold text-[26px] leading-[1.25] tracking-[-0.024em] text-[var(--w-fg-strong)]">{t.productName}</h1>
+          <p className="font-medium text-[13px] leading-[1.5] text-[var(--w-fg-neutral)] mt-1 mb-0">
+            챔피언-챌린저 토너먼트
+          </p>
+        </div>
+      </div>
+
+      {/* 현황 스트립 */}
+      {t.rounds.length > 0 && (
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 py-3 px-5 rounded-xl bg-[var(--w-bg-elevated)] border border-[var(--w-line-normal)]">
+          <StatItem label="누적 지출" value={krw(totals.spend)} />
+          <StatItem label="경과" value={`${totals.days}일`} />
+        </div>
+      )}
+
+      {/* 챔피언 카드 */}
+      <ChampionCard champion={t.champion} ctr={t.championCtr} confirmed={!!t.championConfirmed} note={promotionNote} />
+
+      {/* 비트별 패널 */}
+      {beat === "champion-review" && (
+        <ChampionReview
+          t={t}
+          busy={busy}
+          onRegenerate={async () => {
+            setBusy(true);
+            await regenerateChampion(t.id);
+            setBusy(false);
+          }}
+          onConfirm={(edited) => confirmChampion(t.id, edited)}
+        />
+      )}
+
+      {beat === "challenger-review" && t.pendingChallenger && (
+        <ChallengerReview
+          t={t}
+          challenger={t.pendingChallenger}
+          busy={busy}
+          onPropose={async () => {
+            setBusy(true);
+            await proposeChallenger(t.id);
+            setBusy(false);
+          }}
+          onManual={(v) => setManualChallenger(t.id, v)}
+          onLaunch={() => launchRound(t.id)}
+        />
+      )}
+
+      {(beat === "live" || (beat === "auto-running" && t.rounds.some((r) => r.status === "running"))) && (
+        <LivePanel t={t} />
+      )}
+
+      {beat === "auto-running" && !t.rounds.some((r) => r.status === "running") && (
+        <AutoBetweenPanel lastSettled={lastSettled} dailyBudget={t.dailyBudget} />
+      )}
+
+      {beat === "anomaly" && (
+        <AnomalyPanel
+          t={t}
+          lastSettled={lastSettled}
+          busy={busy}
+          onPropose={async () => {
+            setBusy(true);
+            await proposeChallenger(t.id);
+            setBusy(false);
+          }}
+          onManual={(v) => setManualChallenger(t.id, v)}
+          onDiscard={() => discardPendingChallenger(t.id)}
+          onAccept={() => {
+            resolveAnomaly(t.id);
+            showToast("챌린저를 교체했어요 — 자동 진행을 재개해요");
+          }}
+          onEnd={() => {
+            endTournament(t.id);
+            showToast("토너먼트를 종료했어요");
+          }}
+        />
+      )}
+
+      {beat === "winner-handling" && (
+        <WinnerHandlingPanel
+          t={t}
+          onPromote={() => router.push("/create")}
+          onRefill={() => {
+            refillEnvelope(t.id);
+            showToast("봉투를 리필했어요 — 자동 진행을 재개해요");
+          }}
+          onArchive={() => {
+            endTournament(t.id);
+            showToast("토너먼트를 마치고 보관했어요");
+          }}
+        />
+      )}
+
+      {beat === "between" && (
+        <BetweenPanel
+          lastSettled={lastSettled}
+          dailyBudget={t.dailyBudget}
+          nextAxisLabel={nextAxisLabel}
+          busy={busy}
+          onPropose={async () => {
+            setBusy(true);
+            await proposeChallenger(t.id);
+            setBusy(false);
+          }}
+          onEnd={() => endTournament(t.id)}
+        />
+      )}
+
+      {beat === "done" && <DonePanel t={t} onCreate={() => router.push("/create")} />}
+
+      {/* 라운드 기록 — 결산 ≥2 라운드일 때만 (N=1 이면 결산 카드와 완전 중복) */}
+      {settledRounds.length >= 2 && (
+        <RoundHistory
+          rounds={settledRounds}
+          dailyBudget={t.dailyBudget}
+          summary={`${settledRounds.length}라운드 동안 CTR ${startCtr.toFixed(2)}% → ${t.championCtr.toFixed(2)}%${
+            liftPct > 0.5 ? ` · +${liftPct.toFixed(0)}%` : ""
+          }`}
+        />
+      )}
+
+      <PresenterTournamentBar t={t} />
+    </div>
+  );
+}
+
+/* ─── 배너 ──────────────────────────────────────────────── */
+
+function DecisionBanner({ title, desc }: { title: string; desc: string }) {
+  return (
+    <div className="flex items-start gap-3 py-3 px-4 rounded-xl bg-[var(--w-primary-soft)] border border-[var(--w-primary-weak)]">
+      <span className="text-[18px] leading-none mt-0.5">🧑</span>
+      <div>
+        <div className="font-bold text-[13.5px] leading-[1.4] text-[var(--w-primary-press)]">{title}</div>
+        <div className="font-medium text-[12.5px] leading-[1.5] text-[var(--w-fg-neutral)] mt-0.5">{desc}</div>
+      </div>
+    </div>
+  );
+}
+
+function AutoBanner({ title, desc }: { title: string; desc: string }) {
+  return (
+    <div className="flex items-start gap-3 py-3 px-4 rounded-xl bg-[var(--w-bg-alternative)] border border-[var(--w-line-normal)]">
+      <span className="text-[18px] leading-none mt-0.5">🤖</span>
+      <div>
+        <div className="font-bold text-[13.5px] leading-[1.4] text-[var(--w-fg-strong)]">{title}</div>
+        <div className="font-medium text-[12.5px] leading-[1.5] text-[var(--w-fg-neutral)] mt-0.5">{desc}</div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── 챔피언 카드 ───────────────────────────────────────── */
+
+function StatItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-baseline gap-1.5">
+      <span className="font-medium text-[11.5px] text-[var(--w-fg-alternative)]">{label}</span>
+      <span className="font-bold text-[13px] text-[var(--w-fg-strong)]">{value}</span>
+    </div>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="font-medium text-[10.5px] text-[var(--w-fg-alternative)]">{label}</span>
+      <span className="font-semibold text-[12.5px] text-[var(--w-fg-strong)]">{value}</span>
+    </div>
+  );
+}
+
+// Browse Mode 시연 광고 계정 — IG 프리뷰 핸들. 실연동 시 연결 IG 계정에서 도출.
+const BRAND_HANDLE = "greenroutine_official";
+
+function ChampionCard({ champion, ctr, confirmed, note }: { champion: TourVariant; ctr: number; confirmed: boolean; note?: string }) {
+  return (
+    <Card className="p-5">
+      <div className="flex items-center gap-2 mb-3">
+        <span style={{ width: 24, height: 24, borderRadius: "50%", background: "var(--w-status-positive-bg, var(--w-bg-alternative))", color: "var(--w-status-positive)", display: "grid", placeItems: "center" }} className="font-bold text-[11px]">
+          <Icon name="check-circle" size={15} />
+        </span>
+        <span className="font-bold text-[13px] text-[var(--w-fg-strong)]">현재 챔피언</span>
+        <Chip variant="neutral" className="ml-auto">CTR {ctr.toFixed(2)}%</Chip>
+        {!confirmed && <Chip variant="review">검토 대기</Chip>}
+      </div>
+      {note && (
+        <div className="font-semibold text-[11.5px] text-[var(--w-status-positive)] -mt-1 mb-2.5">↑ {note}</div>
+      )}
+      <div className="flex justify-center">
+        <IgPostPreview
+          imageUrl={champion.imageUrl ?? ""}
+          caption={champion.primaryText}
+          headline={champion.headline}
+          handle={BRAND_HANDLE}
+          sponsored
+          likeCount={Math.round(ctr * 200)}
+          className="w-full max-w-[360px]"
+        />
+      </div>
+    </Card>
+  );
+}
+
+// 금칙어가 들어간 부분을 빨간 글씨·배경으로 강조 (시연: 무엇이 걸렸는지 카드 안에서 바로 보이게).
+function Prohibited({ text, words }: { text: string; words?: string[] }) {
+  const hits = (words ?? []).map((w) => w.trim()).filter(Boolean);
+  if (!hits.length || !text) return <>{text || "—"}</>;
+  const re = new RegExp(`(${hits.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})`, "g");
+  return (
+    <>
+      {text.split(re).map((p, i) =>
+        hits.includes(p) ? (
+          <span key={i} className="font-bold rounded px-1 mx-0.5" style={{ background: "rgba(229,53,53,0.14)", color: "#d92020" }}>{p}</span>
+        ) : (
+          p
+        ),
+      )}
+    </>
+  );
+}
+
+// only 가 주어지면 그 축 한 필드만 노출 (head-to-head 카드는 바뀐 축만, 앵커·검토 카드는 전문).
+function VariantBody({ variant, highlight, only, prohibited }: { variant: TourVariant; highlight?: TourAxis; only?: TourAxis; prohibited?: string[] }) {
+  return (
+    <div className="flex flex-col gap-2">
+      {variant.imageUrl && (!only || only === "image") && (
+        <div className={highlight === "image" ? "rounded-lg p-1 -m-1 bg-[var(--w-primary-soft)]" : ""}>
+          <img src={variant.imageUrl} alt="광고 이미지" style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 10, border: "1px solid var(--w-line-normal)" }} />
+        </div>
+      )}
+      {(!only || only === "headline") && (
+        <div className={highlight === "headline" ? "rounded-lg px-2 py-1 -mx-2 bg-[var(--w-primary-soft)]" : ""}>
+          <div className="font-medium text-[11px] text-[var(--w-fg-alternative)] mb-0.5">헤드라인</div>
+          <div className="font-semibold text-[14.5px] leading-[1.4] text-[var(--w-fg-strong)]"><Prohibited text={variant.headline} words={prohibited} /></div>
+        </div>
+      )}
+      {(!only || only === "primary_text") && (
+        <div className={highlight === "primary_text" ? "rounded-lg px-2 py-1 -mx-2 bg-[var(--w-primary-soft)]" : ""}>
+          <div className="font-medium text-[11px] text-[var(--w-fg-alternative)] mb-0.5">광고 카피</div>
+          <div className="font-medium text-[13px] leading-[1.55] text-[var(--w-fg-neutral)]"><Prohibited text={variant.primaryText} words={prohibited} /></div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── champion-review 🧑 ───────────────────────────────── */
+
+function ChampionReview({ t, busy, onRegenerate, onConfirm }: {
+  t: Tournament; busy: boolean; onRegenerate: () => void; onConfirm: (edited?: TourVariant) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState<TourVariant>(t.champion);
+
+  return (
+    <div className="flex flex-col gap-4">
+      <DecisionBanner title="출발 챔피언을 검토해주세요" desc="이 광고로 토너먼트를 시작해요. 마음에 들지 않으면 AI 에게 다시 받거나 직접 고칠 수 있어요." />
+      {editing ? (
+        <VariantEditor
+          value={draft}
+          onChange={setDraft}
+          onCancel={() => { setDraft(t.champion); setEditing(false); }}
+          onSave={() => { onConfirm(draft); setEditing(false); }}
+          saveLabel="이 광고로 확정"
+        />
+      ) : (
+        <div className="flex gap-2.5">
+          <Button variant="secondary" type="button" disabled={busy} onClick={onRegenerate}>
+            {busy ? <><Icon name="spinner" size={14} spin /> 생성 중…</> : <><Icon name="sparkles" size={14} /> 다시 생성</>}
+          </Button>
+          <Button variant="secondary" type="button" disabled={busy} onClick={() => { setDraft(t.champion); setEditing(true); }}>직접 수정</Button>
+          <Button variant="primary" type="button" disabled={busy} className="ml-auto" onClick={() => onConfirm()}>
+            <Icon name="check" size={14} /> 이 광고로 확정
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── challenger-review 🧑 ─────────────────────────────── */
+
+function ChallengerReview({ t, challenger, busy, onPropose, onManual, onLaunch }: {
+  t: Tournament; challenger: TourVariant; busy: boolean;
+  onPropose: () => void; onManual: (v: TourVariant) => void; onLaunch: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState<TourVariant>(challenger);
+  const roundIndex = t.rounds.length + 1;
+  // 챔피언과 다른 필드 = 이번 라운드 축 (이미지 포함).
+  const axis = deriveAxis(t.champion, challenger);
+
+  return (
+    <div className="flex flex-col gap-4">
+      <DecisionBanner
+        title={`라운드 ${roundIndex} 챌린저 — ${AXIS_LABEL[axis]}만 바꿔봤어요`}
+        desc="챔피언(A)과 챌린저(B)를 나란히 비교해요. 게재하면 빨리감기로 성과를 쌓아 우세 안을 가립니다."
+      />
+      <div className="grid grid-cols-2 gap-4">
+        <Card className="p-4">
+          <div className="flex items-center gap-1.5 mb-2.5">
+            <span style={{ width: 22, height: 22, borderRadius: "50%", background: "var(--w-bg-alternative)", border: "1.5px solid var(--w-line-normal)", color: "var(--w-fg-neutral)", display: "grid", placeItems: "center" }} className="font-bold text-[11px]">A</span>
+            <span className="font-semibold text-[12.5px] text-[var(--w-fg-neutral)]">챔피언</span>
+          </div>
+          <VariantBody variant={t.champion} />
+        </Card>
+        <Card className="p-4" style={{ borderColor: "var(--w-primary-normal)" }}>
+          <div className="flex items-center gap-1.5 mb-2.5">
+            <span style={{ width: 22, height: 22, borderRadius: "50%", background: "var(--w-primary-soft)", border: "1.5px solid var(--w-primary-normal)", color: "var(--w-primary-press)", display: "grid", placeItems: "center" }} className="font-bold text-[11px]">B</span>
+            <span className="font-semibold text-[12.5px] text-[var(--w-primary-press)]">챌린저</span>
+          </div>
+          {editing ? null : <VariantBody variant={challenger} highlight={axis} />}
+        </Card>
+      </div>
+
+      {editing ? (
+        <VariantEditor
+          value={draft}
+          onChange={setDraft}
+          onCancel={() => { setDraft(challenger); setEditing(false); }}
+          onSave={() => { onManual(draft); setEditing(false); }}
+          saveLabel="챌린저로 반영"
+        />
+      ) : (
+        <div className="flex gap-2.5">
+          <Button variant="secondary" type="button" disabled={busy} onClick={onPropose}>
+            {busy ? <><Icon name="spinner" size={14} spin /> 생성 중…</> : <><Icon name="sparkles" size={14} /> 다른 제안</>}
+          </Button>
+          <Button variant="secondary" type="button" disabled={busy} onClick={() => { setDraft(challenger); setEditing(true); }}>직접 수정</Button>
+          <Button variant="primary" type="button" disabled={busy} className="ml-auto" onClick={onLaunch}>
+            <Icon name="play" size={14} /> 게재하기
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── live 🤖 ───────────────────────────────────────────── */
+
+function LivePanel({ t }: { t: Tournament }) {
+  const round = t.rounds.find((r) => r.status === "running")!;
+  const kpis = roundAdKpis(round, t.championCtr, t.dailyBudget);
+  const hasData = round.fastForwardDays > 0;
+  const report = buildRoundReport(kpis, { seed: round.campaignId, dailyBudget: t.dailyBudget, days: round.fastForwardDays });
+
+  return (
+    <div className="flex flex-col gap-4">
+      <AutoBanner
+        title={`라운드 ${round.index} 게재 중 — ${AXIS_LABEL[round.axis]} 비교`}
+        desc={hasData
+          ? "성과가 쌓이고 있어요. 하단 발표자 빨리감기 +7일로 충분한 데이터가 모이면 자동 결산해요."
+          : "방금 게재했어요. 하단 발표자 빨리감기 +7일을 눌러 성과를 쌓아보세요."}
+      />
+      <VerdictStrip live />
+      <div className="grid grid-cols-2 gap-4">
+        <AdMetricCard label="A" tag="챔피언" variant={round.champion} ad={report.ads[0]} hasData={hasData} accent={false} axis={round.axis} />
+        <AdMetricCard label="B" tag="챌린저" variant={round.challenger} ad={report.ads[1]} hasData={hasData} accent axis={round.axis} />
+      </div>
+    </div>
+  );
+}
+
+function MetricCat({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="font-semibold text-[10px] uppercase tracking-[0.04em] text-[var(--w-fg-alternative)]">{title}</div>
+      <div className="grid grid-cols-2 gap-y-2 gap-x-4">{children}</div>
+    </div>
+  );
+}
+
+function AdMetricCard({ label, tag, variant, ad, hasData, accent, mark, axis, prohibited }: {
+  label: string; tag: string; variant: TourVariant; ad: AdReport;
+  hasData: boolean; accent: boolean; mark?: string; axis: TourAxis; prohibited?: string[];
+}) {
+  const v = (s: string) => (hasData ? s : "—");
+  return (
+    <Card className="p-4" style={accent ? { borderColor: "var(--w-primary-normal)" } : undefined}>
+      <div className="flex items-center gap-1.5 mb-2.5">
+        <span style={{ width: 22, height: 22, borderRadius: "50%", background: accent ? "var(--w-primary-soft)" : "var(--w-bg-alternative)", border: `1.5px solid ${accent ? "var(--w-primary-normal)" : "var(--w-line-normal)"}`, color: accent ? "var(--w-primary-press)" : "var(--w-fg-neutral)", display: "grid", placeItems: "center" }} className="font-bold text-[11px]">{label}</span>
+        <span className="font-semibold text-[12.5px]" style={{ color: accent ? "var(--w-primary-press)" : "var(--w-fg-neutral)" }}>{tag}</span>
+        {mark && <Chip variant={mark === "승격" ? "live" : "neutral"}>{mark}</Chip>}
+        <span className="ml-auto font-bold text-[15px] text-[var(--w-fg-strong)]">{hasData ? `${ad.ctr.toFixed(2)}%` : "—"}</span>
+      </div>
+      <VariantBody variant={variant} only={axis} prohibited={prohibited} />
+      <div className="mt-3 pt-3 border-t border-[var(--w-line-normal)] flex flex-col gap-3">
+        <MetricCat title="노출 & 도달">
+          <Metric label="노출" value={v(ad.impressions.toLocaleString("ko-KR"))} />
+          <Metric label="도달" value={v(ad.reach.toLocaleString("ko-KR"))} />
+          <Metric label="빈도" value={v(ad.frequency.toFixed(2))} />
+          <Metric label="CPM" value={v(krw(ad.cpm))} />
+        </MetricCat>
+        <MetricCat title="클릭 & 참여">
+          <Metric label="클릭" value={v(ad.clicks.toLocaleString("ko-KR"))} />
+          <Metric label="링크 클릭" value={v(ad.linkClicks.toLocaleString("ko-KR"))} />
+          <Metric label="CPC" value={v(krw(ad.cpc))} />
+        </MetricCat>
+        <MetricCat title="예산 & 지출">
+          <Metric label="지출" value={v(krw(ad.spend))} />
+          <Metric label="남은 예산" value={v(krw(ad.budgetRemaining))} />
+        </MetricCat>
+      </div>
+    </Card>
+  );
+}
+
+// Meta A/B 최종 판정 박스 — winner/confidence_level/status. 결산 후에만 확정, 라이브는 측정 중.
+function VerdictStrip({ report, winnerIsB, live }: { report?: RoundReport; winnerIsB?: boolean; live?: boolean }) {
+  if (live || !report) {
+    return (
+      <div className="flex items-center gap-2 py-2.5 px-4 rounded-xl bg-[var(--w-bg-elevated)] border border-[var(--w-line-normal)]">
+        <Icon name="spinner" size={13} spin />
+        <span className="font-semibold text-[12px] text-[var(--w-fg-neutral)]">측정 중 — 결산하면 승자·신뢰도가 확정돼요</span>
+      </div>
+    );
+  }
+  const completed = report.status === "COMPLETED";
+  const pct = Math.round(report.confidenceLevel * 100);
+  return (
+    <div className="flex flex-col gap-2 py-3 px-4 rounded-xl" style={{ background: "var(--w-primary-soft)", border: "1px solid var(--w-primary-weak)" }}>
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-[15px] leading-none">🏆</span>
+        <span className="font-bold text-[12.5px] text-[var(--w-primary-press)]">최종 판정</span>
+        <span className="font-semibold text-[12.5px] text-[var(--w-fg-strong)]">승자 {winnerIsB ? "B안 (챌린저)" : "A안 (챔피언)"}</span>
+        <span className="font-medium text-[12px] text-[var(--w-fg-neutral)]">· 신뢰도 {pct}%</span>
+        <Chip variant={completed ? "live" : "neutral"} className="ml-auto">{report.status}</Chip>
+      </div>
+      <div className="h-1.5 rounded-full bg-[var(--w-line-normal)] overflow-hidden">
+        <div className="h-full rounded-full" style={{ width: `${pct}%`, background: completed ? "var(--w-primary-normal)" : "var(--w-fg-alternative)" }} />
+      </div>
+    </div>
+  );
+}
+
+/* ─── between (result 🤖 + continue/end 🧑) ─────────────── */
+
+function BetweenPanel({ lastSettled, dailyBudget, nextAxisLabel, busy, onPropose, onEnd }: {
+  lastSettled: TourRound | null; dailyBudget: number; nextAxisLabel: string; busy: boolean; onPropose: () => void; onEnd: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-4">
+      {lastSettled && <SettledResult round={lastSettled} dailyBudget={dailyBudget} />}
+      <DecisionBanner
+        title={lastSettled ? "다음 라운드를 진행할까요?" : "첫 챌린저를 붙여볼까요?"}
+        desc={lastSettled
+          ? `우세 안이 다음 챔피언으로 승격됐어요. 다음 라운드는 ${nextAxisLabel} 축을 바꿔 비교해요. 새 챌린저를 붙이거나 여기서 토너먼트를 마칠 수 있어요.`
+          : `확정한 챔피언에 도전할 챌린저를 AI 가 제안해요. 이번 라운드는 ${nextAxisLabel} 축을 바꿔 비교합니다.`}
+      />
+      <div className="flex gap-2.5">
+        <Button variant="primary" type="button" disabled={busy} onClick={onPropose}>
+          {busy ? <><Icon name="spinner" size={14} spin /> 생성 중…</> : <><Icon name="sparkles" size={14} /> {lastSettled ? "다음 챌린저 제안" : "챌린저 제안 받기"}</>}
+        </Button>
+        <Button variant="secondary" type="button" disabled={busy} className="ml-auto" onClick={onEnd}>토너먼트 종료</Button>
+      </div>
+    </div>
+  );
+}
+
+function SettledResult({ round, dailyBudget, prohibited }: { round: TourRound; dailyBudget: number; prohibited?: string[] }) {
+  const winnerIsB = round.rawWinner === "B";
+  const kpis = round.adKpis ?? [
+    { ctr: round.verdict?.ctrA ?? 0, impressions: 0, clicks: 0, spend: 0 },
+    { ctr: round.verdict?.ctrB ?? 0, impressions: 0, clicks: 0, spend: 0 },
+  ];
+  const report = buildRoundReport(kpis, { seed: round.campaignId, dailyBudget, days: round.fastForwardDays });
+  const completed = report.status === "COMPLETED";
+  const pct = Math.round(report.confidenceLevel * 100);
+  const sig = completed ? `통계적으로 유의 (신뢰도 ${pct}%)` : `통계적으론 불충분 (신뢰도 ${pct}%)`;
+  const promo = winnerIsB
+    ? completed
+      ? "챌린저가 새 챔피언으로 승격됐어요."
+      : "그래도 CTR 우위라 챌린저를 잠정 승격 — 다음 라운드에서 재검증해요."
+    : "챔피언이 자리를 지켰어요.";
+  return (
+    <div className="flex flex-col gap-3">
+      <AutoBanner
+        title={`라운드 ${round.index} 결산 — ${winnerIsB ? "챌린저(B) 우세" : "챔피언(A) 방어"}`}
+        desc={`${AXIS_LABEL[round.axis]} 비교 · ${sig} · ${promo}`}
+      />
+      <VerdictStrip report={report} winnerIsB={winnerIsB} />
+      <div className="grid grid-cols-2 gap-4">
+        <AdMetricCard label="A" tag="챔피언" variant={round.champion} ad={report.ads[0]} hasData accent={!winnerIsB} mark={winnerIsB ? undefined : "방어"} axis={round.axis} />
+        <AdMetricCard label="B" tag="챌린저" variant={round.challenger} ad={report.ads[1]} hasData accent={winnerIsB} mark={winnerIsB ? "승격" : undefined} axis={round.axis} prohibited={prohibited} />
+      </div>
+    </div>
+  );
+}
+
+/* ─── auto-running (무인 라운드 전환) 🤖 ─────────────────── */
+
+function AutoBetweenPanel({ lastSettled, dailyBudget }: { lastSettled: TourRound | null; dailyBudget: number }) {
+  return (
+    <div className="flex flex-col gap-4">
+      {lastSettled && <SettledResult round={lastSettled} dailyBudget={dailyBudget} />}
+      <AutoBanner
+        title="자동 진행 중 — 다음 챌린저를 준비하고 있어요"
+        desc="AI 가 우세 안을 챔피언으로 올리고 다음 챌린저를 자동으로 붙여요. 하단 발표자 빨리감기 +7일로 다음 라운드를 굴려보세요."
+      />
+    </div>
+  );
+}
+
+/* ─── anomaly (이상 신호) 🧑 — ADR-035 ⓑ ───────────────── */
+
+function AnomalyPanel({ t, lastSettled, busy, onPropose, onManual, onDiscard, onAccept, onEnd }: {
+  t: Tournament; lastSettled: TourRound | null; busy: boolean;
+  onPropose: () => Promise<void>; onManual: (v: TourVariant) => void; onDiscard: () => void;
+  onAccept: () => void; onEnd: () => void;
+}) {
+  const a = detectAnomaly(t);
+  const [revising, setRevising] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState<TourVariant>(t.champion);
+
+  const reason =
+    a?.kind === "prohibited"
+      ? "최근 챌린저 문구가 브랜드 금칙어에 걸렸어요. 무인이라도 브랜드 리스크는 사람이 확인해요."
+      : "새 챌린저가 연속 2라운드 챔피언을 이기지 못했어요. 성과가 정체됐는지 확인이 필요해요.";
+  const fixHint =
+    a?.kind === "prohibited"
+      ? "금칙어를 뺀 새 챌린저로 교체하면 안전하게 이어갈 수 있어요."
+      : "다른 각도의 챌린저로 교체해 정체를 깨보세요.";
+
+  const Warning = (
+    <div
+      className="flex items-start gap-3 py-3 px-4 rounded-xl"
+      style={{ background: "rgba(255,146,0,0.08)", border: "1px solid rgba(255,146,0,0.34)" }}
+    >
+      <span className="text-[18px] leading-none mt-0.5">⚠️</span>
+      <div>
+        <div className="font-bold text-[13.5px] leading-[1.4] text-[#9c5800] dark:text-[#ffb24d]">이상 신호로 자동 진행을 멈췄어요</div>
+        <div className="font-medium text-[12.5px] leading-[1.5] text-[var(--w-fg-neutral)] mt-0.5">{reason}</div>
+        {a?.kind === "prohibited" && !!a.words?.length && (
+          <div className="flex flex-wrap items-center gap-1.5 mt-2">
+            <span className="font-semibold text-[12px] text-[var(--w-fg-neutral)]">걸린 금칙어</span>
+            {a.words.map((w) => (
+              <span
+                key={w}
+                className="font-bold text-[12px] leading-none py-1 px-2 rounded-md"
+                style={{ background: "rgba(229,53,53,0.12)", color: "#d92020", border: "1px solid rgba(229,53,53,0.4)" }}
+              >
+                {w}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  // 손보기 흐름 — 다음 챌린저(pending)를 AI 재생성/직접 수정으로 교체한 뒤 재개.
+  if (revising && t.pendingChallenger) {
+    const challenger = t.pendingChallenger;
+    const axis = deriveAxis(t.champion, challenger);
+    return (
+      <div className="flex flex-col gap-4">
+        {Warning}
+        <DecisionBanner title={`교체할 챌린저 — ${AXIS_LABEL[axis]} 변경`} desc={`${fixHint} AI 에게 다시 받거나 직접 고친 뒤 이걸로 재개해요.`} />
+        <div className="grid grid-cols-2 gap-4">
+          <Card className="p-4">
+            <div className="flex items-center gap-1.5 mb-2.5">
+              <span style={{ width: 22, height: 22, borderRadius: "50%", background: "var(--w-bg-alternative)", border: "1.5px solid var(--w-line-normal)", color: "var(--w-fg-neutral)", display: "grid", placeItems: "center" }} className="font-bold text-[11px]">A</span>
+              <span className="font-semibold text-[12.5px] text-[var(--w-fg-neutral)]">챔피언</span>
+            </div>
+            <VariantBody variant={t.champion} />
+          </Card>
+          <Card className="p-4" style={{ borderColor: "var(--w-primary-normal)" }}>
+            <div className="flex items-center gap-1.5 mb-2.5">
+              <span style={{ width: 22, height: 22, borderRadius: "50%", background: "var(--w-primary-soft)", border: "1.5px solid var(--w-primary-normal)", color: "var(--w-primary-press)", display: "grid", placeItems: "center" }} className="font-bold text-[11px]">B</span>
+              <span className="font-semibold text-[12.5px] text-[var(--w-primary-press)]">새 챌린저</span>
+            </div>
+            {editing ? null : <VariantBody variant={challenger} highlight={axis} />}
+          </Card>
+        </div>
+        {editing ? (
+          <VariantEditor
+            value={draft}
+            onChange={setDraft}
+            onCancel={() => { setDraft(challenger); setEditing(false); }}
+            onSave={() => { onManual(draft); setEditing(false); }}
+            saveLabel="챌린저로 반영"
+          />
+        ) : (
+          <div className="flex gap-2.5">
+            <Button variant="secondary" type="button" disabled={busy} onClick={onPropose}>
+              {busy ? <><Icon name="spinner" size={14} spin /> 생성 중…</> : <><Icon name="sparkles" size={14} /> 다시 생성</>}
+            </Button>
+            <Button variant="secondary" type="button" disabled={busy} onClick={() => { setDraft(challenger); setEditing(true); }}>직접 수정</Button>
+            <Button variant="ghost" type="button" disabled={busy} onClick={() => { onDiscard(); setRevising(false); }}>취소</Button>
+            <Button variant="primary" type="button" disabled={busy} className="ml-auto" onClick={onAccept}>
+              <Icon name="check" size={14} /> 이걸로 재개
+            </Button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      {lastSettled && <SettledResult round={lastSettled} dailyBudget={t.dailyBudget} prohibited={a?.kind === "prohibited" ? a.words : undefined} />}
+      {Warning}
+      <div className="flex gap-2.5">
+        <Button variant="primary" type="button" disabled={busy} onClick={async () => { await onPropose(); setRevising(true); }}>
+          {busy ? <><Icon name="spinner" size={14} spin /> 생성 중…</> : <><Icon name="sparkles" size={14} /> 챌린저 수정하기</>}
+        </Button>
+        <Button variant="secondary" type="button" disabled={busy} className="ml-auto" onClick={onEnd}>토너먼트 종료</Button>
+      </div>
+    </div>
+  );
+}
+
+/* ─── winner-handling (봉투 소진) 🧑 — ADR-035 ⓐ ────────── */
+
+function WinnerHandlingPanel({ t, onPromote, onRefill, onArchive }: {
+  t: Tournament; onPromote: () => void; onRefill: () => void; onArchive: () => void;
+}) {
+  const startCtr = t.rounds[0]?.verdict?.ctrA ?? t.championCtr;
+  const lift = startCtr > 0 ? ((t.championCtr - startCtr) / startCtr) * 100 : 0;
+  const settled = t.rounds.filter((r) => r.status === "settled").length;
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex items-start gap-3 py-4 px-5 rounded-xl bg-[var(--w-primary-soft)] border border-[var(--w-primary-weak)]">
+        <span className="text-[22px] leading-none">🏆</span>
+        <div>
+          <div className="font-bold text-[15px] leading-[1.3] text-[var(--w-primary-press)]">자원 봉투를 다 썼어요 — 위너 처리를 결정해주세요</div>
+          <div className="font-medium text-[12.5px] leading-[1.5] text-[var(--w-fg-neutral)] mt-1">
+            {settled}개 라운드 무인 진행 · 최종 CTR {t.championCtr.toFixed(2)}%
+            {lift > 0.5 && <span className="text-[var(--w-status-positive)] font-semibold"> · 출발 대비 +{lift.toFixed(0)}%</span>}
+            . 돈이 드는 결정이라 자동으로 넘기지 않아요.
+          </div>
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-2.5">
+        <Button variant="primary" type="button" onClick={onPromote}>
+          <Icon name="sparkles" size={14} /> 실제 캠페인으로 승격
+        </Button>
+        <Button variant="secondary" type="button" onClick={onRefill}>봉투 리필해서 계속</Button>
+        <Button variant="secondary" type="button" className="ml-auto" onClick={onArchive}>종료하고 보관</Button>
+      </div>
+    </div>
+  );
+}
+
+/* ─── done ──────────────────────────────────────────────── */
+
+function DonePanel({ t, onCreate }: { t: Tournament; onCreate: () => void }) {
+  const startCtr = t.rounds[0]?.verdict?.ctrA ?? t.championCtr;
+  const lift = startCtr > 0 ? ((t.championCtr - startCtr) / startCtr) * 100 : 0;
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex items-start gap-3 py-4 px-5 rounded-xl" style={{ background: "var(--w-primary-soft)", border: "1px solid var(--w-primary-weak)" }}>
+        <span className="text-[22px] leading-none">🏆</span>
+        <div>
+          <div className="font-bold text-[15px] leading-[1.3] text-[var(--w-primary-press)]">토너먼트 완료 — 최종 챔피언이 정해졌어요</div>
+          <div className="font-medium text-[12.5px] leading-[1.5] text-[var(--w-fg-neutral)] mt-1">
+            {t.rounds.filter((r) => r.status === "settled").length}개 라운드 진행 · 최종 CTR {t.championCtr.toFixed(2)}%
+            {lift > 0.5 && <span className="text-[var(--w-status-positive)] font-semibold"> · 출발 대비 +{lift.toFixed(0)}%</span>}
+          </div>
+        </div>
+      </div>
+      <Button variant="primary" type="button" onClick={onCreate} className="w-fit">
+        <Icon name="sparkles" size={14} /> 이 챔피언으로 광고 만들기
+      </Button>
+    </div>
+  );
+}
+
+/* ─── 라운드 기록 ───────────────────────────────────────── */
+
+function RoundHistory({ rounds, summary, dailyBudget }: { rounds: TourRound[]; summary: string; dailyBudget: number }) {
+  const [open, setOpen] = useState<number | null>(null);
+  return (
+    <div>
+      <div className="flex items-baseline justify-between gap-3 mb-3">
+        <div className="font-bold text-[14px] text-[var(--w-fg-strong)]">라운드 기록</div>
+        <div className="font-medium text-[12px] text-[var(--w-fg-neutral)]">{summary}</div>
+      </div>
+      <div className="flex flex-col gap-2">
+        {rounds.map((r) => {
+          const winnerIsB = r.rawWinner === "B";
+          const imp = (r.adKpis?.[0].impressions ?? 0) + (r.adKpis?.[1].impressions ?? 0);
+          const spend = (r.adKpis?.[0].spend ?? 0) + (r.adKpis?.[1].spend ?? 0);
+          const expanded = open === r.index;
+          return (
+            <div key={r.index} className="flex flex-col">
+              <button
+                type="button"
+                onClick={() => setOpen(expanded ? null : r.index)}
+                aria-expanded={expanded}
+                className="flex items-center gap-3 py-3 px-4 rounded-xl bg-[var(--w-bg-elevated)] border border-[var(--w-line-normal)] text-left cursor-pointer hover:border-[var(--w-line-strong)] transition-colors"
+              >
+                <span className="font-bold text-[12px] text-[var(--w-fg-alternative)] w-12">R{r.index}</span>
+                <Chip variant="neutral">{AXIS_LABEL[r.axis]}</Chip>
+                <div className="flex flex-col gap-0.5">
+                  <span className="font-medium text-[12.5px] text-[var(--w-fg-neutral)]">
+                    A {r.verdict?.ctrA.toFixed(2)}% → B {r.verdict?.ctrB.toFixed(2)}%
+                    {winnerIsB && <span className="text-[var(--w-status-positive)] font-semibold"> ▲</span>}
+                  </span>
+                  <span className="font-medium text-[11px] text-[var(--w-fg-alternative)]">
+                    노출 {imp.toLocaleString("ko-KR")} · 지출 {krw(spend)}
+                  </span>
+                </div>
+                <Chip variant={winnerIsB ? "live" : "neutral"} className="ml-auto">
+                  {winnerIsB ? "챌린저 승격" : "챔피언 방어"}
+                </Chip>
+                <Icon name="chev-down" size={16} className={`text-[var(--w-fg-alternative)] transition-transform ${expanded ? "rotate-180" : ""}`} />
+              </button>
+              {expanded && (
+                <div className="mt-2">
+                  <SettledResult round={r} dailyBudget={dailyBudget} />
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ─── 변형 편집기 ───────────────────────────────────────── */
+
+function VariantEditor({ value, onChange, onCancel, onSave, saveLabel }: {
+  value: TourVariant; onChange: (v: TourVariant) => void; onCancel: () => void; onSave: () => void; saveLabel: string;
+}) {
+  const canSave = value.headline.trim() && value.primaryText.trim();
+  return (
+    <Card className="p-4 flex flex-col gap-3">
+      <div>
+        <div className="font-medium text-[11px] text-[var(--w-fg-alternative)] mb-1">헤드라인</div>
+        <input
+          type="text"
+          value={value.headline}
+          onChange={(e) => onChange({ ...value, headline: e.target.value })}
+          className="w-full bg-[var(--w-bg-normal)] border border-[var(--w-line-normal)] rounded-lg px-3 py-2.5 font-semibold text-[14px] text-[var(--w-fg-strong)] outline-none focus:border-[var(--w-primary-normal)]"
+        />
+      </div>
+      <div>
+        <div className="font-medium text-[11px] text-[var(--w-fg-alternative)] mb-1">광고 카피</div>
+        <textarea
+          value={value.primaryText}
+          onChange={(e) => onChange({ ...value, primaryText: e.target.value })}
+          rows={3}
+          className="w-full bg-[var(--w-bg-normal)] border border-[var(--w-line-normal)] rounded-lg px-3 py-2.5 font-medium text-[13px] leading-[1.55] text-[var(--w-fg-strong)] outline-none focus:border-[var(--w-primary-normal)] resize-none"
+        />
+      </div>
+      <div className="flex gap-2.5">
+        <Button variant="secondary" type="button" onClick={onCancel}>취소</Button>
+        <Button variant="primary" type="button" disabled={!canSave} className="ml-auto" onClick={onSave}>{saveLabel}</Button>
+      </div>
+    </Card>
+  );
+}

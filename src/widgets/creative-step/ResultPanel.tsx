@@ -8,6 +8,7 @@ import { Button } from "@shared/ui/Button";
 import { Card } from "@shared/ui/Card";
 import { Skeleton } from "@shared/ui/Skeleton";
 import { cn } from "@shared/lib/cn";
+import { findHook, type CopyHook } from "@entities/creative/options";
 import AiImageBlock from "./AiImageBlock";
 
 interface Props {
@@ -19,6 +20,7 @@ interface Props {
   primaryTexts: [string, string, string] | null;
   primaryTextIdx: number;
   onSelectPrimaryText: (i: number) => void;
+  displayedHooks: [CopyHook, CopyHook, CopyHook] | null;
   primaryText: string;
   setPrimaryText: (v: string) => void;
   elapsed: number;
@@ -97,6 +99,16 @@ export default function ResultPanel(p: Props) {
           <div className="flex flex-col gap-2" style={{ marginBottom: 18 }}>
             <label className="font-semibold text-[15px] leading-[1.3] tracking-[-0.008em] text-[var(--w-fg-strong)] flex items-center gap-1.5">{p.primaryTexts ? "기본 텍스트 — 1개 선택" : "기본 텍스트"}</label>
             {p.primaryTexts && (
+              <p className="font-medium text-[12px] leading-[1.5] text-[var(--w-fg-neutral)] m-0 -mt-1">
+                본문 3개는 서로 다른 설득 방식으로 썼어요. 마음에 드는 걸 고르세요.
+              </p>
+            )}
+            {p.primaryTexts && (
+              <p className="font-medium text-[12px] leading-[1.5] text-[var(--w-fg-alternative)] m-0">
+                💡 제품 설명보다 고객의 상황·감정이 먼저 오나요? 한 번 더 확인해보세요.
+              </p>
+            )}
+            {p.primaryTexts && (
               <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 10 }}>
                 {p.primaryTexts.map((t, i) => (
                   <div
@@ -121,7 +133,14 @@ export default function ResultPanel(p: Props) {
                       p.primaryTextIdx === i && "border-[var(--w-primary-normal)] after:content-[''] after:absolute after:inset-[3px] after:rounded-full after:bg-[var(--w-primary-normal)]"
                     )} />
                     <div style={{ flex: 1 }}>
-                      <div className="font-[600] text-[11px] leading-none text-[var(--w-fg-neutral)] tracking-[0.04em] uppercase">VER 0{i + 1}</div>
+                      <div className="flex items-center gap-2">
+                        <div className="font-[600] text-[11px] leading-none text-[var(--w-fg-neutral)] tracking-[0.04em] uppercase">VER 0{i + 1}</div>
+                        {p.displayedHooks?.[i] && (
+                          <span title={findHook(p.displayedHooks[i]).uiDesc} className="inline-flex">
+                            <Badge kind="violet">{findHook(p.displayedHooks[i]).ko} 방식</Badge>
+                          </span>
+                        )}
+                      </div>
                       <div className="font-[600] text-[14.5px] leading-[1.45] text-[var(--w-fg-strong)] mt-1">{t}</div>
                     </div>
                   </div>

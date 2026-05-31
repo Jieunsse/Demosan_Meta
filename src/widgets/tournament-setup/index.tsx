@@ -1,0 +1,729 @@
+"use client";
+
+// ADR-032/033 — A/B Tournament 셋업(흐름2 진입). /ab-tests/new 가 browseMode 면 단판 위저드 대신 이 폼을 렌더.
+// 2-step 위저드: ①방식 선택(출발 챔피언 출처 카드) → ②세부 설정(제품·톤·목표·라운드·예산). 시작 후 /ab-tests/[id] 로.
+// mode 는 수동-N 고정(ADR-032 결정 4 — 자원 봉투 정지).
+
+import { useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import Icon from "@shared/ui/Icon";
+import type { IconName } from "@shared/ui/Icon";
+import { Button } from "@shared/ui/Button";
+import { SegControl } from "@shared/ui/SegControl";
+import { Select } from "@shared/ui/Select";
+import { DEMO_INPUTS } from "@/lib/demo/content";
+import { DEMO_AD_IMAGES } from "@/lib/demo/mock-images";
+import { startTournament, setManualChallenger } from "@entities/ab-test/tournament/runner";
+import type { TourAxis, TourVariant } from "@entities/ab-test/tournament/tournament";
+import { MOCK_CAMPAIGN_SUMMARIES } from "@/lib/mock-campaigns";
+import { listBrowse, BROWSE_CHANGE_EVENT } from "@entities/campaign/browse/store";
+import { browseCampaignToSummary } from "@entities/campaign/browse/summary";
+import type { CampaignSummary } from "@/lib/meta-ads";
+import { useBrandProfileStorage } from "@features/brand-profile/model/useBrandProfileStorage";
+import { useProducts } from "@shared/lib/products";
+
+type Tone = "warm" | "pro" | "trendy";
+
+const TONE_OPTIONS: { value: Tone; label: string }[] = [
+  { value: "warm", label: "감성적" },
+  { value: "pro", label: "전문적" },
+  { value: "trendy", label: "트렌디" },
+];
+
+// ADR-037 — V1 traffic 전용. 목표별 winner 지표(awareness=CPM·engagement=참여)는 V2 (데모 z-검정은 traffic 에서만 정직).
+const OBJECTIVE_OPTIONS = [
+  { value: "traffic", label: "사이트 방문 유도" },
+  { value: "awareness", label: "브랜드 알리기 (V2 예정)", disabled: true },
+  { value: "engagement", label: "참여 늘리기 (V2 예정)", disabled: true },
+  { value: "leads", label: "행동 유도 (V2 예정)", disabled: true },
+];
+
+const STARTING_CTR = 1.8; // AI 부트스트랩 시 출발 챔피언 CTR 기준선(%) — existing 은 광고 실제 CTR 사용.
+
+type ChampionMode = "existing" | "ai";
+type WizardStep = "method" | "config";
+const STEP_LABELS: Record<WizardStep, string> = { method: "방식 선택", config: "세부 설정" };
+const STEP_ORDER: WizardStep[] = ["method", "config"];
+
+const CHALLENGER_AXIS_OPTIONS: { value: TourAxis; label: string }[] = [
+  { value: "headline", label: "헤드라인" },
+  { value: "primary_text", label: "카피" },
+  { value: "image", label: "이미지" },
+];
+
+// 기존 광고 objective(OUTCOME_*) → 셋업 목표 매핑. 미매핑이면 traffic 폴백.
+const OBJECTIVE_FROM_META: Record<string, string> = {
+  OUTCOME_TRAFFIC: "traffic",
+  OUTCOME_AWARENESS: "awareness",
+  OUTCOME_ENGAGEMENT: "engagement",
+  OUTCOME_LEADS: "leads",
+};
+
+export default function TournamentSetup() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const fromCampaignId = searchParams.get("from");
+  const [productName, setProductName] = useState("수분 가득 비건 크림");
+  const [productId, setProductId] = useState("");
+  const [description, setDescription] = useState(DEMO_INPUTS.brand);
+  const [tone, setTone] = useState<Tone>("warm");
+  const [objective, setObjective] = useState("traffic");
+  const [maxRounds, setMaxRounds] = useState(3);
+  const [dailyBudget, setDailyBudget] = useState(30000);
+  const [step, setStep] = useState<WizardStep>("method");
+  const [championMode, setChampionMode] = useState<ChampionMode>("existing");
+  const [campaignId, setCampaignId] = useState("");
+  // 챌린저(B) 컴포저 — existing 경로에서 챔피언 밑에 라운드1 대진을 구성. 바꿀 요소 하나만 챔피언과 다르게.
+  const [chAxis, setChAxis] = useState<TourAxis>("headline");
+  const [chHeadline, setChHeadline] = useState("");
+  const [chPrimary, setChPrimary] = useState("");
+  const [chImage, setChImage] = useState("");
+  const [chGenning, setChGenning] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [error, setError] = useState("");
+
+  const stepIdx = STEP_ORDER.indexOf(step);
+  const goBack = () => (step === "config" ? setStep("method") : router.push("/ab-tests"));
+  const pickMode = (m: ChampionMode) => { setChampionMode(m); setStep("config"); };
+
+  // 기존 광고 후보 = browse localStorage + 정적 mock (/campaigns 와 동일 merge).
+  const [browseRows, setBrowseRows] = useState<CampaignSummary[]>([]);
+  useEffect(() => {
+    const load = () => setBrowseRows(listBrowse().map(browseCampaignToSummary));
+    load();
+    window.addEventListener(BROWSE_CHANGE_EVENT, load);
+    return () => window.removeEventListener(BROWSE_CHANGE_EVENT, load);
+  }, []);
+  const campaigns = useMemo(() => [...browseRows, ...MOCK_CAMPAIGN_SUMMARIES], [browseRows]);
+  const selected = campaigns.find((c) => c.id === campaignId) ?? null;
+
+  // 캠페인 상세 "이 캠페인으로 A/B 테스트 생성" → ?from=<id> 로 진입. 기존 광고 모드로 그 캠페인을 출발 챔피언에 프리셀렉트.
+  useEffect(() => {
+    if (!fromCampaignId) return;
+    setChampionMode("existing");
+    setCampaignId(fromCampaignId);
+    setStep("config");
+  }, [fromCampaignId]);
+
+  // 프리셀렉트 캠페인이 후보 목록에서 해소되면 광고 목표를 그 광고 기준으로 매핑.
+  useEffect(() => {
+    if (fromCampaignId && selected) setObjective(OBJECTIVE_FROM_META[selected.objective] ?? "traffic");
+  }, [fromCampaignId, selected]);
+
+  // 제품 = 활성 브랜드 프로필의 등록 제품에서 선택. 제품이 없으면 자유 입력으로 폴백(브라우즈 데모).
+  const { activeId } = useBrandProfileStorage();
+  const { products } = useProducts(activeId ?? "");
+
+  function handlePickProduct(id: string) {
+    setProductId(id);
+    const pr = products.find((x) => x.id === id);
+    if (!pr) return;
+    setProductName(pr.name);
+    if (pr.description) setDescription(pr.description);
+  }
+
+  // 첫 로드 시 제품이 있으면 첫 제품을 자동 선택.
+  useEffect(() => {
+    if (products.length && !productId) handlePickProduct(products[0].id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [products]);
+
+  function handlePickCampaign(id: string) {
+    setCampaignId(id);
+    const c = campaigns.find((x) => x.id === id);
+    if (c) setObjective(OBJECTIVE_FROM_META[c.objective] ?? "traffic");
+  }
+
+  // 출발 챔피언 = 고른 광고. 이미지는 광고 자체 것 우선, 없으면 mock 풀 첫 장.
+  const champVariant: TourVariant | null = selected
+    ? { headline: selected.headline, primaryText: selected.primaryText ?? "", imageUrl: selected.imageUrl || DEMO_AD_IMAGES[0] }
+    : null;
+
+  // 바꿀 요소가 채워졌는지 — 챌린저 대진 성립 조건.
+  const challengerReady =
+    chAxis === "headline" ? !!chHeadline.trim() : chAxis === "primary_text" ? !!chPrimary.trim() : !!chImage;
+
+  // 우측 대진 미리보기용 챌린저(B) — 바꾼 축만 다르게, 나머지는 챔피언 그대로. 비면 챔피언 값으로 폴백 표시.
+  const challengerPreview: TourVariant | null = champVariant
+    ? {
+        headline: chAxis === "headline" ? chHeadline.trim() || champVariant.headline : champVariant.headline,
+        primaryText: chAxis === "primary_text" ? chPrimary.trim() || champVariant.primaryText : champVariant.primaryText,
+        imageUrl: chAxis === "image" ? chImage || champVariant.imageUrl : champVariant.imageUrl,
+      }
+    : null;
+
+  const toneLabel = TONE_OPTIONS.find((t) => t.value === tone)?.label ?? "";
+  const objectiveLabel = OBJECTIVE_OPTIONS.find((o) => o.value === objective)?.label ?? "";
+  const axisLabel = CHALLENGER_AXIS_OPTIONS.find((a) => a.value === chAxis)?.label ?? "";
+
+  // 챔피언 카피·문구·이미지로 헤드라인/카피 챌린저를 mock 생성 (browse 에선 generate-creative 가 정적 응답).
+  async function generateChallenger() {
+    if (!champVariant || chGenning) return;
+    if (chAxis === "image") {
+      // mock 이미지 풀에서 챔피언과 다른 한 장.
+      const next = DEMO_AD_IMAGES.find((u) => u !== champVariant.imageUrl) ?? DEMO_AD_IMAGES[0];
+      setChImage(next);
+      return;
+    }
+    setChGenning(true);
+    try {
+      const res = await fetch("/api/generate-creative", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ brand: description.trim() || productName.trim(), target: productName.trim(), tone, outcome: objective }),
+      });
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      const pool: string[] = chAxis === "headline" ? data.headlines : data.primaryTexts;
+      const cur = chAxis === "headline" ? champVariant.headline : champVariant.primaryText;
+      const pick = pool.find((x: string) => x.trim() && x.trim() !== cur.trim()) ?? pool[0] ?? "";
+      if (chAxis === "headline") setChHeadline(pick); else setChPrimary(pick);
+    } catch {
+      setError("챌린저 생성에 실패했어요. 직접 입력하거나 다시 시도해주세요.");
+    } finally {
+      setChGenning(false);
+    }
+  }
+
+  const canStart =
+    productName.trim() && description.trim() && maxRounds >= 1 && dailyBudget > 0 &&
+    (championMode === "ai" || (!!selected && challengerReady));
+
+  async function handleStart() {
+    if (!canStart || starting) return;
+    setStarting(true);
+    setError("");
+    try {
+      const fromExisting = championMode === "existing" && selected && champVariant;
+      const id = await startTournament({
+        brandProfileId: "browse",
+        productId: "browse",
+        productName: productName.trim(),
+        brandDescription: description.trim(),
+        productDescription: description.trim(),
+        tone,
+        objective,
+        maxRounds,
+        dailyBudget,
+        startingCtr: fromExisting ? selected!.ctr : STARTING_CTR,
+        championSource: fromExisting ? "existing" : "ai",
+        startingChampion: fromExisting ? champVariant! : undefined,
+        championSourceName: fromExisting ? selected!.name : undefined,
+      });
+      // existing 경로: 셋업에서 구성한 라운드1 챌린저(B)를 pendingChallenger 로 시드 → 상세가 챌린저 검토 비트로 오픈.
+      if (fromExisting) {
+        const challenger: TourVariant =
+          chAxis === "headline" ? { ...champVariant!, headline: chHeadline.trim() }
+          : chAxis === "primary_text" ? { ...champVariant!, primaryText: chPrimary.trim() }
+          : { ...champVariant!, imageUrl: chImage };
+        setManualChallenger(id, challenger);
+      }
+      router.push(`/ab-tests/${id}`);
+    } catch {
+      setError("출발 챔피언 생성에 실패했어요. 잠시 후 다시 시도해주세요.");
+      setStarting(false);
+    }
+  }
+
+  const shellWidth = step === "config" ? "max-w-[1140px]" : "max-w-[760px]";
+
+  return (
+    <div className={`px-12 py-9 pb-16 ${shellWidth} w-full mx-auto flex flex-col gap-7`} data-screen-label="A/B 토너먼트 셋업">
+      <button
+        type="button"
+        onClick={goBack}
+        className="bg-transparent border-none p-0 cursor-pointer inline-flex items-center gap-1.5 font-semibold text-[12.5px] leading-none text-[var(--w-fg-neutral)] hover:underline self-start"
+      >
+        <Icon name="arrow-left" size={13} /> {step === "method" ? "A/B 테스트" : STEP_LABELS[STEP_ORDER[stepIdx - 1]]}
+      </button>
+
+      <div>
+        <div className="flex items-center gap-3 mb-2">
+          <div style={{ width: 40, height: 40, borderRadius: 12, background: "var(--w-primary-soft)", color: "var(--w-primary-normal)", display: "grid", placeItems: "center", flex: "0 0 auto" }}>
+            <Icon name="chart" size={20} />
+          </div>
+          <h1 className="m-0 font-bold text-[28px] leading-[1.25] tracking-[-0.024em] text-[var(--w-fg-strong)]">A/B 토너먼트</h1>
+        </div>
+        <p className="font-medium text-[14px] leading-[1.5] tracking-[0.004em] text-[var(--w-fg-neutral)] mt-1.5 mb-0">
+          챔피언-챌린저 체인 — 라운드마다 한 요소를 바꿔 더 나은 광고로 진화시켜요. 우세 안이 다음 라운드 챔피언이 돼요.
+        </p>
+      </div>
+
+      <StepIndicator stepIdx={stepIdx} />
+
+      {step === "method" && <MethodStep onPick={pickMode} />}
+
+      {step === "config" && (
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_minmax(340px,380px)] gap-7 items-start">
+          {/* ── 좌: 입력 폼 ── */}
+          <div className="flex flex-col gap-7 min-w-0">
+            <SectionCard title="출발 챔피언" hint="1라운드의 A — 챌린저가 이 광고 위로 진화해요">
+              {championMode === "existing" ? (
+                <div className="flex flex-col gap-3">
+                  <Select
+                    value={campaignId}
+                    onChange={handlePickCampaign}
+                    options={[
+                      { value: "", label: "기존 광고를 선택해주세요" },
+                      ...campaigns.map((c) => ({ value: c.id, label: c.headline || c.name })),
+                    ]}
+                  />
+                  {selected && champVariant && (
+                    <div className="p-4 rounded-xl border border-[var(--w-line-normal)] bg-[var(--w-bg-elevated)] flex gap-3.5">
+                      <img src={champVariant.imageUrl} alt="출발 챔피언 이미지" style={{ width: 84, height: 84, objectFit: "cover", borderRadius: 10, flex: "0 0 auto", border: "1px solid var(--w-line-normal)" }} />
+                      <div className="flex flex-col gap-1.5 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-[12px] leading-none text-[var(--w-fg-neutral)]">출발 챔피언</span>
+                          <span className="font-bold text-[12px] leading-none px-2 py-1 rounded-full bg-[var(--w-bg-alternative)] text-[var(--w-fg-strong)]">실제 CTR {selected.ctr}%</span>
+                        </div>
+                        <div className="font-bold text-[14px] leading-[1.4] text-[var(--w-fg-strong)]">{selected.headline}</div>
+                        {selected.primaryText && (
+                          <p className="font-medium text-[12.5px] leading-[1.5] text-[var(--w-fg-neutral)] m-0">{selected.primaryText}</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="py-2.5 px-3.5 rounded-lg flex items-start gap-2 bg-[var(--w-bg-alternative)]">
+                  <Icon name="sparkles" size={14} style={{ color: "var(--w-accent-violet)", flex: "0 0 auto", marginTop: 1 }} />
+                  <span className="font-medium text-[12.5px] leading-[1.5] text-[var(--w-fg-neutral)]">
+                    AI 가 브랜드·제품 설명을 바탕으로 출발 광고를 제안해요. 다음 화면에서 검토 후 확정합니다.
+                  </span>
+                </div>
+              )}
+            </SectionCard>
+
+            {championMode === "existing" && selected && champVariant && (
+              <SectionCard title="챌린저 (B)" hint="같은 제품, 한 요소만 바꿔 비교해요">
+                <SegControl options={CHALLENGER_AXIS_OPTIONS} value={chAxis} onChange={(v) => setChAxis(v as TourAxis)} />
+
+                <div className="mt-3">
+                  {chAxis === "image" ? (
+                    <div className="flex flex-col gap-2.5">
+                      <div className="grid grid-cols-3 gap-2.5">
+                        {DEMO_AD_IMAGES.map((url) => {
+                          const isChampImg = url === champVariant.imageUrl;
+                          const picked = url === chImage;
+                          return (
+                            <button
+                              key={url}
+                              type="button"
+                              disabled={isChampImg}
+                              onClick={() => setChImage(url)}
+                              className="relative p-0 border-none bg-transparent cursor-pointer disabled:cursor-not-allowed"
+                              title={isChampImg ? "챔피언 이미지" : undefined}
+                            >
+                              <img src={url} alt="챌린저 이미지 후보" style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 10, border: `2px solid ${picked ? "var(--w-accent-violet)" : "var(--w-line-normal)"}`, opacity: isChampImg ? 0.4 : 1 }} />
+                              {isChampImg && <span className="absolute bottom-1 left-1 font-bold text-[10px] px-1.5 py-0.5 rounded bg-[rgba(0,0,0,0.6)] text-white">챔피언</span>}
+                              {picked && <span className="absolute top-1 right-1"><Icon name="check-circle" size={16} style={{ color: "var(--w-accent-violet)" }} /></span>}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <p className="font-medium text-[12px] leading-[1.4] text-[var(--w-fg-alternative)] m-0">챔피언과 다른 이미지를 고르면 B 가 돼요. (browse 데모 — mock 이미지)</p>
+                    </div>
+                  ) : chAxis === "headline" ? (
+                    <input
+                      type="text"
+                      value={chHeadline}
+                      onChange={(e) => setChHeadline(e.target.value)}
+                      placeholder="비교할 헤드라인을 입력하거나 AI 로 생성하세요"
+                      className="w-full bg-[var(--w-bg-elevated)] border border-[var(--w-line-normal)] rounded-xl px-3.5 py-3 font-semibold text-[14px] leading-[1.4] text-[var(--w-fg-strong)] outline-none transition-[border-color,box-shadow] duration-[120ms] focus:border-[var(--w-accent-violet)] focus:shadow-[0_0_0_4px_rgba(124,58,237,0.14)] placeholder:text-[var(--w-fg-alternative)] placeholder:font-medium"
+                    />
+                  ) : (
+                    <textarea
+                      value={chPrimary}
+                      onChange={(e) => setChPrimary(e.target.value)}
+                      rows={3}
+                      placeholder="비교할 광고 카피를 입력하거나 AI 로 생성하세요"
+                      className="w-full bg-[var(--w-bg-elevated)] border border-[var(--w-line-normal)] rounded-xl px-3.5 py-3 font-medium text-[13px] leading-[1.55] text-[var(--w-fg-strong)] outline-none transition-[border-color,box-shadow] duration-[120ms] focus:border-[var(--w-accent-violet)] focus:shadow-[0_0_0_4px_rgba(124,58,237,0.14)] placeholder:text-[var(--w-fg-alternative)] resize-none"
+                    />
+                  )}
+
+                  {chAxis !== "image" && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      type="button"
+                      disabled={chGenning}
+                      onClick={generateChallenger}
+                      className="inline-flex items-center gap-1.5 text-[var(--w-accent-violet)] mt-2"
+                    >
+                      {chGenning ? <><Icon name="spinner" size={13} spin /> 생성 중…</> : <><Icon name="sparkles" size={13} /> AI 로 B안 생성</>}
+                    </Button>
+                  )}
+                </div>
+
+                <p className="mt-3 font-medium text-[12px] leading-[1.5] text-[var(--w-fg-alternative)] m-0">
+                  나머지 요소는 챔피언과 동일하게 유지돼요. 게재 전 상세 화면에서 다시 검토·교체할 수 있어요.
+                </p>
+              </SectionCard>
+            )}
+
+            <SectionCard title="토너먼트 설정" hint="AI 가 챔피언·챌린저를 만들 재료와 게재 조건">
+            <Field label="제품" hint="브랜드 프로필에 등록된 제품에서 선택해요">
+              {products.length > 0 ? (
+                <Select
+                  value={productId}
+                  onChange={handlePickProduct}
+                  options={[
+                    { value: "", label: "제품을 선택해주세요" },
+                    ...products.map((pr) => ({ value: pr.id, label: pr.name })),
+                  ]}
+                />
+              ) : (
+                <input
+                  type="text"
+                  value={productName}
+                  onChange={(e) => setProductName(e.target.value)}
+                  placeholder="예) 수분 가득 비건 크림"
+                  className="w-full bg-[var(--w-bg-elevated)] border border-[var(--w-line-normal)] rounded-xl px-3.5 py-3 font-medium text-[14px] leading-[1.5] text-[var(--w-fg-strong)] outline-none transition-[border-color,box-shadow] duration-[120ms] focus:border-[var(--w-primary-normal)] focus:shadow-[0_0_0_4px_rgba(0,102,255,0.14)] placeholder:text-[var(--w-fg-alternative)]"
+                />
+              )}
+            </Field>
+
+            <Field label="브랜드·제품 설명" hint="AI 가 챔피언·챌린저 카피를 만들 때 주입하는 컨텍스트">
+              <textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                rows={3}
+                placeholder="브랜드 톤·핵심 가치·타겟 고객을 한두 문장으로"
+                className="w-full bg-[var(--w-bg-elevated)] border border-[var(--w-line-normal)] rounded-xl px-3.5 py-3 font-medium text-[14px] leading-[1.55] text-[var(--w-fg-strong)] outline-none transition-[border-color,box-shadow] duration-[120ms] focus:border-[var(--w-primary-normal)] focus:shadow-[0_0_0_4px_rgba(0,102,255,0.14)] placeholder:text-[var(--w-fg-alternative)] resize-none"
+              />
+            </Field>
+
+            <div className="grid grid-cols-2 gap-5">
+              <Field label="카피 톤">
+                <SegControl options={TONE_OPTIONS} value={tone} onChange={(v) => setTone(v as Tone)} />
+              </Field>
+              <Field label="광고 목표">
+                <Select value={objective} onChange={setObjective} options={OBJECTIVE_OPTIONS} />
+              </Field>
+            </div>
+
+            <div className="grid grid-cols-2 gap-5">
+              <Field label="라운드 수" hint="이 횟수만큼 챌린저를 붙이면 끝나요">
+                <Stepper value={maxRounds} min={1} max={6} onChange={setMaxRounds} suffix="라운드" />
+              </Field>
+              <Field label="일 예산">
+                <div className="relative">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={dailyBudget ? dailyBudget.toLocaleString("ko-KR") : ""}
+                    onChange={(e) => setDailyBudget(Number(e.target.value.replace(/[^0-9]/g, "")) || 0)}
+                    className="w-full bg-[var(--w-bg-elevated)] border border-[var(--w-line-normal)] rounded-xl pl-3.5 pr-9 py-3 font-semibold text-[14px] leading-[1.5] text-[var(--w-fg-strong)] outline-none transition-[border-color,box-shadow] duration-[120ms] focus:border-[var(--w-primary-normal)] focus:shadow-[0_0_0_4px_rgba(0,102,255,0.14)]"
+                  />
+                  <span className="absolute right-3.5 top-1/2 -translate-y-1/2 font-medium text-[13px] text-[var(--w-fg-alternative)]">원</span>
+                </div>
+              </Field>
+            </div>
+            </SectionCard>
+          </div>
+
+          {/* ── 우: 대진·진화·조건 미리보기 + 시작 ── */}
+          <aside className="lg:sticky lg:top-6 flex flex-col gap-4">
+            <MatchupCard
+              championMode={championMode}
+              champion={champVariant}
+              challenger={challengerPreview}
+              chAxis={chAxis}
+              axisLabel={axisLabel}
+              ctr={selected?.ctr ?? null}
+            />
+            <EvolutionChain maxRounds={maxRounds} />
+            <ConditionSummary toneLabel={toneLabel} objectiveLabel={objectiveLabel} maxRounds={maxRounds} dailyBudget={dailyBudget} />
+
+            <div className="py-2.5 px-3.5 rounded-lg flex items-start gap-2" style={{ background: "var(--w-primary-soft)", border: "1px solid var(--w-primary-weak)" }}>
+              <Icon name="info" size={14} style={{ color: "var(--w-primary-normal)", flex: "0 0 auto", marginTop: 1 }} />
+              <span className="font-medium text-[12px] leading-[1.5] text-[var(--w-primary-press)]">
+                시작하면 출발 챔피언으로 토너먼트를 열어요. 라운드마다 AI 챌린저를 붙여 진화시킵니다.
+              </span>
+            </div>
+
+            {error && <p className="font-medium text-[12.5px] leading-[1.4] text-[var(--w-status-negative)] m-0">{error}</p>}
+
+            <Button variant="primary" type="button" disabled={!canStart || starting} onClick={handleStart} className="w-full">
+              {starting
+                ? <><Icon name="spinner" size={15} spin /> {championMode === "existing" ? "시작 중…" : "출발 챔피언 생성 중…"}</>
+                : <><Icon name="sparkles" size={15} /> 토너먼트 시작</>}
+            </Button>
+          </aside>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── STEP 1: 방식 선택 ─────────────────────────────────── */
+
+function MethodStep({ onPick }: { onPick: (m: ChampionMode) => void }) {
+  return (
+    <div>
+      {/* 흐름 힌트 — A ⚔ B → 우세 안이 다음 챔피언 */}
+      <div className="flex items-center justify-center gap-3 py-3 px-4 rounded-xl mb-5 bg-[var(--w-bg-alternative)]">
+        <FlowChip label="A" color="var(--w-primary-normal)" />
+        <span className="font-bold text-[11px] leading-none px-2 py-1 rounded-full bg-[var(--w-bg-elevated)] text-[var(--w-fg-neutral)] border border-[var(--w-line-normal)]">VS</span>
+        <FlowChip label="B" color="var(--w-accent-violet)" />
+        <Icon name="arrow-right" size={14} style={{ color: "var(--w-fg-alternative)" }} />
+        <span className="font-semibold text-[12.5px] leading-none text-[var(--w-fg-neutral)]">우세 안이 다음 챔피언</span>
+      </div>
+
+      <div className="font-semibold text-[14px] leading-[1.3] text-[var(--w-fg-strong)] mb-3.5">
+        출발 챔피언을 어떻게 정할까요?
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        <MethodCard
+          icon="folder"
+          title="기존 광고로 시작"
+          desc="이미 돌고 있는 광고를 출발 챔피언으로 앉혀요. 실제 CTR 부터 챌린저가 그 위로 진화해요."
+          tag="추천"
+          tagColor="var(--w-primary-normal)"
+          onClick={() => onPick("existing")}
+        />
+        <MethodCard
+          icon="sparkles"
+          title="AI 가 생성"
+          desc="출발 광고가 아직 없을 때. AI 가 제안한 광고를 다음 화면에서 검토 후 확정해요."
+          tag="새로 시작"
+          tagColor="var(--w-accent-violet)"
+          onClick={() => onPick("ai")}
+        />
+      </div>
+    </div>
+  );
+}
+
+function FlowChip({ label, color }: { label: string; color: string }) {
+  return (
+    <span
+      className="font-bold text-[12px] leading-none grid place-items-center"
+      style={{ width: 26, height: 26, borderRadius: 8, color, background: `color-mix(in srgb, ${color} 12%, transparent)`, border: `1px solid color-mix(in srgb, ${color} 30%, transparent)` }}
+    >
+      {label}
+    </span>
+  );
+}
+
+function MethodCard({ icon, title, desc, tag, tagColor, onClick }: {
+  icon: IconName; title: string; desc: string; tag: string; tagColor: string; onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="bg-[var(--w-bg-elevated)] rounded-2xl text-left cursor-pointer transition-[border-color,transform,box-shadow] duration-[160ms] flex flex-col gap-3.5 p-6 pr-5 hover:border-[var(--w-primary-normal)] hover:-translate-y-0.5 hover:shadow-[0_8px_24px_-12px_rgba(0,0,0,0.18)]"
+      style={{ border: "1.5px solid var(--w-line-alternative)" }}
+    >
+      <div className="flex items-center justify-between">
+        <div style={{ width: 44, height: 44, borderRadius: 12, background: "var(--w-primary-soft)", color: "var(--w-primary-normal)", display: "grid", placeItems: "center" }}>
+          <Icon name={icon} size={22} />
+        </div>
+        <span className="font-bold text-[11.5px] leading-none" style={{ color: tagColor, background: `color-mix(in srgb, ${tagColor} 12%, transparent)`, padding: "4px 9px", borderRadius: 999, border: `1px solid color-mix(in srgb, ${tagColor} 30%, transparent)` }}>
+          {tag}
+        </span>
+      </div>
+      <div>
+        <div className="font-bold text-[15px] leading-[1.4] text-[var(--w-fg-strong)] mb-1.5">{title}</div>
+        <p className="font-medium text-[13px] leading-[1.6] text-[var(--w-fg-neutral)] m-0">{desc}</p>
+      </div>
+      <div className="flex items-center gap-1 font-semibold text-[13px] leading-none text-[var(--w-primary-normal)] mt-auto">
+        선택하기 <Icon name="arrow-right" size={14} />
+      </div>
+    </button>
+  );
+}
+
+/* ─── 우측 미리보기 ─────────────────────────────────── */
+
+// 1라운드 대진 — A(챔피언) vs B(챌린저). existing 만 실제 카드, ai 는 안내 플레이스홀더.
+function MatchupCard({ championMode, champion, challenger, chAxis, axisLabel, ctr }: {
+  championMode: ChampionMode; champion: TourVariant | null; challenger: TourVariant | null; chAxis: TourAxis; axisLabel: string; ctr: number | null;
+}) {
+  return (
+    <div className="rounded-2xl border border-[var(--w-line-normal)] bg-[var(--w-bg-elevated)] p-4">
+      <div className="font-bold text-[13px] leading-none text-[var(--w-fg-strong)] mb-3.5">1라운드 대진</div>
+
+      {championMode === "ai" || !champion || !challenger ? (
+        <div className="py-6 px-3 rounded-xl bg-[var(--w-bg-alternative)] flex flex-col items-center gap-2 text-center">
+          <Icon name="sparkles" size={20} style={{ color: "var(--w-accent-violet)" }} />
+          <span className="font-medium text-[12.5px] leading-[1.5] text-[var(--w-fg-neutral)]">
+            {championMode === "ai"
+              ? "AI 가 출발 챔피언을 생성하면 대진이 채워져요."
+              : "기존 광고를 선택하면 1라운드 대진이 여기 나타나요."}
+          </span>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-0">
+          <SideCard tag="A · 챔피언" tagColor="var(--w-primary-normal)" variant={champion} chAxis={chAxis} highlight={false} badge={ctr != null ? `CTR ${ctr}%` : undefined} />
+
+          <div className="flex items-center gap-2 my-2">
+            <div className="h-px flex-1 bg-[var(--w-line-normal)]" />
+            <span className="font-bold text-[10.5px] leading-none px-2 py-1 rounded-full bg-[var(--w-bg-alternative)] text-[var(--w-fg-neutral)]">VS</span>
+            <span className="font-semibold text-[10.5px] leading-none px-2 py-1 rounded-full" style={{ color: "var(--w-accent-violet)", background: "color-mix(in srgb, var(--w-accent-violet) 12%, transparent)" }}>{axisLabel} 변경</span>
+            <div className="h-px flex-1 bg-[var(--w-line-normal)]" />
+          </div>
+
+          <SideCard tag="B · 챌린저" tagColor="var(--w-accent-violet)" variant={challenger} chAxis={chAxis} highlight />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// 대진 한쪽 카드. 바뀐 축은 챔피언과 다른 값 강조(B), 나머지는 동일.
+function SideCard({ tag, tagColor, variant, chAxis, highlight, badge }: {
+  tag: string; tagColor: string; variant: TourVariant; chAxis: TourAxis; highlight: boolean; badge?: string;
+}) {
+  return (
+    <div
+      className="rounded-xl p-2.5 flex gap-2.5"
+      style={{
+        border: highlight ? "1.5px solid var(--w-accent-violet)" : "1px solid var(--w-line-normal)",
+        background: highlight ? "color-mix(in srgb, var(--w-accent-violet) 5%, var(--w-bg-elevated))" : "var(--w-bg-elevated)",
+      }}
+    >
+      <div className="relative" style={{ flex: "0 0 auto" }}>
+        <img src={variant.imageUrl} alt={tag} style={{ width: 52, height: 52, objectFit: "cover", borderRadius: 9, border: "1px solid var(--w-line-normal)" }} />
+        {chAxis === "image" && <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full" style={{ background: highlight ? "var(--w-accent-violet)" : "var(--w-primary-normal)", border: "2px solid var(--w-bg-elevated)" }} />}
+      </div>
+      <div className="flex flex-col gap-1 min-w-0">
+        <span className="font-bold text-[10.5px] leading-none" style={{ color: tagColor }}>{tag}</span>
+        <div className="font-semibold text-[12.5px] leading-[1.35] text-[var(--w-fg-strong)] line-clamp-2">{variant.headline}</div>
+        {badge && <span className="font-bold text-[10px] leading-none px-1.5 py-0.5 rounded bg-[var(--w-bg-alternative)] text-[var(--w-fg-neutral)] self-start">{badge}</span>}
+      </div>
+    </div>
+  );
+}
+
+// 진화 흐름 — 라운드 수만큼 챔피언↔챌린저 사슬을 시각화.
+function EvolutionChain({ maxRounds }: { maxRounds: number }) {
+  return (
+    <div className="rounded-2xl border border-[var(--w-line-normal)] bg-[var(--w-bg-elevated)] p-4">
+      <div className="font-bold text-[13px] leading-none text-[var(--w-fg-strong)] mb-3">진화 흐름</div>
+      <div className="flex flex-col gap-0">
+        {Array.from({ length: maxRounds }).map((_, i) => (
+          <div key={i}>
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-[11px] leading-none grid place-items-center w-6 h-6 rounded-lg bg-[var(--w-primary-soft)] text-[var(--w-primary-press)]" style={{ flex: "0 0 auto" }}>R{i + 1}</span>
+              <span className="font-medium text-[12px] leading-[1.4] text-[var(--w-fg-neutral)]">
+                {i === 0 ? "출발 챔피언 vs 첫 챌린저" : "이전 우세 안 vs 새 챌린저"}
+              </span>
+            </div>
+            {i < maxRounds - 1 && (
+              <div className="flex items-center gap-1.5 ml-3 my-1 font-medium text-[11px] leading-none text-[var(--w-fg-alternative)]">
+                <span className="leading-none">↓</span> 우세 안이 다음 챔피언
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ConditionSummary({ toneLabel, objectiveLabel, maxRounds, dailyBudget }: {
+  toneLabel: string; objectiveLabel: string; maxRounds: number; dailyBudget: number;
+}) {
+  return (
+    <div className="rounded-2xl border border-[var(--w-line-normal)] bg-[var(--w-bg-elevated)] p-4 flex flex-col gap-2">
+      <div className="font-bold text-[13px] leading-none text-[var(--w-fg-strong)] mb-1">조건 요약</div>
+      <SummaryRow label="카피 톤" value={toneLabel} />
+      <SummaryRow label="광고 목표" value={objectiveLabel} />
+      <SummaryRow label="라운드" value={`${maxRounds}라운드`} />
+      <SummaryRow label="일 예산" value={`${dailyBudget.toLocaleString("ko-KR")}원`} />
+    </div>
+  );
+}
+
+function SummaryRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="font-medium text-[12.5px] leading-none text-[var(--w-fg-alternative)]">{label}</span>
+      <span className="font-semibold text-[12.5px] leading-none text-[var(--w-fg-strong)] text-right">{value}</span>
+    </div>
+  );
+}
+
+function StepIndicator({ stepIdx }: { stepIdx: number }) {
+  return (
+    <div className="flex items-center gap-0">
+      {STEP_ORDER.map((s, i) => {
+        const done = i < stepIdx;
+        const active = i === stepIdx;
+        return (
+          <div key={s} className="flex items-center gap-0">
+            <div className="flex items-center gap-2">
+              <div style={{
+                width: 28, height: 28, borderRadius: "50%", display: "grid", placeItems: "center",
+                background: done ? "var(--w-primary-normal)" : active ? "var(--w-primary-soft)" : "var(--w-bg-alternative)",
+                border: active ? "2px solid var(--w-primary-normal)" : done ? "none" : "2px solid var(--w-line-normal)",
+                color: done ? "#fff" : active ? "var(--w-primary-press)" : "var(--w-fg-alternative)",
+                transition: "all 200ms",
+              }} className="font-bold text-[12px] leading-none">
+                {done ? <Icon name="check" size={13} /> : i + 1}
+              </div>
+              <span className="font-semibold text-[13px] leading-none" style={{
+                color: active ? "var(--w-fg-strong)" : done ? "var(--w-primary-normal)" : "var(--w-fg-alternative)",
+              }}>
+                {STEP_LABELS[s]}
+              </span>
+            </div>
+            {i < STEP_ORDER.length - 1 && (
+              <div style={{ width: 32, height: 2, background: done ? "var(--w-primary-normal)" : "var(--w-line-normal)", margin: "0 8px", transition: "background 200ms" }} />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function SectionCard({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <section className="rounded-2xl border border-[var(--w-line-normal)] bg-[var(--w-bg-elevated)] p-6 flex flex-col gap-5">
+      <div>
+        <div className="font-bold text-[15px] leading-[1.3] text-[var(--w-fg-strong)]">{title}</div>
+        {hint && <p className="font-medium text-[12.5px] leading-[1.4] text-[var(--w-fg-neutral)] mt-1 m-0">{hint}</p>}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <div className="font-semibold text-[13px] leading-[1.3] text-[var(--w-fg-strong)] mb-2">
+        {label}
+        {hint && <span className="font-medium text-[12px] text-[var(--w-fg-alternative)] ml-2">{hint}</span>}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function Stepper({ value, min, max, onChange, suffix }: { value: number; min: number; max: number; onChange: (v: number) => void; suffix: string }) {
+  return (
+    <div className="flex w-full items-center justify-between gap-2 bg-[var(--w-bg-elevated)] border border-[var(--w-line-normal)] rounded-xl px-2 py-1.5">
+      <button
+        type="button"
+        onClick={() => onChange(Math.max(min, value - 1))}
+        disabled={value <= min}
+        className="w-8 h-8 grid place-items-center rounded-lg text-[18px] leading-none text-[var(--w-fg-neutral)] hover:bg-[var(--w-bg-neutral)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+      >
+        −
+      </button>
+      <span className="flex-1 text-center font-semibold text-[14px] text-[var(--w-fg-strong)]">{value} {suffix}</span>
+      <button
+        type="button"
+        onClick={() => onChange(Math.min(max, value + 1))}
+        disabled={value >= max}
+        className="w-8 h-8 grid place-items-center rounded-lg hover:bg-[var(--w-bg-neutral)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+      >
+        <Icon name="plus" size={14} />
+      </button>
+    </div>
+  );
+}

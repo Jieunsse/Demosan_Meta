@@ -6,6 +6,9 @@ import {
   TONE_PROMPT_DESC,
   OBJECTIVES_ALL,
   type ObjectiveId,
+  type CopyHook,
+  findHook,
+  recommendedHooks,
 } from "@entities/creative/options";
 
 function toneText(tone: string): string {
@@ -19,6 +22,7 @@ export interface BrandProfileContext {
   brandVoice?: string;
   customerVoiceSummary?: string;
   policy?: SopSection[];
+  copyReferences?: string[];
 }
 
 export interface PersonaContext {
@@ -42,6 +46,14 @@ export interface GenerateCreativeParams {
   brandProfile?: BrandProfileContext;
   persona?: PersonaContext;
   product?: ProductContext;
+  /** 본문 변형 3개에 각각 적용할 카피 훅. 미지정 시 outcome 추천 풀 사용. */
+  hooks?: CopyHook[];
+}
+
+// 변형당 1훅 (ADR-029) — 지정값 3개면 그대로, 아니면 outcome 추천 풀.
+function resolveHooks(p: GenerateCreativeParams): [CopyHook, CopyHook, CopyHook] {
+  if (p.hooks && p.hooks.length === 3) return [p.hooks[0], p.hooks[1], p.hooks[2]];
+  return recommendedHooks(p.outcome);
 }
 
 // Meta spec: 1=male, 2=female, [] = all (unspecified)
@@ -55,6 +67,8 @@ export interface GenerateCreativeResult {
   headlines: [string, string, string];
   primaryTexts: [string, string, string];
   targeting: ExtractedTargeting;
+  /** 각 primaryText 변형에 적용된 카피 훅 (배지 표시용). */
+  hooks: [CopyHook, CopyHook, CopyHook];
 }
 
 const AGE_FLOOR = 18;
@@ -151,6 +165,18 @@ export function buildCreativePrompt(p: GenerateCreativeParams): string {
 
   const policyLines = bp ? buildPolicyLines(bp) : "";
 
+  const refs = bp?.copyReferences?.filter((t) => t.trim());
+  const copyRefLines = refs?.length
+    ? `\n\n아래 카피들의 문체와 톤을 참고해서 작성해주세요:\n${refs.map((t, i) => `예시${i + 1}: ${t}`).join("\n")}`
+    : "";
+
+  const [h0, h1, h2] = resolveHooks(p).map(findHook);
+  const hookLines =
+    `\n카피 훅: 본문 3개를 각각 아래 설득 각도로 작성하세요. 각도가 본문마다 또렷이 달라야 해요.` +
+    `\n  - 본문1 = ${h0.label}(${h0.ko}): ${h0.promptDesc}` +
+    `\n  - 본문2 = ${h1.label}(${h1.ko}): ${h1.promptDesc}` +
+    `\n  - 본문3 = ${h2.label}(${h2.ko}): ${h2.promptDesc}`;
+
   return `
 아래 정보를 바탕으로 Facebook/Instagram 광고 소재를 작성해주세요.
 
@@ -158,15 +184,15 @@ export function buildCreativePrompt(p: GenerateCreativeParams): string {
 타겟 오디언스: ${audienceLine}${customerVoiceLine}${personaInterestsLine}
 톤앤매너: ${toneText(p.tone)}
 원하는 결과: ${outcomeDef.outcomeLabel} (Meta ${outcomeDef.metaObjective})
-카피 방향: ${outcomeDef.copyTone}${hintLine}${policyLines}
+카피 방향: ${outcomeDef.copyTone}${hookLines}${hintLine}${policyLines}${copyRefLines}
 
 다음 JSON 형식으로 응답하세요:
 {
   "headlines": ["헤드라인1 (25자 이내)", "헤드라인2 (25자 이내)", "헤드라인3 (25자 이내)"],
   "primaryTexts": [
-    "본문1 (150~200자, 공감→문제→해결→증거→CTA 구조)",
-    "본문2 (다른 감성·각도로 150~200자)",
-    "본문3 (또 다른 접근 150~200자)"
+    "본문1 — ${h0.label} 훅 (150~200자, 공감→문제→해결→증거→CTA 구조)",
+    "본문2 — ${h1.label} 훅 (150~200자)",
+    "본문3 — ${h2.label} 훅 (150~200자)"
   ],
   "targeting": {
     "ageMin": 최소연령(18~65 정수),
@@ -293,6 +319,8 @@ export const geminiCreative = {
         stripHanja(parsed.primaryTexts[2]),
       ],
       targeting: sanitizeTargeting(parsed.targeting),
+      // 훅은 우리가 변형에 배정한 값이 진실원 — 모델 echo 에 의존하지 않음 (ADR-029).
+      hooks: resolveHooks(params),
     };
   },
 

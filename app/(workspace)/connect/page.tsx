@@ -16,6 +16,21 @@ import { cn } from "@shared/lib/cn";
 
 type AccountInfo = { connected: boolean; accountId: string; accountName: string; currency: string };
 
+// 둘러보기 모드: 실제 로그인 유저가 보는 '연결됨' 화면을 그대로 보여주되 내용만 목업(그린루틴)으로 채워요.
+const BROWSE_CONN = {
+  memberName: "둘러보기 사용자",
+  accountName: "그린루틴 광고 계정",
+  accountId: "act_4821093765",
+  currency: "KRW",
+  pageName: "그린루틴 Green Routine",
+  pageId: "108552938475610",
+  pixelName: "그린루틴 전환 Pixel",
+  pixelId: "728391056421",
+  igUsername: "greenroutine_official",
+  igUserId: "17841405822913094",
+} as const;
+const BROWSE_BLOCK_MSG = "둘러보기 모드예요. 실제 계정 연결은 로그인 후에 바꿀 수 있어요.";
+
 async function applyIgToken({ update, showToast, onSuccess }: {
   update: (data: Record<string, unknown>) => Promise<unknown>;
   showToast: (msg: string) => void;
@@ -115,8 +130,10 @@ export default function ConnectPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const browseMode = !!session?.browseMode;
   const connected = !!(session?.adAccountId && session?.pageId);
-  const isExploring = !!session?.browseMode && !connected;
+  const showConnected = connected || browseMode;
+  const isExploring = browseMode && !connected;
 
   const accountQ = useQuery({ queryKey: ["account"], queryFn: fetchAccount, enabled: connected });
   const picturesQ = useQuery({
@@ -128,20 +145,27 @@ export default function ConnectPage() {
   const tokenExpired = (accountQ.error as { code?: number } | null)?.code === 401;
   const accountStatus: "active" | "disabled" = accountQ.data && accountQ.data.connected === false ? "disabled" : "active";
 
-  const memberName = session?.user?.name ?? "";
-  const memberImage = session?.user?.image ?? null;
-  const accountName = session?.adAccountName ?? accountQ.data?.accountName ?? "—";
-  const accountId = session?.adAccountId ?? accountQ.data?.accountId ?? "—";
-  const currency = accountQ.data?.currency ?? "—";
-  const pageName = session?.pageName ?? "—";
-  const pageId = session?.pageId ?? "—";
-  const pixelName = session?.pixelName ?? null;
-  const pixelId = session?.pixelId ?? null;
-  const igUserId = session?.igUserId || null;
-  const igUsername = session?.igUsername || null;
+  const memberName = browseMode ? BROWSE_CONN.memberName : session?.user?.name ?? "";
+  const memberImage = browseMode ? null : session?.user?.image ?? null;
+  const accountName = browseMode ? BROWSE_CONN.accountName : session?.adAccountName ?? accountQ.data?.accountName ?? "—";
+  const accountId = browseMode ? BROWSE_CONN.accountId : session?.adAccountId ?? accountQ.data?.accountId ?? "—";
+  const currency = browseMode ? BROWSE_CONN.currency : accountQ.data?.currency ?? "—";
+  const pageName = browseMode ? BROWSE_CONN.pageName : session?.pageName ?? "—";
+  const pageId = browseMode ? BROWSE_CONN.pageId : session?.pageId ?? "—";
+  const pixelName = browseMode ? BROWSE_CONN.pixelName : session?.pixelName ?? null;
+  const pixelId = browseMode ? BROWSE_CONN.pixelId : session?.pixelId ?? null;
+  const igUserId = browseMode ? BROWSE_CONN.igUserId : session?.igUserId || null;
+  const igUsername = browseMode ? BROWSE_CONN.igUsername : session?.igUsername || null;
 
-  const handleReauth = () => { setReauthing(true); signIn("facebook", { callbackUrl: "/connect" }); };
+  const handleReauth = () => {
+    if (browseMode) { showToast(BROWSE_BLOCK_MSG); return; }
+    setReauthing(true); signIn("facebook", { callbackUrl: "/connect" });
+  };
   const handleDisconnect = () => { signOut({ callbackUrl: "/login" }); };
+  const handleChange = (kind: PickerKind) => () => {
+    if (browseMode) { showToast(BROWSE_BLOCK_MSG); return; }
+    setPickerOpen(kind);
+  };
 
   const pickAccount = async (it: PickerItem) => {
     await update?.({ adAccountId: it.id, adAccountName: it.name });
@@ -185,7 +209,7 @@ export default function ConnectPage() {
         </div>
       )}
 
-      {!connected ? (
+      {!showConnected ? (
         <UnconnectedCTA onConnect={() => router.push("/setup")} />
       ) : accountQ.isLoading ? (
         <ConnectSkeleton />
@@ -198,15 +222,17 @@ export default function ConnectPage() {
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <FacebookCard memberName={memberName} memberImage={memberImage} tokenExpired={tokenExpired} reauthing={reauthing} onReauth={handleReauth} />
-          <AdAccountCard name={accountName} id={accountId} currency={currency} status={tokenExpired ? null : accountStatus} disabled={tokenExpired} onChange={() => setPickerOpen("account")} />
-          <PageCard name={pageName} id={pageId} picture={picturesQ.data?.pagePicture ?? null} disabled={tokenExpired} onChange={() => setPickerOpen("page")} />
+          <AdAccountCard name={accountName} id={accountId} currency={currency} status={tokenExpired ? null : accountStatus} disabled={tokenExpired} onChange={handleChange("account")} />
+          <PageCard name={pageName} id={pageId} picture={picturesQ.data?.pagePicture ?? null} disabled={tokenExpired} onChange={handleChange("page")} />
           <InstagramCard
             username={igUsername}
             id={igUserId}
             picture={picturesQ.data?.igPicture ?? null}
             pageId={session?.pageId ?? null}
-            igAccessToken={session?.igAccessToken ?? null}
+            igAccessToken={browseMode ? "browse-token" : session?.igAccessToken ?? null}
             disabled={tokenExpired}
+            browseMode={browseMode}
+            onBrowseBlock={() => showToast(BROWSE_BLOCK_MSG)}
             applyingToken={applyingToken}
             onApplyToken={async () => {
               setApplyingToken(true);
@@ -218,7 +244,7 @@ export default function ConnectPage() {
               setPickerOpen("page");
             }}
           />
-          <PixelCard name={pixelName} id={pixelId} disabled={tokenExpired} onChange={() => setPickerOpen("pixel")} />
+          <PixelCard name={pixelName} id={pixelId} disabled={tokenExpired} onChange={handleChange("pixel")} />
 
           <PermissionsDisclosure open={permsOpen} onToggle={() => setPermsOpen((o) => !o)} />
 
@@ -227,7 +253,7 @@ export default function ConnectPage() {
               <div className="font-bold text-[14px] leading-[1.3] text-[var(--w-status-negative)]">Meta 연결 해제</div>
               <div className="font-medium text-[12.5px] leading-[1.5] text-[var(--w-fg-neutral)] mt-1">해제하면 캠페인 성과 조회·게재 제어가 멈춰요. 다시 연결하려면 로그아웃 후 Facebook으로 다시 로그인하면 돼요.</div>
             </div>
-            <Button variant="danger" type="button" onClick={() => setConfirmDisconnect(true)}>
+            <Button variant="danger" type="button" onClick={() => browseMode ? showToast(BROWSE_BLOCK_MSG) : setConfirmDisconnect(true)}>
               <Icon name="link" size={14} /> 연결 해제
             </Button>
           </div>
@@ -442,8 +468,8 @@ function PermCheck({ label }: { label: string }) {
   );
 }
 
-function InstagramCard({ username, id, picture, pageId, igAccessToken, disabled, applyingToken, onApplyToken, onReload }: {
-  username: string | null; id: string | null; picture: string | null; pageId: string | null; igAccessToken: string | null; disabled: boolean; applyingToken: boolean; onApplyToken: () => void; onReload: () => void;
+function InstagramCard({ username, id, picture, pageId, igAccessToken, disabled, browseMode, onBrowseBlock, applyingToken, onApplyToken, onReload }: {
+  username: string | null; id: string | null; picture: string | null; pageId: string | null; igAccessToken: string | null; disabled: boolean; browseMode: boolean; onBrowseBlock: () => void; applyingToken: boolean; onApplyToken: () => void; onReload: () => void;
 }) {
   const linked = !!id;
   const insightsAuthorized = !!igAccessToken;
@@ -494,9 +520,15 @@ function InstagramCard({ username, id, picture, pageId, igAccessToken, disabled,
               ? <span className="inline-flex items-center gap-[5px] px-[9px] py-[3px] rounded-full font-semibold text-[11.5px] leading-none text-[var(--w-status-positive)] bg-[rgba(0,191,64,0.10)] dark:bg-[rgba(73,229,125,0.14)] dark:text-[#49e57d]"><span className="w-1.5 h-1.5 rounded-full bg-[var(--w-status-positive)] dark:bg-[#49e57d]" /> 연결됨</span>
               : <span className="inline-flex items-center gap-[5px] px-2.5 py-1 rounded-full font-semibold text-[12px] leading-none text-[var(--w-status-cautionary)] bg-[rgba(255,146,0,0.12)]"><Icon name="warn" size={12} /> 미연결</span>}
             {linked && !disabled && (
-              <a className={buttonVariants({ variant: "ghost", size: "sm" })} href="/api/instagram/connect">
-                <Icon name="refresh" size={13} /> 재연결
-              </a>
+              browseMode ? (
+                <Button variant="ghost" size="sm" type="button" onClick={onBrowseBlock}>
+                  <Icon name="refresh" size={13} /> 재연결
+                </Button>
+              ) : (
+                <a className={buttonVariants({ variant: "ghost", size: "sm" })} href="/api/instagram/connect">
+                  <Icon name="refresh" size={13} /> 재연결
+                </a>
+              )
             )}
             {!linked && !disabled && (
               <div style={{ display: "flex", gap: 8, marginTop: 4 }}>

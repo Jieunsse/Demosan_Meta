@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Icon from "@shared/ui/Icon";
 import { Button } from "@shared/ui/Button";
+import { cn } from "@shared/lib/cn";
 import {
   isSectionFilled,
   type CtaRestrictionsData,
@@ -154,6 +155,19 @@ function FormBody({
       />
     );
   }
+  if (type === "image_restrictions") {
+    const imgInitial =
+      section?.type === "image_restrictions" ? section.data : { text: "" };
+    return (
+      <ImageRestrictionsForm
+        initial={imgInitial as FreeTextData}
+        onSave={(data) => onSave({ type: "image_restrictions", data, source: "user" })}
+        onClear={onClear}
+        onClose={onClose}
+        hasExisting={!!section}
+      />
+    );
+  }
   const freeTextInitial =
     section &&
     section.type !== "prohibited_words" &&
@@ -286,6 +300,131 @@ function ProhibitedWordsForm({
         />
         <div className="font-medium text-[11.5px] text-[var(--w-fg-alternative)]">
           쉼표 또는 Enter 로 한 단어씩 추가돼요.
+        </div>
+      </div>
+      <FormActions
+        hasExisting={hasExisting}
+        canSave={canSave}
+        onClear={onClear}
+        onClose={onClose}
+        onSubmit={submit}
+      />
+    </>
+  );
+}
+
+const IMAGE_FORMATS = ["JPG", "PNG", "GIF", "MP4", "WebP"];
+
+function parseImageField(text: string, key: string): string {
+  const line = text.split("\n").find((l) => l.startsWith(key + ": "));
+  return line ? line.slice(key.length + 2) : "";
+}
+
+function ImageRestrictionsForm({
+  initial,
+  onSave,
+  onClear,
+  onClose,
+  hasExisting,
+}: {
+  initial: FreeTextData;
+  onSave: (data: FreeTextData) => void;
+  onClear: () => void;
+  onClose: () => void;
+  hasExisting: boolean;
+}) {
+  const [minResolution, setMinResolution] = useState(() => parseImageField(initial.text, "이미지 최소 해상도"));
+  const [formats, setFormats] = useState<string[]>(() => {
+    const raw = parseImageField(initial.text, "이미지 형식");
+    return raw ? raw.split(", ").filter(Boolean) : [];
+  });
+  const [textRatio, setTextRatio] = useState(() => parseImageField(initial.text, "텍스트 비율"));
+  const [aspectRatio, setAspectRatio] = useState(() => parseImageField(initial.text, "가로세로 비율"));
+  const [maxFileSize, setMaxFileSize] = useState(() => parseImageField(initial.text, "파일 최대 용량"));
+
+  const canSave =
+    [minResolution, textRatio, aspectRatio, maxFileSize].some((v) => v.trim()) ||
+    formats.length > 0;
+
+  const submit = () => {
+    const lines: string[] = [];
+    if (minResolution.trim()) lines.push(`이미지 최소 해상도: ${minResolution.trim()}`);
+    if (formats.length > 0) lines.push(`이미지 형식: ${formats.join(", ")}`);
+    if (textRatio.trim()) lines.push(`텍스트 비율: ${textRatio.trim()}`);
+    if (aspectRatio.trim()) lines.push(`가로세로 비율: ${aspectRatio.trim()}`);
+    if (maxFileSize.trim()) lines.push(`파일 최대 용량: ${maxFileSize.trim()}`);
+    onSave({ text: lines.join("\n") });
+  };
+
+  const toggleFormat = (f: string) =>
+    setFormats((prev) => (prev.includes(f) ? prev.filter((x) => x !== f) : [...prev, f]));
+
+  const inputClass =
+    "w-full bg-[var(--w-bg-elevated)] border border-[var(--w-line-normal)] rounded-xl px-3.5 py-2.5 font-medium text-[13.5px] leading-[1.5] text-[var(--w-fg-strong)] outline-none transition-[border-color,box-shadow] duration-[120ms] focus:border-[var(--w-primary-normal)] focus:shadow-[0_0_0_4px_rgba(0,102,255,0.14)] placeholder:text-[var(--w-fg-alternative)]";
+  const labelClass = "font-semibold text-[13px] text-[var(--w-fg-strong)]";
+
+  return (
+    <>
+      <div className="px-6 py-5 flex flex-col gap-4">
+        <div className="flex flex-col gap-1.5">
+          <label className={labelClass}>이미지 최소 해상도</label>
+          <input
+            type="text"
+            value={minResolution}
+            onChange={(e) => setMinResolution(e.target.value)}
+            placeholder="예: 1080×1080px"
+            className={inputClass}
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <label className={labelClass}>이미지 형식</label>
+          <div className="flex gap-2 flex-wrap">
+            {IMAGE_FORMATS.map((f) => (
+              <button
+                key={f}
+                type="button"
+                onClick={() => toggleFormat(f)}
+                className={cn(
+                  "px-3.5 py-2 rounded-full border font-medium text-[13px] leading-none cursor-pointer transition-[background,border-color,color] duration-[120ms]",
+                  formats.includes(f)
+                    ? "bg-[var(--w-fg-strong)] text-[var(--w-bg-elevated)] border-[var(--w-fg-strong)]"
+                    : "bg-[var(--w-bg-elevated)] border-[var(--w-line-normal)] text-[var(--w-fg-strong)]"
+                )}
+              >
+                {f}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <label className={labelClass}>텍스트 비율</label>
+          <input
+            type="text"
+            value={textRatio}
+            onChange={(e) => setTextRatio(e.target.value)}
+            placeholder="예: 20% 이하"
+            className={inputClass}
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <label className={labelClass}>가로세로 비율</label>
+          <input
+            type="text"
+            value={aspectRatio}
+            onChange={(e) => setAspectRatio(e.target.value)}
+            placeholder="예: 1:1, 9:16, 4:5"
+            className={inputClass}
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <label className={labelClass}>파일 최대 용량</label>
+          <input
+            type="text"
+            value={maxFileSize}
+            onChange={(e) => setMaxFileSize(e.target.value)}
+            placeholder="예: 30MB"
+            className={inputClass}
+          />
         </div>
       </div>
       <FormActions
