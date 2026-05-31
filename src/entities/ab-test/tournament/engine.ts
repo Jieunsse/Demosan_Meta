@@ -8,6 +8,10 @@ import { type AdKpi } from "@entities/insights/ab-verdict";
 export type TourAxis = "headline" | "primary_text" | "image";
 export type TourVariant = { headline: string; primaryText: string; imageUrl?: string };
 
+// ADR-039 — 단일 축을 *얼마나* 다르게(변형 폭). 텍스트 축(헤드라인·카피) AI 챌린저 생성에만 적용.
+// 토너먼트 상수로 저장 → 무인 auto 루프(R2+)가 그대로 사용, manual-n 만 라운드별 override.
+export type VariationIntensity = "subtle" | "moderate" | "bold";
+
 export type RoundVerdict = {
   state: "insufficient" | "inconclusive" | "winner";
   ctrA: number;
@@ -75,6 +79,7 @@ export type Tournament = {
   anomalyClearedRound?: number; // ADR-035 ⓑ — 사람이 "계속"으로 해소한 이상 신호 라운드
   brandDescription?: string; // 셋업 시 고른 브랜드 컨텍스트 — 라운드별 Gemini 주입
   productDescription?: string; // 셋업 시 고른 제품 컨텍스트 — 라운드별 Gemini 주입
+  variationIntensity?: VariationIntensity; // ADR-039 변형 폭 (토너먼트 상수, undefined=moderate)
   axisCursor: number; // 좌표상승 인덱스
   rounds: TourRound[];
   spentBudget: number; // 자동 봉투 누적

@@ -34,6 +34,7 @@ async function genCreative(t: Tournament): Promise<CreativeGen> {
     tone: t.tone,
     outcome: t.objective as ObjectiveId,
     product: { name: t.productName, description: t.productDescription || t.productName },
+    variationIntensity: t.variationIntensity,
   });
   return { headlines: res.headlines, primaryTexts: res.primaryTexts };
 }

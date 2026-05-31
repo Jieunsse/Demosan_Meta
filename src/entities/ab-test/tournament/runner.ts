@@ -20,6 +20,7 @@ import {
   type Tournament,
   type TourVariant,
   type TourRound,
+  type VariationIntensity,
 } from "./tournament";
 
 type CreativeGen = { headlines: string[]; primaryTexts: string[] };
@@ -35,6 +36,7 @@ async function genCreative(t: Tournament): Promise<CreativeGen> {
       tone: t.tone,
       outcome: t.objective,
       product: { name: t.productName, description: t.productDescription || t.productName },
+      variationIntensity: t.variationIntensity,
     }),
   });
   if (!res.ok) throw new Error("gen failed");
@@ -56,6 +58,7 @@ export type TournamentSetup = {
   championSource?: "ai" | "existing";
   startingChampion?: TourVariant;
   championSourceName?: string;
+  variationIntensity?: VariationIntensity;
 };
 
 // 셋업 결정 → 출발 챔피언 확보. existing = 기존 광고 카피 즉시 확정, ai = Gemini 생성 후 검토 대기.
@@ -71,6 +74,7 @@ export async function startTournament(setup: TournamentSetup): Promise<string> {
     productDescription: setup.productDescription,
     tone: setup.tone,
     objective: setup.objective,
+    variationIntensity: setup.variationIntensity,
     mode: "manual-n",
     maxRounds: setup.maxRounds,
     dailyBudget: setup.dailyBudget,

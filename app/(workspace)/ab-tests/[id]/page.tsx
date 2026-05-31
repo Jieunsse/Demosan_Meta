@@ -247,7 +247,7 @@ export default function AbTournamentDetailPage() {
         <WinnerHandlingPanel
           t={t}
           onPromote={() => router.push("/create")}
-          onRefill={() => act(client.refillEnvelope(t.id), "봉투를 리필했어요 — 자동 진행을 재개해요")}
+          onRefill={() => act(client.refillEnvelope(t.id), "예산을 리필했어요 — 자동 진행을 재개해요")}
           onArchive={() => act(client.end(t.id), "토너먼트를 마치고 보관했어요")}
         />
       )}
@@ -364,7 +364,7 @@ function StatItem({ label, value }: { label: string; value: string }) {
 function Metric({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-col gap-0.5">
-      <span className="font-medium text-[10.5px] text-[var(--w-fg-alternative)]">{label}</span>
+      <span className="font-medium text-[10.5px] text-[var(--w-fg-neutral)]">{label}</span>
       <span className="font-semibold text-[12.5px] text-[var(--w-fg-strong)]">{value}</span>
     </div>
   );
@@ -555,44 +555,48 @@ function LivePanel({ t }: { t: Tournament }) {
       />
       <VerdictStrip live />
       <div className="grid grid-cols-2 gap-4">
-        <AdMetricCard label="A" tag="챔피언" variant={round.champion} ad={report.ads[0]} hasData={hasData} accent={false} axis={round.axis} />
-        <AdMetricCard label="B" tag="챌린저" variant={round.challenger} ad={report.ads[1]} hasData={hasData} accent axis={round.axis} />
+        <AdMetricCard label="A" tag="챔피언" variant={round.champion} ad={report.ads[0]} hasData={hasData} accent={false} axis={round.axis} delta={report.ads[0].ctr - report.ads[1].ctr} />
+        <AdMetricCard label="B" tag="챌린저" variant={round.challenger} ad={report.ads[1]} hasData={hasData} accent axis={round.axis} delta={report.ads[1].ctr - report.ads[0].ctr} />
       </div>
     </div>
   );
 }
 
-function MetricCat({ title, children }: { title: string; children: ReactNode }) {
+function MetricCat({ children }: { children: ReactNode }) {
   return (
-    <div className="flex flex-col gap-2">
-      <div className="font-semibold text-[10px] uppercase tracking-[0.04em] text-[var(--w-fg-alternative)]">{title}</div>
+    <div className="rounded-xl bg-[var(--w-bg-alternative)] p-3">
       <div className="grid grid-cols-2 gap-y-2 gap-x-4">{children}</div>
     </div>
   );
 }
 
-function AdMetricCard({ label, tag, variant, ad, hasData, accent, mark, axis, prohibited, real }: {
+function AdMetricCard({ label, tag, variant, ad, hasData, accent, mark, axis, prohibited, real, delta }: {
   label: string; tag: string; variant: TourVariant; ad: AdReport;
-  hasData: boolean; accent: boolean; mark?: string; axis: TourAxis; prohibited?: string[]; real?: boolean;
+  hasData: boolean; accent: boolean; mark?: string; axis: TourAxis; prohibited?: string[]; real?: boolean; delta?: number;
 }) {
   const v = (s: string) => (hasData ? s : "—");
+  const lead = hasData && delta != null && delta > 0.005;
   return (
     <Card className="p-4" style={accent ? { borderColor: "var(--w-primary-normal)" } : undefined}>
-      <div className="flex items-center gap-1.5 mb-2.5">
+      <div className="flex items-center gap-1.5 mb-3">
         <span style={{ width: 22, height: 22, borderRadius: "50%", background: accent ? "var(--w-primary-soft)" : "var(--w-bg-alternative)", border: `1.5px solid ${accent ? "var(--w-primary-normal)" : "var(--w-line-normal)"}`, color: accent ? "var(--w-primary-press)" : "var(--w-fg-neutral)", display: "grid", placeItems: "center" }} className="font-bold text-[11px]">{label}</span>
         <span className="font-semibold text-[12.5px]" style={{ color: accent ? "var(--w-primary-press)" : "var(--w-fg-neutral)" }}>{tag}</span>
         {mark && <Chip variant={mark === "승격" ? "live" : "neutral"}>{mark}</Chip>}
-        <span className="ml-auto font-bold text-[15px] text-[var(--w-fg-strong)]">{hasData ? `${ad.ctr.toFixed(2)}%` : "—"}</span>
+      </div>
+      <div className="flex items-baseline gap-2 mb-3">
+        <span className="font-semibold text-[10px] uppercase tracking-[0.05em] text-[var(--w-fg-alternative)]">CTR</span>
+        <span className="font-bold text-[26px] leading-none tabular-nums" style={{ color: accent ? "var(--w-primary-press)" : "var(--w-fg-strong)" }}>{hasData ? `${ad.ctr.toFixed(2)}%` : "—"}</span>
+        {lead && <span className="font-bold text-[12.5px] text-[var(--w-status-positive)]">▲ {delta!.toFixed(2)}</span>}
       </div>
       <VariantBody variant={variant} only={axis} prohibited={prohibited} />
       {/* 실 유저 — Meta 실측 4지표 + 실측 파생 단가(CPM·CPC)만. reach·빈도·링크클릭은 시드 추정이라 숨김(ADR-038 fake-performance). */}
       {real ? (
         <div className="mt-3 pt-3 border-t border-[var(--w-line-normal)] flex flex-col gap-3">
-          <MetricCat title="노출 & 클릭">
+          <MetricCat>
             <Metric label="노출" value={v(ad.impressions.toLocaleString("ko-KR"))} />
             <Metric label="클릭" value={v(ad.clicks.toLocaleString("ko-KR"))} />
           </MetricCat>
-          <MetricCat title="지출 & 단가">
+          <MetricCat>
             <Metric label="지출" value={v(krw(ad.spend))} />
             <Metric label="CPM" value={v(krw(ad.cpm))} />
             <Metric label="CPC" value={v(krw(ad.cpc))} />
@@ -600,18 +604,18 @@ function AdMetricCard({ label, tag, variant, ad, hasData, accent, mark, axis, pr
         </div>
       ) : (
         <div className="mt-3 pt-3 border-t border-[var(--w-line-normal)] flex flex-col gap-3">
-          <MetricCat title="노출 & 도달">
+          <MetricCat>
             <Metric label="노출" value={v(ad.impressions.toLocaleString("ko-KR"))} />
             <Metric label="도달" value={v(ad.reach.toLocaleString("ko-KR"))} />
             <Metric label="빈도" value={v(ad.frequency.toFixed(2))} />
             <Metric label="CPM" value={v(krw(ad.cpm))} />
           </MetricCat>
-          <MetricCat title="클릭 & 참여">
+          <MetricCat>
             <Metric label="클릭" value={v(ad.clicks.toLocaleString("ko-KR"))} />
             <Metric label="링크 클릭" value={v(ad.linkClicks.toLocaleString("ko-KR"))} />
             <Metric label="CPC" value={v(krw(ad.cpc))} />
           </MetricCat>
-          <MetricCat title="예산 & 지출">
+          <MetricCat>
             <Metric label="지출" value={v(krw(ad.spend))} />
             <Metric label="남은 예산" value={v(krw(ad.budgetRemaining))} />
           </MetricCat>
@@ -698,8 +702,8 @@ function SettledResult({ round, dailyBudget, prohibited, isReal }: { round: Tour
       />
       <VerdictStrip report={report} winnerIsB={winnerIsB} />
       <div className="grid grid-cols-2 gap-4">
-        <AdMetricCard label="A" tag="챔피언" variant={round.champion} ad={report.ads[0]} hasData accent={!winnerIsB} mark={winnerIsB ? undefined : "방어"} axis={round.axis} real={isReal} />
-        <AdMetricCard label="B" tag="챌린저" variant={round.challenger} ad={report.ads[1]} hasData accent={winnerIsB} mark={winnerIsB ? "승격" : undefined} axis={round.axis} prohibited={prohibited} real={isReal} />
+        <AdMetricCard label="A" tag="챔피언" variant={round.champion} ad={report.ads[0]} hasData accent={!winnerIsB} mark={winnerIsB ? undefined : "방어"} axis={round.axis} real={isReal} delta={report.ads[0].ctr - report.ads[1].ctr} />
+        <AdMetricCard label="B" tag="챌린저" variant={round.challenger} ad={report.ads[1]} hasData accent={winnerIsB} mark={winnerIsB ? "승격" : undefined} axis={round.axis} prohibited={prohibited} real={isReal} delta={report.ads[1].ctr - report.ads[0].ctr} />
       </div>
     </div>
   );
@@ -844,7 +848,7 @@ function WinnerHandlingPanel({ t, onPromote, onRefill, onArchive }: {
       <div className="flex items-start gap-3 py-4 px-5 rounded-xl bg-[var(--w-primary-soft)] border border-[var(--w-primary-weak)]">
         <span className="text-[22px] leading-none">🏆</span>
         <div>
-          <div className="font-bold text-[15px] leading-[1.3] text-[var(--w-primary-press)]">자원 봉투를 다 썼어요 — 위너 처리를 결정해주세요</div>
+          <div className="font-bold text-[15px] leading-[1.3] text-[var(--w-primary-press)]">예산을 다 썼어요 — 위너 처리를 결정해주세요</div>
           <div className="font-medium text-[12.5px] leading-[1.5] text-[var(--w-fg-neutral)] mt-1">
             {settled}개 라운드 무인 진행 · 최종 CTR {t.championCtr.toFixed(2)}%
             {lift > 0.5 && <span className="text-[var(--w-status-positive)] font-semibold"> · 출발 대비 +{lift.toFixed(0)}%</span>}
@@ -856,7 +860,7 @@ function WinnerHandlingPanel({ t, onPromote, onRefill, onArchive }: {
         <Button variant="primary" type="button" onClick={onPromote}>
           <Icon name="sparkles" size={14} /> 실제 캠페인으로 승격
         </Button>
-        <Button variant="secondary" type="button" onClick={onRefill}>봉투 리필해서 계속</Button>
+        <Button variant="secondary" type="button" onClick={onRefill}>예산 리필해서 계속</Button>
         <Button variant="secondary" type="button" className="ml-auto" onClick={onArchive}>종료하고 보관</Button>
       </div>
     </div>

@@ -295,7 +295,7 @@ function TournamentDashboard({ tournaments, onOpen, onNew }: { tournaments: Tour
             tone="decision"
             icon={<span className="text-[26px] leading-none">🤖</span>}
             title="지금은 전부 자동 진행 중"
-            desc="AI 가 무인으로 챔피언-챌린저 라운드를 돌리고 있어요. 봉투가 소진되거나 이상 신호가 잡히면 그때만 여기로 올라와요."
+            desc="AI 가 무인으로 챔피언-챌린저 라운드를 돌리고 있어요. 예산이 소진되거나 이상 신호가 잡히면 그때만 여기로 올라와요."
             onNew={onNew}
           />
         )}
