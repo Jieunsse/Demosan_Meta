@@ -109,15 +109,20 @@ export default function DestinationField() {
   }
 
   const isMessenger = goalDef?.defaultLink === "messenger";
-  const destLabel = isMessenger ? "Messenger 대화창" : "Facebook 페이지";
-  const destIcon = isMessenger ? "message" : "facebook";
+  const destLabel = isMessenger ? "Messenger 대화창" : "Instagram 프로필";
+  const destIcon = isMessenger ? "message" : "instagram";
   const destSubtitle = isMessenger
     ? "광고를 누르면 활성 페이지의 Messenger 대화창이 바로 열려요."
-    : "광고를 누르면 활성 Facebook 페이지로 이동해요.";
+    : "광고를 누르면 활성 Instagram 프로필로 이동해요.";
 
   const fallbackUrl = isMessenger
     ? `m.me/${session?.pageId ?? "…"}`
-    : `facebook.com/${session?.pageId ?? "…"}`;
+    : `instagram.com/${session?.igUsername ?? session?.pageId ?? "…"}`;
+
+  const activeName =
+    activePage?.name ??
+    (session?.igUsername ? `@${session.igUsername}` : null) ??
+    "활성 페이지 확인 중…";
 
   return (
     <>
@@ -131,7 +136,7 @@ export default function DestinationField() {
             {destLabel}
           </div>
           <div className="font-bold text-[14.5px] leading-[1.3] text-[var(--w-fg-strong)]">
-            {activePage?.name ?? "활성 페이지 확인 중…"}
+            {activeName}
           </div>
           <div className="font-medium text-[11px] leading-[1.2] font-[var(--w-font-mono)] text-[var(--w-fg-alternative)] mt-1 overflow-hidden text-ellipsis whitespace-nowrap">
             {state.landingUrl || fallbackUrl}
@@ -146,7 +151,7 @@ export default function DestinationField() {
         className="mt-2.5"
         onClick={() => setOverrideOpen((v) => !v)}
       >
-        <Icon name="arrow-right" size={12} /> {overrideOpen ? "직접 입력 닫기" : "다른 URL 로 보내고 싶어요"}
+        {overrideOpen ? "닫기" : "다른 페이지 연결하기"}
       </Button>
 
       {overrideOpen && (

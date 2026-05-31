@@ -6,7 +6,9 @@
 //
 // 텍스트는 label 한 줄 + Meta enum 한 줄. label+outcomeLabel 결합 분기 제거.
 
+import Image from "next/image";
 import { useSession } from "next-auth/react";
+import { useQuery } from "@tanstack/react-query";
 import { cn } from "@shared/lib/cn";
 import Icon from "@shared/ui/Icon";
 import { Card } from "@shared/ui/Card";
@@ -30,6 +32,22 @@ export default function SelectedGoalCard({ onChange, changeLabel = "광고 목�
   const goal = outcome
     ? [...OBJECTIVES_PHASE1, ...OBJECTIVES_PHASE2].find((o) => o.id === outcome) ?? null
     : null;
+
+  const igUsername = browseMode ? BROWSE_IG_ACCOUNT.username : session?.igUsername ?? null;
+  const igName = browseMode ? BROWSE_IG_ACCOUNT.name : null;
+
+  const { data: pics } = useQuery({
+    queryKey: ["profile-pictures", session?.igUserId],
+    queryFn: async () => {
+      const res = await fetch("/api/connect/profile-pictures");
+      if (!res.ok) return { igPicture: null as string | null };
+      return res.json() as Promise<{ igPicture: string | null }>;
+    },
+    enabled: !browseMode && !!igUsername,
+    staleTime: 60 * 60 * 1000,
+  });
+
+  const profilePicture = browseMode ? BROWSE_IG_ACCOUNT.profilePicture : pics?.igPicture ?? null;
 
   return (
     <>
@@ -60,29 +78,35 @@ export default function SelectedGoalCard({ onChange, changeLabel = "광고 목�
           {changeLabel}
         </Button>
       </Card>
-      {browseMode && (
+      {igUsername && (
         <Card className="mb-[18px] px-[18px] py-3 flex items-center gap-3">
-          <div
-            style={{
-              width: 32,
-              height: 32,
-              borderRadius: "50%",
-              background: "var(--w-primary-soft)",
-              color: "var(--w-accent-violet)",
-              display: "grid",
-              placeItems: "center",
-              flex: "0 0 auto",
-            }}
-          >
-            <Icon name="instagram" size={16} strokeWidth={1.7} />
+          <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-[#feda75] via-[#fa7e1e] to-[#d62976] p-[2px] shrink-0">
+            <div className="w-full h-full rounded-full bg-[var(--w-bg-elevated)] overflow-hidden grid place-items-center">
+              {profilePicture ? (
+                <Image
+                  src={profilePicture}
+                  alt=""
+                  width={28}
+                  height={28}
+                  className="w-full h-full object-cover rounded-full"
+                  unoptimized
+                />
+              ) : (
+                <span className="text-[11px] font-bold text-[var(--w-fg-strong)]">
+                  {igUsername[0].toUpperCase()}
+                </span>
+              )}
+            </div>
           </div>
           <div style={{ minWidth: 0 }}>
             <div style={{ font: "600 13.5px/1.3 var(--w-font-sans)", color: "var(--w-fg-strong)" }}>
-              @{BROWSE_IG_ACCOUNT.username}
+              @{igUsername}
             </div>
-            <div style={{ font: "500 11.5px/1.3 var(--w-font-sans)", color: "var(--w-fg-neutral)" }}>
-              {BROWSE_IG_ACCOUNT.name}
-            </div>
+            {igName && (
+              <div style={{ font: "500 11.5px/1.3 var(--w-font-sans)", color: "var(--w-fg-neutral)" }}>
+                {igName}
+              </div>
+            )}
           </div>
         </Card>
       )}

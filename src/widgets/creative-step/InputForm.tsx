@@ -11,7 +11,6 @@ import { Select } from "@shared/ui/Select";
 import { cn } from "@shared/lib/cn";
 import { OBJECTIVES_PHASE1, TONES, COPY_HOOKS, findHook, type CopyHook } from "@entities/creative/options";
 import SelectedGoalCard from "@entities/creative/ui/SelectedGoalCard";
-import { BROWSE_IG_ACCOUNT } from "@shared/lib/browse-connection";
 import { useCreativeDraft } from "@entities/creative/model";
 import { useBrandProfileStorage } from "@features/brand-profile/model/useBrandProfileStorage";
 import { usePersonasStorage } from "@features/brand-profile/model/usePersonasStorage";
@@ -43,8 +42,6 @@ export default function InputForm(p: Props) {
   const router = useRouter();
   const { data: session, status } = useSession();
   const browseMode = !!session?.browseMode;
-  const igName = browseMode ? BROWSE_IG_ACCOUNT.name : null;
-  const igUsername = browseMode ? BROWSE_IG_ACCOUNT.username : session?.igUsername ?? null;
   const creative = useCreativeDraft();
   const { profile: bp, profiles, activeId, setActiveId } = useBrandProfileStorage(browseMode);
   const copyRefs = bp.copyReferences ?? [];
@@ -316,26 +313,6 @@ export default function InputForm(p: Props) {
 
         {/* 이번 광고 */}
         <SelectedGoalCard onChange={p.onChangeOutcome} />
-
-        {/* 페이지 팔로우 목표: 어떤 계정의 팔로워를 늘릴지 = 연결된 인스타그램 계정 */}
-        {creative.state.outcome === "engagement_page_likes" && igUsername && (
-          <Card className="mb-[18px] p-[18px] flex items-center gap-3">
-            <div
-              className="grid place-items-center shrink-0"
-              style={{ width: 40, height: 40, borderRadius: 10, background: "var(--w-bg-alternative)", color: "var(--w-fg-neutral)" }}
-            >
-              <Icon name="instagram" size={20} />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div style={{ font: "500 11.5px/1 var(--w-font-sans)", color: "var(--w-fg-neutral)", marginBottom: 5 }}>
-                팔로워를 늘릴 계정
-              </div>
-              <div style={{ font: "700 14px/1.3 var(--w-font-sans)", color: "var(--w-fg-strong)" }}>
-                {igName ? `${igName} (@${igUsername})` : `@${igUsername}`}
-              </div>
-            </div>
-          </Card>
-        )}
 
         {showStaleBanner && (
           <div

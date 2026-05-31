@@ -39,39 +39,31 @@ const GOAL_CATEGORIES = [
   {
     id: "visit",
     label: "방문 유도",
-    desc: "웹사이트나 페이지로 사람들을 보내요",
+    desc: "관심 있는 사람을 웹사이트·페이지로 보내 다음 행동을 유도해요",
     iconName: "globe" as const,
     goalIds: ["traffic", "traffic_page_visit"] as ObjectiveId[],
   },
   {
     id: "engage",
     label: "참여 늘리기",
-    desc: "좋아요·댓글·메시지를 늘려요",
+    desc: "좋아요·댓글·메시지로 고객과의 접점을 넓혀요",
     iconName: "heart" as const,
     goalIds: ["engagement", "engagement_page_likes", "engagement_messages"] as ObjectiveId[],
   },
   {
     id: "awareness",
     label: "브랜드 알리기",
-    desc: "최대한 많은 사람에게 노출해요",
+    desc: "최대한 많은 사람에게 노출해 처음 만나는 고객에게 각인시켜요",
     iconName: "megaphone" as const,
     goalIds: ["awareness"] as ObjectiveId[],
   },
   {
     id: "action",
     label: "행동 유도",
-    desc: "전화·콘텐츠 홍보 등 직접 반응을 이끌어요",
+    desc: "전화 문의·콘텐츠 홍보로 즉각적인 반응을 이끌어요",
     iconName: "phone" as const,
     goalIds: ["leads_call", "boost_post"] as ObjectiveId[],
   },
-] as const;
-
-// 계정 상태와 무관한 보편 제안 — GOAL_CATEGORIES 와 1:1 매핑.
-const UNIVERSAL_SUGGESTIONS = [
-  { categoryId: "awareness", title: "신규 고객에게 브랜드 알리기", reason: "최대한 많은 사람에게 노출해 처음 만나는 고객에게 각인시켜요." },
-  { categoryId: "visit", title: "웹사이트로 방문 유도", reason: "관심 있는 사람을 사이트·페이지로 보내 행동을 유도해요." },
-  { categoryId: "engage", title: "게시물 참여 늘리기", reason: "좋아요·댓글·메시지로 고객과의 접점을 넓혀요." },
-  { categoryId: "action", title: "전화·문의 등 직접 반응", reason: "전화 문의나 콘텐츠 홍보로 즉각적인 반응을 이끌어요." },
 ] as const;
 
 function CategoryCard({ iconName, label, desc, onClick }: CategoryCardProps) {
@@ -359,41 +351,8 @@ export default function GoalIntro({ onNext }: Props) {
         ))}
       </div>
 
-      {/* 보편 제안 — 계정 상태와 무관한 대표 광고 목표 안내 */}
-      <div className="mt-6 rounded-2xl bg-[var(--w-bg-normal)] p-5 flex flex-col gap-4">
-        <div className="flex items-center gap-2">
-          <Icon name="target" size={14} className="shrink-0 text-[var(--w-primary-normal)]" />
-          <span className="font-bold text-[15px] leading-[1.3] tracking-[-0.008em] text-[var(--w-fg-strong)]">이런 목표는 어때요?</span>
-          <span className="font-medium text-[12px] text-[var(--w-fg-subtle)] ml-1">자주 쓰는 대표 광고 목표예요</span>
-        </div>
-        <div className="flex flex-row gap-2">
-          {UNIVERSAL_SUGGESTIONS.map((u) => {
-            const cat = GOAL_CATEGORIES.find((c) => c.id === u.categoryId)!;
-            return (
-              <button
-                key={u.categoryId}
-                type="button"
-                onClick={() => handleCategoryClick(u.categoryId)}
-                className="flex flex-col gap-3 flex-1 p-5 rounded-2xl bg-[var(--w-bg-elevated)] border border-[var(--w-line-normal)] shadow-[0_1px_4px_rgba(0,0,0,0.06)] text-left cursor-pointer transition-[box-shadow,border-color] duration-[160ms] hover:shadow-[0_4px_10px_rgba(0,0,0,0.08),0_10px_24px_rgba(0,0,0,0.1)] hover:border-[var(--w-accent-violet)]"
-              >
-                <div className="flex flex-row items-center gap-3">
-                  <div className="w-10 h-10 shrink-0 rounded-xl flex items-center justify-center" style={{ background: "rgba(0,102,255,0.08)", color: "var(--w-primary-press)" }}>
-                    <Icon name={cat.iconName} size={20} strokeWidth={1.7} />
-                  </div>
-                  <div className="flex flex-col gap-0.5 min-w-0">
-                    <div className="font-bold text-[13px] leading-[1.35] tracking-[-0.006em] text-[var(--w-fg-strong)] line-clamp-1">{u.title}</div>
-                    <div className="font-medium text-[11px] text-[var(--w-accent-violet)]">{cat.label}</div>
-                  </div>
-                </div>
-                <div className="font-medium text-[12.5px] leading-[1.6] text-[var(--w-fg-neutral)] line-clamp-2">{u.reason}</div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
       {/* AI 맞춤 추천 — 계정 현황 분석 (버튼 클릭 시) */}
-      <div className="mt-4 rounded-2xl bg-[var(--w-bg-normal)] p-5 flex flex-col gap-4">
+      <div className="mt-6 rounded-2xl bg-[var(--w-bg-normal)] p-5 flex flex-col gap-4">
         <div className="flex items-center gap-2">
           <Icon name="sparkles" size={14} className="shrink-0 text-[var(--w-primary-normal)]" />
           <span className="font-bold text-[15px] leading-[1.3] tracking-[-0.008em] text-[var(--w-fg-strong)]">목표 고르는 게 어렵다면?</span>
