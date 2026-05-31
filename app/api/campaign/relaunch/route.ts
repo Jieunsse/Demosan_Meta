@@ -1,26 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { metaAds } from "@/lib/meta-ads";
-import { resolveAccessToken, resolveAdAccountId } from "@/lib/env";
+import { withMetaSession } from "@/lib/meta-session";
 
 // POST /api/campaign/relaunch
 // 안전 검사 4종 통과 후 원본 캠페인을 같은 내용으로 새로 생성 (PRD-auto-relaunch §6).
-export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session?.accessToken || !session?.adAccountId || !session?.pageId) {
-    return NextResponse.json({ error: "Meta 계정 연결이 필요해요." }, { status: 401 });
-  }
+export const POST = withMetaSession(["adAccount", "page"], async (req: NextRequest, s) => {
+  const token = s.accessToken;
+  const adAccountId = s.adAccountId;
+  const pageId = s.pageId;
 
   const body = (await req.json()) as { campaignId?: string; cycleCount?: number };
   const { campaignId, cycleCount = 2 } = body;
   if (!campaignId) {
     return NextResponse.json({ error: "campaignId가 필요해요." }, { status: 400 });
   }
-
-  const token = resolveAccessToken(session.accessToken);
-  const adAccountId = resolveAdAccountId(session.adAccountId);
-  const pageId = session.pageId;
 
   // Safety check 1: Meta 계정 상태
   let accountStatus;
@@ -128,4 +121,4 @@ export async function POST(req: NextRequest) {
     const msg = e instanceof Error ? e.message : "재게재에 실패했어요";
     return NextResponse.json({ error: msg }, { status: 500 });
   }
-}
+});

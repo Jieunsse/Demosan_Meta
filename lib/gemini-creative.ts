@@ -1,6 +1,6 @@
 // Server-side only — do not import from 'use client' components; GOOGLE_AI_API_KEY would be exposed.
 
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { generateGeminiText, isGeminiConfigured } from "./gemini-client";
 import {
   type ToneId,
   TONE_PROMPT_DESC,
@@ -112,12 +112,6 @@ function sanitizeTargeting(raw: unknown): ExtractedTargeting {
   return { ageMin, ageMax, genders: uniq.length === 2 ? [] : uniq };
 }
 
-function requireEnv(key: string): string {
-  const v = process.env[key];
-  if (!v) throw new Error(`${key} 가 .env.local 에 설정되지 않았어요.`);
-  return v;
-}
-
 function buildPolicyLines(bp: BrandProfileContext): string {
   const policyProhibited = bp.policy
     ?.find((s): s is Extract<SopSection, { type: "prohibited_words" }> => s.type === "prohibited_words")
@@ -224,11 +218,6 @@ export function buildCreativePrompt(p: GenerateCreativeParams): string {
 `.trim();
 }
 
-const TEXT_MODELS = ["gemini-2.0-flash", "gemini-2.5-flash"];
-
-function is503(err: unknown): boolean {
-  return err instanceof Error && err.message.includes("503");
-}
 
 // CJK Unified Ideographs 범위(U+4E00–U+9FFF)의 한자를 제거해요.
 function stripHanja(text: string): string {
@@ -251,32 +240,6 @@ function proofNumericTokens(proofPoints: string[]): string[] {
   return [...out];
 }
 
-
-async function generateWithFallback(
-  apiKey: string,
-  prompt: string,
-): Promise<string> {
-  for (const modelName of TEXT_MODELS) {
-    try {
-      const model = new GoogleGenerativeAI(apiKey).getGenerativeModel({
-        model: modelName,
-        systemInstruction: AD_COPYWRITER_SYSTEM_PROMPT,
-        generationConfig: { responseMimeType: "application/json" },
-      });
-      const result = await model.generateContent(prompt);
-      return result.response.text();
-    } catch (err) {
-      if (is503(err) && modelName !== TEXT_MODELS[TEXT_MODELS.length - 1]) {
-        await new Promise((r) => setTimeout(r, 1500));
-        continue;
-      }
-      throw err;
-    }
-  }
-  throw new Error(
-    "모든 AI 모델이 일시적으로 응답하지 않아요. 잠시 후 다시 시도해주세요.",
-  );
-}
 
 export interface SuggestImageConceptsParams {
   headline: string;
@@ -364,17 +327,19 @@ export function parseImageConcepts(text: string): SuggestImageConceptsResult {
 
 export const geminiCreative = {
   get isConfigured() {
-    return !!process.env.GOOGLE_AI_API_KEY;
+    return isGeminiConfigured();
   },
 
   async generate(
     params: GenerateCreativeParams,
   ): Promise<GenerateCreativeResult> {
-    const apiKey = requireEnv("GOOGLE_AI_API_KEY");
     const prompt = buildCreativePrompt(params);
 
     const runOnce = async (): Promise<GenerateCreativeResult> => {
-      const text = await generateWithFallback(apiKey, prompt);
+      const text = await generateGeminiText(prompt, {
+        systemInstruction: AD_COPYWRITER_SYSTEM_PROMPT,
+        json: true,
+      });
 
       let parsed: {
         headlines: string[];
@@ -447,9 +412,14 @@ export const geminiCreative = {
   async suggestImageConcepts(
     params: SuggestImageConceptsParams,
   ): Promise<SuggestImageConceptsResult> {
-    const apiKey = requireEnv("GOOGLE_AI_API_KEY");
     const prompt = IMAGE_CONCEPTS_TEMPLATE(params);
-    const runOnce = async () => parseImageConcepts(await generateWithFallback(apiKey, prompt));
+    const runOnce = async () =>
+      parseImageConcepts(
+        await generateGeminiText(prompt, {
+          systemInstruction: AD_COPYWRITER_SYSTEM_PROMPT,
+          json: true,
+        }),
+      );
     try {
       return await runOnce();
     } catch {

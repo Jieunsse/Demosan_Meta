@@ -6,6 +6,8 @@ import type { CreativeState } from "@entities/creative/model";
 import type { LaunchState, LaunchedCampaign, LaunchParams, LaunchResponse } from "@entities/campaign/model";
 import { OBJECTIVES_PHASE1, type ObjectivePhase1Id } from "@entities/creative/options";
 import { uiToGenders } from "@shared/lib/meta/targeting";
+import type { BrowseCampaignInput } from "@entities/campaign/browse/seed";
+import type { MetaObjectiveParam } from "@/lib/meta-ads";
 
 // PRD §13.10 — single-select. outcome 이 Phase 1 goal 이면 그 id 를 그대로 사용.
 // Phase 2 (leads/sales/app_promotion) outcome 이면 goalId 미설정 → 서버가 objective 폴백.
@@ -113,6 +115,53 @@ export function buildLaunchedCampaign(response: LaunchResponse, params: LaunchPa
     abTestAxis: abEnabled ? params.abTestAxis : undefined,
     abTestVariantA: variantA,
     abTestVariantB: abEnabled ? params.abTestVariantB : undefined,
+  };
+}
+
+// Browse Mode 게재 — 노출 없는 시연이라 mock 응답을 합성한다. 결산 목록·빨리감기가 단일 소스로 쓰는
+// browseCampaign 페이로드까지 한 자리에서 결정. 부수효과(dispatch·save·createBrowseCampaign·notify)는
+// 호출 측 widget 이 실행. ts 주입으로 결정적 → 단위 테스트 가능 (구 widget runLaunch 의 browse 분기 추출).
+const BROWSE_OBJECTIVES = new Set<MetaObjectiveParam>([
+  "OUTCOME_TRAFFIC", "OUTCOME_AWARENESS", "OUTCOME_ENGAGEMENT", "OUTCOME_LEADS",
+]);
+
+export interface BrowseLaunchPlan {
+  launched: LaunchedCampaign;
+  browseCampaign: BrowseCampaignInput;
+  message: string;
+}
+
+export function planBrowseLaunch(params: LaunchParams, opts: { brandName?: string; ts: number }): BrowseLaunchPlan {
+  const { ts } = opts;
+  const abEnabled = !!params.abTestEnabled && !!params.abTestAxis && !!params.abTestVariantB;
+  const mock: LaunchResponse = {
+    campaignId: `cmp_browse_${ts}`,
+    adSetId: `adset_browse_${ts}`,
+    ...(abEnabled
+      ? { adIds: [`ad_browse_${ts}_a`, `ad_browse_${ts}_b`] as [string, string] }
+      : params.skipAdCreation ? {} : { adId: `ad_browse_${ts}` }),
+  };
+  const objective: MetaObjectiveParam = BROWSE_OBJECTIVES.has(params.objective as MetaObjectiveParam)
+    ? (params.objective as MetaObjectiveParam)
+    : "OUTCOME_TRAFFIC";
+  return {
+    launched: buildLaunchedCampaign(mock, params),
+    browseCampaign: {
+      id: mock.campaignId,
+      name: `${(opts.brandName ?? "내 캠페인").trim()} — ${params.headline}`,
+      headline: params.headline,
+      primaryText: params.primaryText,
+      cta: params.cta,
+      imageUrl: params.imageDataUrl ?? "",
+      objective,
+      dailyBudget: params.dailyBudget,
+      startDate: params.startDate,
+      ageMin: params.ageMin,
+      ageMax: params.ageMax,
+      genders: params.genders,
+      countries: params.countries,
+    },
+    message: launchSuccessMessage(params),
   };
 }
 

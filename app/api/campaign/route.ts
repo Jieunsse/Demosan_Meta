@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
-import { metaAds, type MetaObjectiveParam, type BidStrategyParam, type PlacementsParam, type PlatformsParam, type AbTestAxisParam, type AbTestVariantBParam } from '@/lib/meta-ads'
-import { resolveAdAccountId, resolveAccessToken } from '@/lib/env'
-import { withRouteHandler, ValidationError } from '@/lib/route-handler'
+import { metaAds, VALID_OBJECTIVES, type MetaObjectiveParam, type BidStrategyParam, type PlacementsParam, type PlatformsParam, type AbTestAxisParam, type AbTestVariantBParam } from '@/lib/meta-ads'
+import { withMetaSession } from '@/lib/meta-session'
+import { ValidationError } from '@/lib/route-handler'
 import { CTA_META_TYPE, OBJECTIVES_PHASE1, type CtaId, type ObjectivePhase1Id } from '@entities/creative/options'
 import { COUNTRY_CODES } from '@shared/lib/geo-options'
 
@@ -37,8 +35,6 @@ async function fetchOgImageAsDataUrl(pageUrl: string): Promise<string | undefine
   }
 }
 
-// PRD §13 — leads_call goal 추가로 OUTCOME_LEADS 도 합법 objective.
-const VALID_OBJECTIVES: ReadonlySet<MetaObjectiveParam> = new Set(['OUTCOME_TRAFFIC', 'OUTCOME_AWARENESS', 'OUTCOME_ENGAGEMENT', 'OUTCOME_LEADS'])
 const VALID_GOAL_IDS: ReadonlySet<string> = new Set(OBJECTIVES_PHASE1.map((g) => g.id))
 const VALID_BID_STRATEGIES: ReadonlySet<BidStrategyParam> = new Set(['LOWEST_COST_WITHOUT_CAP', 'LOWEST_COST_WITH_BID_CAP', 'COST_CAP'])
 const VALID_PLATFORMS: ReadonlySet<PlatformsParam> = new Set(['both', 'facebook', 'instagram'])
@@ -78,18 +74,8 @@ type CampaignRequestBody = {
 
 const VALID_AB_AXES: ReadonlySet<AbTestAxisParam> = new Set(['headline', 'primary_text', 'image'])
 
-export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions)
-  if (!session?.accessToken || !session?.adAccountId || !session?.pageId) {
-    return NextResponse.json(
-      { error: '광고 계정과 페이스북 페이지를 먼저 선택해주세요.' },
-      { status: 401 },
-    )
-  }
-  const { pageId, pixelId } = session
-  const accessToken = resolveAccessToken(session.accessToken)
-  const adAccountId = resolveAdAccountId(session.adAccountId)
-  return withRouteHandler(true, '', async () => {
+export const POST = withMetaSession(['adAccount', 'page'], async (req: NextRequest, s) => {
+      const { accessToken, adAccountId, pageId, pixelId } = s
       const body = (await req.json()) as CampaignRequestBody
       const { headline, primaryText, dailyBudget, startDate, endDate, ageMin, ageMax, linkUrl, cta, imageDataUrl, location, brandName } = body
 
@@ -281,5 +267,4 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ...result, adIds: fakeAdIds })
       }
       return NextResponse.json(result)
-    })
-}
+})

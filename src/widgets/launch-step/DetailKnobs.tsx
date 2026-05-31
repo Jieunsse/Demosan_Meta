@@ -13,7 +13,7 @@ import { useToast } from "@shared/ui/Toast";
 import { useLaunchDraft } from "@entities/campaign/model";
 import { useCreativeDraft } from "@entities/creative/model";
 import { GOAL_RESULT, type ObjectivePhase1Id } from "@entities/creative/options";
-import { LAUNCH_PROFILES } from "@entities/launch-objective/profile";
+import { profileOf } from "@entities/launch-objective/profile";
 
 import BidStrategyKnob from "./BidStrategyKnob";
 import AudienceKnob from "./AudienceKnob";
@@ -31,9 +31,7 @@ export default function DetailKnobs() {
   const result = outcomeId && outcomeId in GOAL_RESULT
     ? GOAL_RESULT[outcomeId as ObjectivePhase1Id]
     : GOAL_RESULT.traffic;
-  const profile = outcomeId && outcomeId in LAUNCH_PROFILES
-    ? LAUNCH_PROFILES[outcomeId as ObjectivePhase1Id]
-    : null;
+  const profile = profileOf(outcomeId);
   const showFrequencyCap = profile?.uniqueSections.includes("frequency_cap") ?? false;
 
   return (

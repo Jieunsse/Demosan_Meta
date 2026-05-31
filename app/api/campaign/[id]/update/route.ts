@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
 import { metaAds, type BidStrategyParam, type PlatformsParam, type PlacementsParam } from '@/lib/meta-ads'
-import { withRouteHandler, ValidationError } from '@/lib/route-handler'
+import { withMetaSession } from '@/lib/meta-session'
+import { ValidationError } from '@/lib/route-handler'
 
 const MIN_DAILY_BUDGET_KRW = 10_000
 
@@ -24,18 +23,11 @@ type UpdateBody = {
   }
 }
 
-export async function POST(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) {
-  const session = await getServerSession(authOptions)
-  if (!session?.accessToken || !session?.adAccountId) {
-    return NextResponse.json({ error: '광고 계정을 먼저 연결해주세요.' }, { status: 401 })
-  }
-  const { accessToken } = session
-  const { id: campaignId } = await params
-
-  return withRouteHandler(true, '', async () => {
+export const POST = withMetaSession<{ params: Promise<{ id: string }> }>(
+  ['adAccount'],
+  async (req: NextRequest, s, { params }) => {
+    const { accessToken } = s
+    const { id: campaignId } = await params
     const body = (await req.json()) as UpdateBody
 
     if (!body.adSet || Object.keys(body.adSet).length === 0) {
@@ -57,5 +49,5 @@ export async function POST(
     const appliedFields = await metaAds.updateAdSet(campaign.adSetId, accessToken, body.adSet)
 
     return NextResponse.json({ ok: true, appliedFields, updatedAt: new Date().toISOString() })
-  })
-}
+  },
+)

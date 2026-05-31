@@ -1,19 +1,13 @@
-import { getServerSession } from "next-auth"
-import { authOptions } from "@/lib/auth"
 import { NextResponse } from "next/server"
+import { withMetaSession } from "@/lib/meta-session"
 
 const GRAPH = "https://graph.facebook.com/v20.0"
 
-export async function GET() {
-  const session = await getServerSession(authOptions)
-  if (!session?.accessToken) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-  }
-
+export const GET = withMetaSession([], async (_req, s) => {
   // PRD §13 — leads_call goal 사전 검증용 phone 필드 추가.
   // phone 없는 페이지는 전화 받기 광고 실제 게재 불가 — STEP 02 에서 warn callout.
   const res = await fetch(
-    `${GRAPH}/me/accounts?fields=id,name,phone,instagram_business_account{id,username}&access_token=${session.accessToken}`
+    `${GRAPH}/me/accounts?fields=id,name,phone,instagram_business_account{id,username}&access_token=${s.accessToken}`
   )
   const data = (await res.json()) as {
     data?: { id: string; name: string; phone?: string; instagram_business_account?: { id: string; username?: string } }[]
@@ -33,4 +27,4 @@ export async function GET() {
   }))
 
   return NextResponse.json({ pages })
-}
+})

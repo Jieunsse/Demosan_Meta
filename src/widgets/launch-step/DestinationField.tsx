@@ -17,8 +17,9 @@ import { Card } from "@shared/ui/Card";
 import { cn } from "@shared/lib/cn";
 import { useLaunchDraft } from "@entities/campaign/model";
 import { useCreativeDraft } from "@entities/creative/model";
-import { OBJECTIVES_PHASE1, CTAS, type CtaId, type ObjectivePhase1Id } from "@entities/creative/options";
-import { LAUNCH_PROFILES } from "@entities/launch-objective/profile";
+import { CTAS, type CtaId } from "@entities/creative/options";
+import { goalDefOf } from "@entities/creative/outcome-routing";
+import { profileOf } from "@entities/launch-objective/profile";
 import SubHead from "./SubHead";
 
 type Page = { id: string; name: string; phone: string | null };
@@ -35,10 +36,8 @@ export default function DestinationField() {
   const [urlTouched, setUrlTouched] = useState(false);
 
   const outcomeId = creative.outcome;
-  const goalDef = outcomeId ? OBJECTIVES_PHASE1.find((g) => g.id === outcomeId) : null;
-  const profile = outcomeId && outcomeId in LAUNCH_PROFILES
-    ? LAUNCH_PROFILES[outcomeId as ObjectivePhase1Id]
-    : null;
+  const goalDef = goalDefOf(outcomeId);
+  const profile = profileOf(outcomeId);
   const urlMode = profile?.url.mode ?? "user_input";
   const ctaMode = profile?.cta.mode ?? "locked";
 

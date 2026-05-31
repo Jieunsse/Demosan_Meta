@@ -1,6 +1,7 @@
 // Server-side only — do not import from 'use client' components; GOOGLE_AI_API_KEY would be exposed.
 
 import { GoogleGenAI } from "@google/genai";
+import { isGeminiConfigured, requireGeminiKey } from "./gemini-client";
 
 export interface ReferenceImage {
   mimeType: string;
@@ -82,12 +83,6 @@ type ContentPart =
   | { inlineData: { mimeType: string; data: string } };
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
-
-function requireEnv(key: string): string {
-  const v = process.env[key];
-  if (!v) throw new Error(`${key} 가 .env.local 에 설정되지 않았어요.`);
-  return v;
-}
 
 // variant prompt + (공통 + variant 전용) 레퍼런스를 합쳐 한 슬롯의 contents 를 만든다.
 // preserve(ADR-041): 레퍼런스가 있을 때만 의미 — 제품 원본 보존 프롬프트로 분기.
@@ -227,7 +222,7 @@ export function normalizeVariants(params: GenerateImageParams): {
 
 export const geminiImage = {
   get isConfigured() {
-    return !!process.env.GOOGLE_AI_API_KEY;
+    return isGeminiConfigured();
   },
 
   async generateStream(
@@ -236,7 +231,7 @@ export const geminiImage = {
   ): Promise<void> {
     const { variants, common } = normalizeVariants(params);
     const preserve = !!params.preserveReference;
-    const apiKey = requireEnv("GOOGLE_AI_API_KEY");
+    const apiKey = requireGeminiKey();
     const ai = new GoogleGenAI({ apiKey });
 
     let hasAny = false;
@@ -262,7 +257,7 @@ export const geminiImage = {
   async generate(params: GenerateImageParams): Promise<GenerateImageResult> {
     const { variants, common } = normalizeVariants(params);
     const preserve = !!params.preserveReference;
-    const apiKey = requireEnv("GOOGLE_AI_API_KEY");
+    const apiKey = requireGeminiKey();
     const ai = new GoogleGenAI({ apiKey });
 
     const results = await Promise.all(

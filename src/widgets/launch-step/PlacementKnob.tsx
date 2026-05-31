@@ -12,6 +12,7 @@ import { useCreativeDraft } from "@entities/creative/model";
 import { GOAL_RESULT, type ObjectivePhase1Id } from "@entities/creative/options";
 import {
   LAUNCH_PROFILES,
+  profileOf,
   type PlacementPosition,
 } from "@entities/launch-objective/profile";
 import SubHead from "./SubHead";
@@ -30,9 +31,7 @@ export default function PlacementKnob() {
   const result = outcomeId && outcomeId in GOAL_RESULT
     ? GOAL_RESULT[outcomeId as ObjectivePhase1Id]
     : GOAL_RESULT.traffic;
-  const profile = outcomeId && outcomeId in LAUNCH_PROFILES
-    ? LAUNCH_PROFILES[outcomeId as ObjectivePhase1Id]
-    : LAUNCH_PROFILES.traffic;
+  const profile = profileOf(outcomeId) ?? LAUNCH_PROFILES.traffic;
 
   return (
     <>
