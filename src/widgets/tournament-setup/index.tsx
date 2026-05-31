@@ -6,6 +6,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import Icon from "@shared/ui/Icon";
 import type { IconName } from "@shared/ui/Icon";
 import { Button } from "@shared/ui/Button";
@@ -14,13 +15,28 @@ import { Select } from "@shared/ui/Select";
 import { DEMO_INPUTS } from "@/lib/demo/content";
 import { DEMO_AD_IMAGES } from "@/lib/demo/mock-images";
 import { startTournament, setManualChallenger } from "@entities/ab-test/tournament/runner";
+import { tournamentClient } from "@entities/ab-test/tournament/client";
 import type { TourAxis, TourVariant } from "@entities/ab-test/tournament/tournament";
 import { MOCK_CAMPAIGN_SUMMARIES } from "@/lib/mock-campaigns";
+import { fetchCampaigns } from "@entities/campaign/api";
 import { listBrowse, BROWSE_CHANGE_EVENT } from "@entities/campaign/browse/store";
 import { browseCampaignToSummary } from "@entities/campaign/browse/summary";
 import type { CampaignSummary } from "@/lib/meta-ads";
 import { useBrandProfileStorage } from "@features/brand-profile/model/useBrandProfileStorage";
 import { useProducts } from "@shared/lib/products";
+
+// 실 게재 delivery 옵션 — 셋업이 cron 에 넘길 최소 타겟/링크/CTA. 데모는 미사용.
+const COUNTRY_OPTIONS = [
+  { value: "KR", label: "대한민국" },
+  { value: "US", label: "미국" },
+  { value: "JP", label: "일본" },
+];
+const CTA_OPTIONS = [
+  { value: "LEARN_MORE", label: "더 알아보기" },
+  { value: "SHOP_NOW", label: "지금 구매하기" },
+  { value: "SIGN_UP", label: "가입하기" },
+  { value: "CONTACT_US", label: "문의하기" },
+];
 
 type Tone = "warm" | "pro" | "trendy";
 
@@ -59,10 +75,16 @@ const OBJECTIVE_FROM_META: Record<string, string> = {
   OUTCOME_LEADS: "leads",
 };
 
-export default function TournamentSetup() {
+export default function TournamentSetup({ real = false }: { real?: boolean }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const fromCampaignId = searchParams.get("from");
+  // 실 게재 봉투 — Meta 라운드 게재에 필요한 타겟/링크/CTA (데모는 미사용).
+  const [landingUrl, setLandingUrl] = useState("");
+  const [country, setCountry] = useState("KR");
+  const [ctaType, setCtaType] = useState("LEARN_MORE");
+  const [ageMin, setAgeMin] = useState(18);
+  const [ageMax, setAgeMax] = useState(65);
   const [productName, setProductName] = useState("수분 가득 비건 크림");
   const [productId, setProductId] = useState("");
   const [description, setDescription] = useState(DEMO_INPUTS.brand);
@@ -86,16 +108,29 @@ export default function TournamentSetup() {
   const goBack = () => (step === "config" ? setStep("method") : router.push("/ab-tests"));
   const pickMode = (m: ChampionMode) => { setChampionMode(m); setStep("config"); };
 
-  // 기존 광고 후보 = browse localStorage + 정적 mock (/campaigns 와 동일 merge).
+  // 기존 광고 후보 — 실: 연결 계정의 실 캠페인(fetchCampaigns) / 데모: browse localStorage + 정적 mock.
   const [browseRows, setBrowseRows] = useState<CampaignSummary[]>([]);
   useEffect(() => {
+    if (real) return;
     const load = () => setBrowseRows(listBrowse().map(browseCampaignToSummary));
     load();
     window.addEventListener(BROWSE_CHANGE_EVENT, load);
     return () => window.removeEventListener(BROWSE_CHANGE_EVENT, load);
-  }, []);
-  const campaigns = useMemo(() => [...browseRows, ...MOCK_CAMPAIGN_SUMMARIES], [browseRows]);
+  }, [real]);
+  const realCampaignsQ = useQuery({
+    queryKey: ["campaigns", "all"],
+    queryFn: () => fetchCampaigns("all"),
+    enabled: real && championMode === "existing",
+    retry: false,
+  });
+  const campaigns = useMemo(
+    () => (real ? (realCampaignsQ.data ?? []) : [...browseRows, ...MOCK_CAMPAIGN_SUMMARIES]),
+    [real, realCampaignsQ.data, browseRows],
+  );
   const selected = campaigns.find((c) => c.id === campaignId) ?? null;
+
+  // 실 게재는 image 축 A/B 를 지원하지 않는다(launcher 가 헤드라인으로 폴백). 데모만 image 챌린저 노출.
+  const axisOptions = real ? CHALLENGER_AXIS_OPTIONS.filter((o) => o.value !== "image") : CHALLENGER_AXIS_OPTIONS;
 
   // 캠페인 상세 "이 캠페인으로 A/B 테스트 생성" → ?from=<id> 로 진입. 기존 광고 모드로 그 캠페인을 출발 챔피언에 프리셀렉트.
   useEffect(() => {
@@ -136,7 +171,7 @@ export default function TournamentSetup() {
 
   // 출발 챔피언 = 고른 광고. 이미지는 광고 자체 것 우선, 없으면 mock 풀 첫 장.
   const champVariant: TourVariant | null = selected
-    ? { headline: selected.headline, primaryText: selected.primaryText ?? "", imageUrl: selected.imageUrl || DEMO_AD_IMAGES[0] }
+    ? { headline: selected.headline, primaryText: selected.primaryText ?? "", imageUrl: selected.imageUrl || (real ? "" : DEMO_AD_IMAGES[0]) }
     : null;
 
   // 바꿀 요소가 채워졌는지 — 챌린저 대진 성립 조건.
@@ -187,7 +222,8 @@ export default function TournamentSetup() {
 
   const canStart =
     productName.trim() && description.trim() && maxRounds >= 1 && dailyBudget > 0 &&
-    (championMode === "ai" || (!!selected && challengerReady));
+    (championMode === "ai" || (!!selected && challengerReady)) &&
+    (!real || !!landingUrl.trim());
 
   async function handleStart() {
     if (!canStart || starting) return;
@@ -195,6 +231,48 @@ export default function TournamentSetup() {
     setError("");
     try {
       const fromExisting = championMode === "existing" && selected && champVariant;
+
+      // 실 유저 — POST /api/tournaments(Supabase + Meta delivery 봉투). 기존 광고 출발이면 라운드1 챌린저를 set-challenger 로 시드.
+      if (real) {
+        const res = await fetch("/api/tournaments", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            brandProfileId: activeId || "default",
+            productId: productId || "manual",
+            productName: productName.trim(),
+            brandDescription: description.trim(),
+            productDescription: description.trim(),
+            tone,
+            objective,
+            mode: "manual-n",
+            maxRounds,
+            dailyBudget,
+            startingCtr: fromExisting ? selected!.ctr : STARTING_CTR,
+            championSource: fromExisting ? "existing" : "ai",
+            startingChampion: fromExisting ? champVariant! : undefined,
+            championSourceName: fromExisting ? selected!.name : undefined,
+            goalId: objective,
+            linkUrl: landingUrl.trim(),
+            ctaType,
+            countries: [country],
+            ageMin,
+            ageMax,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.error || "토너먼트 생성에 실패했어요.");
+        const id = data.id as string;
+        if (fromExisting) {
+          const challenger: TourVariant =
+            chAxis === "primary_text" ? { ...champVariant!, primaryText: chPrimary.trim() }
+            : { ...champVariant!, headline: chHeadline.trim() };
+          await tournamentClient(false).setChallenger(id, challenger);
+        }
+        router.push(`/ab-tests/${id}`);
+        return;
+      }
+
       const id = await startTournament({
         brandProfileId: "browse",
         productId: "browse",
@@ -219,8 +297,8 @@ export default function TournamentSetup() {
         setManualChallenger(id, challenger);
       }
       router.push(`/ab-tests/${id}`);
-    } catch {
-      setError("출발 챔피언 생성에 실패했어요. 잠시 후 다시 시도해주세요.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "출발 챔피언 생성에 실패했어요. 잠시 후 다시 시도해주세요.");
       setStarting(false);
     }
   }
@@ -296,7 +374,7 @@ export default function TournamentSetup() {
 
             {championMode === "existing" && selected && champVariant && (
               <SectionCard title="챌린저 (B)" hint="같은 제품, 한 요소만 바꿔 비교해요">
-                <SegControl options={CHALLENGER_AXIS_OPTIONS} value={chAxis} onChange={(v) => setChAxis(v as TourAxis)} />
+                <SegControl options={axisOptions} value={chAxis} onChange={(v) => setChAxis(v as TourAxis)} />
 
                 <div className="mt-3">
                   {chAxis === "image" ? (
@@ -420,6 +498,51 @@ export default function TournamentSetup() {
               </Field>
             </div>
             </SectionCard>
+
+            {/* 실 게재 봉투 — cron 이 라운드를 실제 Meta 광고로 게재하는 데 필요한 타겟/링크/CTA. */}
+            {real && (
+              <SectionCard title="게재 설정" hint="실제 Meta 광고로 라운드를 게재해요 — 랜딩·타겟·CTA">
+                <Field label="랜딩 URL" hint="광고 클릭 시 이동할 페이지">
+                  <input
+                    type="url"
+                    value={landingUrl}
+                    onChange={(e) => setLandingUrl(e.target.value)}
+                    placeholder="https://example.com/product"
+                    className="w-full bg-[var(--w-bg-elevated)] border border-[var(--w-line-normal)] rounded-xl px-3.5 py-3 font-medium text-[14px] leading-[1.5] text-[var(--w-fg-strong)] outline-none transition-[border-color,box-shadow] duration-[120ms] focus:border-[var(--w-primary-normal)] focus:shadow-[0_0_0_4px_rgba(0,102,255,0.14)] placeholder:text-[var(--w-fg-alternative)]"
+                  />
+                </Field>
+                <div className="grid grid-cols-2 gap-5">
+                  <Field label="타겟 지역">
+                    <Select value={country} onChange={setCountry} options={COUNTRY_OPTIONS} />
+                  </Field>
+                  <Field label="행동 유도 버튼">
+                    <Select value={ctaType} onChange={setCtaType} options={CTA_OPTIONS} />
+                  </Field>
+                </div>
+                <Field label="타겟 연령">
+                  <div className="flex items-center gap-2.5">
+                    <input
+                      type="number"
+                      min={13}
+                      max={65}
+                      value={ageMin}
+                      onChange={(e) => setAgeMin(Number(e.target.value) || 18)}
+                      className="w-20 bg-[var(--w-bg-elevated)] border border-[var(--w-line-normal)] rounded-xl px-3 py-3 font-semibold text-[14px] text-center text-[var(--w-fg-strong)] outline-none focus:border-[var(--w-primary-normal)]"
+                    />
+                    <span className="font-medium text-[13px] text-[var(--w-fg-alternative)]">~</span>
+                    <input
+                      type="number"
+                      min={13}
+                      max={65}
+                      value={ageMax}
+                      onChange={(e) => setAgeMax(Number(e.target.value) || 65)}
+                      className="w-20 bg-[var(--w-bg-elevated)] border border-[var(--w-line-normal)] rounded-xl px-3 py-3 font-semibold text-[14px] text-center text-[var(--w-fg-strong)] outline-none focus:border-[var(--w-primary-normal)]"
+                    />
+                    <span className="font-medium text-[13px] text-[var(--w-fg-alternative)]">세</span>
+                  </div>
+                </Field>
+              </SectionCard>
+            )}
           </div>
 
           {/* ── 우: 대진·진화·조건 미리보기 + 시작 ── */}
