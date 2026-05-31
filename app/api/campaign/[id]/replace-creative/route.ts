@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
 import { metaAds } from '@/lib/meta-ads'
-import { withRouteHandler, ValidationError } from '@/lib/route-handler'
+import { withMetaSession } from '@/lib/meta-session'
+import { ValidationError } from '@/lib/route-handler'
 
 type ReplaceBody = {
   headline: string
@@ -11,18 +10,11 @@ type ReplaceBody = {
   reuseExistingImage?: boolean
 }
 
-export async function POST(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) {
-  const session = await getServerSession(authOptions)
-  if (!session?.accessToken || !session?.adAccountId) {
-    return NextResponse.json({ error: '광고 계정을 먼저 연결해주세요.' }, { status: 401 })
-  }
-  const { accessToken, adAccountId } = session
-  const { id: campaignId } = await params
-
-  return withRouteHandler(true, '', async () => {
+export const POST = withMetaSession<{ params: Promise<{ id: string }> }>(
+  ['adAccount'],
+  async (req: NextRequest, s, { params }) => {
+    const { accessToken, adAccountId } = s
+    const { id: campaignId } = await params
     const body = (await req.json()) as ReplaceBody
 
     if (!body.headline?.trim()) throw new ValidationError('헤드라인을 입력해주세요.')
@@ -47,5 +39,5 @@ export async function POST(
     )
 
     return NextResponse.json({ ok: true, newCreativeId, updatedAt: new Date().toISOString() })
-  })
-}
+  },
+)

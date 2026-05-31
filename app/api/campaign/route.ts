@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
 import { metaAds, type MetaObjectiveParam, type BidStrategyParam, type PlacementsParam, type PlatformsParam, type AbTestAxisParam, type AbTestVariantBParam } from '@/lib/meta-ads'
-import { resolveAdAccountId, resolveAccessToken } from '@/lib/env'
-import { withRouteHandler, ValidationError } from '@/lib/route-handler'
+import { withMetaSession } from '@/lib/meta-session'
+import { ValidationError } from '@/lib/route-handler'
 import { CTA_META_TYPE, OBJECTIVES_PHASE1, type CtaId, type ObjectivePhase1Id } from '@entities/creative/options'
 import { COUNTRY_CODES } from '@shared/lib/geo-options'
 
@@ -78,18 +76,8 @@ type CampaignRequestBody = {
 
 const VALID_AB_AXES: ReadonlySet<AbTestAxisParam> = new Set(['headline', 'primary_text', 'image'])
 
-export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions)
-  if (!session?.accessToken || !session?.adAccountId || !session?.pageId) {
-    return NextResponse.json(
-      { error: '광고 계정과 페이스북 페이지를 먼저 선택해주세요.' },
-      { status: 401 },
-    )
-  }
-  const { pageId, pixelId } = session
-  const accessToken = resolveAccessToken(session.accessToken)
-  const adAccountId = resolveAdAccountId(session.adAccountId)
-  return withRouteHandler(true, '', async () => {
+export const POST = withMetaSession(['adAccount', 'page'], async (req: NextRequest, s) => {
+      const { accessToken, adAccountId, pageId, pixelId } = s
       const body = (await req.json()) as CampaignRequestBody
       const { headline, primaryText, dailyBudget, startDate, endDate, ageMin, ageMax, linkUrl, cta, imageDataUrl, location, brandName } = body
 
@@ -281,5 +269,4 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ...result, adIds: fakeAdIds })
       }
       return NextResponse.json(result)
-    })
-}
+})
