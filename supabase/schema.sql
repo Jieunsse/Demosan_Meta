@@ -84,3 +84,21 @@ create table if not exists app_users (
 
 create index if not exists app_users_email_idx on app_users (email);
 create index if not exists app_users_workspace_idx on app_users (workspace_id);
+
+-- ADR-042 — 토너먼트 폴러 자기기록 관측성 1겹. cron 1회 호출 = 1행(집계 only, PK 없음).
+-- pg_net(트리거 스왑 후)은 fire-and-forget 이라 "요청 보냄"까지만 안다 — 핸들러가 try/finally 끝에서
+-- 직접 실행 요약을 남긴다. health 라우트(2겹)가 마지막 ok=true 의 finished_at 나이로 dead-man's switch 를 건다.
+create table if not exists cron_runs (
+  job          text        not null,
+  ok           boolean     not null,
+  scanned      int         not null default 0,
+  settled      int         not null default 0,
+  advanced     int         not null default 0,
+  error_count  int         not null default 0,
+  errors       jsonb       not null default '[]',
+  started_at   timestamptz not null,
+  finished_at  timestamptz not null default now()
+);
+
+create index if not exists cron_runs_job_ok_finished
+  on cron_runs (job, ok, finished_at desc);
