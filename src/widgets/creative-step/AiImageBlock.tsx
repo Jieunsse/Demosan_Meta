@@ -12,7 +12,9 @@ import { Button } from "@shared/ui/Button";
 import { Skeleton } from "@shared/ui/Skeleton";
 import { cn } from "@shared/lib/cn";
 import { useApiMutation } from "@shared/lib/api/useApiMutation";
-import type { GenerateImageParams, ImageVariant, ReferenceImage } from "@/lib/gemini-image";
+import { fetchImageStream } from "@features/generate-image/stream";
+import { readFileAsDataUrl, splitDataUrl, urlToRef } from "@features/generate-image/refs";
+import type { ImageVariant, ReferenceImage } from "@/lib/gemini-image";
 import type {
   ImageConcept,
   SuggestImageConceptsParams,
@@ -28,81 +30,7 @@ import BriefForm, { type AspectId } from "./BriefForm";
 
 const MAX_REF_MB = 3;
 
-async function fetchImageStream(
-  params: GenerateImageParams,
-  onImage: (index: number, image: string) => void,
-): Promise<void> {
-  const res = await fetch("/api/generate-image-stream", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(params),
-  });
-  if (!res.ok || !res.body) throw new Error("이미지 생성 요청에 실패했어요.");
-
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
-    for (const line of lines) {
-      if (!line.startsWith("data: ")) continue;
-      const data = line.slice(6).trim();
-      if (data === "[DONE]") return;
-      let parsed: { index?: number; image?: string; error?: string };
-      try {
-        parsed = JSON.parse(data);
-      } catch {
-        continue;
-      }
-      if (parsed.error) throw new Error(parsed.error);
-      if (typeof parsed.index === "number" && parsed.image) {
-        onImage(parsed.index, parsed.image);
-      }
-    }
-  }
-}
-
 type AiImageMode = "concept" | "brief";
-
-function readFileAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => resolve(String(r.result));
-    r.onerror = () => reject(new Error("파일을 읽지 못했어요."));
-    r.readAsDataURL(file);
-  });
-}
-
-function splitDataUrl(dataUrl: string): ReferenceImage | null {
-  const m = /^data:([^;]+);base64,(.+)$/.exec(dataUrl);
-  return m ? { mimeType: m[1], dataBase64: m[2] } : null;
-}
-
-// URL(원격 또는 data:)을 Package Reference 용 base64 ReferenceImage 로 변환.
-async function urlToRef(url: string): Promise<{ ref: ReferenceImage; preview: string } | null> {
-  try {
-    if (url.startsWith("data:")) {
-      const ref = splitDataUrl(url);
-      return ref ? { ref, preview: url } : null;
-    }
-    const blob = await (await fetch(url)).blob();
-    const dataUrl = await new Promise<string>((resolve, reject) => {
-      const r = new FileReader();
-      r.onload = () => resolve(String(r.result));
-      r.onerror = () => reject(new Error("이미지 인코딩 실패"));
-      r.readAsDataURL(blob);
-    });
-    const ref = splitDataUrl(dataUrl);
-    return ref ? { ref, preview: dataUrl } : null;
-  } catch {
-    return null;
-  }
-}
 
 const EMPTY_CONCEPTS: ImageConcept[] = [
   { label: "", prompt: "" },

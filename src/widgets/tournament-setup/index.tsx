@@ -16,6 +16,7 @@ import { DEMO_INPUTS } from "@/lib/demo/content";
 import { DEMO_AD_IMAGES } from "@/lib/demo/mock-images";
 import { startTournament, setManualChallenger } from "@entities/ab-test/tournament/runner";
 import { tournamentClient } from "@entities/ab-test/tournament/client";
+import { TOUR_OBJECTIVE_OPTIONS, tourMetricSpec } from "@entities/ab-test/tournament/objective-metric";
 import type { TourAxis, TourVariant } from "@entities/ab-test/tournament/tournament";
 import { MOCK_CAMPAIGN_SUMMARIES } from "@/lib/mock-campaigns";
 import { fetchCampaigns } from "@entities/campaign/api";
@@ -24,6 +25,8 @@ import { browseCampaignToSummary } from "@entities/campaign/browse/summary";
 import type { CampaignSummary } from "@/lib/meta-ads";
 import { useBrandProfileStorage } from "@features/brand-profile/model/useBrandProfileStorage";
 import { useProducts } from "@shared/lib/products";
+import { shrinkImageDataUrl } from "@shared/lib/shrink-image";
+import ChallengerImageGen from "./ChallengerImageGen";
 
 // 실 게재 delivery 옵션 — 셋업이 cron 에 넘길 최소 타겟/링크/CTA. 데모는 미사용.
 const COUNTRY_OPTIONS = [
@@ -46,15 +49,9 @@ const TONE_OPTIONS: { value: Tone; label: string }[] = [
   { value: "trendy", label: "트렌디" },
 ];
 
-// ADR-037 — V1 traffic 전용. 목표별 winner 지표(awareness=CPM·engagement=참여)는 V2 (데모 z-검정은 traffic 에서만 정직).
-const OBJECTIVE_OPTIONS = [
-  { value: "traffic", label: "사이트 방문 유도" },
-  { value: "awareness", label: "브랜드 알리기 (V2 예정)", disabled: true },
-  { value: "engagement", label: "참여 늘리기 (V2 예정)", disabled: true },
-  { value: "leads", label: "행동 유도 (V2 예정)", disabled: true },
-];
-
-const STARTING_CTR = 1.8; // AI 부트스트랩 시 출발 챔피언 CTR 기준선(%) — existing 은 광고 실제 CTR 사용.
+// ADR-037 V2 — 목표별 결정 지표(awareness=CPM·engagement/leads_call=action 비율)는 objective-metric.ts 가 분기.
+// 4종 모두 Phase 1 goalId → 실 launcher·insights 가 그대로 게재·판정한다.
+const OBJECTIVE_OPTIONS = TOUR_OBJECTIVE_OPTIONS;
 
 type ChampionMode = "existing" | "ai";
 type WizardStep = "method" | "design" | "delivery";
@@ -85,7 +82,7 @@ const OBJECTIVE_FROM_META: Record<string, string> = {
   OUTCOME_TRAFFIC: "traffic",
   OUTCOME_AWARENESS: "awareness",
   OUTCOME_ENGAGEMENT: "engagement",
-  OUTCOME_LEADS: "leads",
+  OUTCOME_LEADS: "leads_call",
 };
 
 export default function TournamentSetup({ real = false }: { real?: boolean }) {
@@ -211,12 +208,6 @@ export default function TournamentSetup({ real = false }: { real?: boolean }) {
   // 챔피언 카피·문구·이미지로 헤드라인/카피 챌린저를 mock 생성 (browse 에선 generate-creative 가 정적 응답).
   async function generateChallenger() {
     if (!champVariant || chGenning) return;
-    if (chAxis === "image") {
-      // mock 이미지 풀에서 챔피언과 다른 한 장.
-      const next = DEMO_AD_IMAGES.find((u) => u !== champVariant.imageUrl) ?? DEMO_AD_IMAGES[0];
-      setChImage(next);
-      return;
-    }
     setChGenning(true);
     try {
       const res = await fetch("/api/generate-creative", {
@@ -256,6 +247,14 @@ export default function TournamentSetup({ real = false }: { real?: boolean }) {
     try {
       const fromExisting = championMode === "existing" && selected && champVariant;
 
+      // 출발 챔피언 기준선 — 목표별 결정 지표 단위 (rate=실제 광고 CTR / awareness=실제 광고 CPM, 없으면 spec 기본값).
+      const seedSpec = tourMetricSpec(objective);
+      const startingCtr = fromExisting
+        ? seedSpec.kind === "cpm"
+          ? (selected!.impressions > 0 ? (selected!.spend / selected!.impressions) * 1000 : seedSpec.seedDefault)
+          : selected!.ctr
+        : seedSpec.seedDefault;
+
       // 실 유저 — POST /api/tournaments(Supabase + Meta delivery 봉투). 기존 광고 출발이면 라운드1 챌린저를 set-challenger 로 시드.
       if (real) {
         const res = await fetch("/api/tournaments", {
@@ -272,7 +271,7 @@ export default function TournamentSetup({ real = false }: { real?: boolean }) {
             mode: "manual-n",
             maxRounds,
             dailyBudget,
-            startingCtr: fromExisting ? selected!.ctr : STARTING_CTR,
+            startingCtr,
             championSource: fromExisting ? "existing" : "ai",
             startingChampion: fromExisting ? champVariant! : undefined,
             championSourceName: fromExisting ? selected!.name : undefined,
@@ -297,6 +296,12 @@ export default function TournamentSetup({ real = false }: { real?: boolean }) {
         return;
       }
 
+      // 둘러보기는 localStorage 저장(데모) — 큰 생성 이미지(2MB PNG)를 그대로 복사하면 용량을 넘겨
+      // 저장이 조용히 실패한다. 챔피언/챌린저 이미지를 저장 전 축소해 발자국을 줄인다.
+      const startingChampion = fromExisting
+        ? { ...champVariant!, imageUrl: await shrinkImageDataUrl(champVariant!.imageUrl ?? "") }
+        : undefined;
+
       const id = await startTournament({
         brandProfileId: "browse",
         productId: "browse",
@@ -307,17 +312,17 @@ export default function TournamentSetup({ real = false }: { real?: boolean }) {
         objective,
         maxRounds,
         dailyBudget,
-        startingCtr: fromExisting ? selected!.ctr : STARTING_CTR,
+        startingCtr,
         championSource: fromExisting ? "existing" : "ai",
-        startingChampion: fromExisting ? champVariant! : undefined,
+        startingChampion,
         championSourceName: fromExisting ? selected!.name : undefined,
       });
       // existing 경로: 셋업에서 구성한 라운드1 챌린저(B)를 pendingChallenger 로 시드 → 상세가 챌린저 검토 비트로 오픈.
       if (fromExisting) {
         const challenger: TourVariant =
-          chAxis === "headline" ? { ...champVariant!, headline: chHeadline.trim() }
-          : chAxis === "primary_text" ? { ...champVariant!, primaryText: chPrimary.trim() }
-          : { ...champVariant!, imageUrl: chImage };
+          chAxis === "headline" ? { ...startingChampion!, headline: chHeadline.trim() }
+          : chAxis === "primary_text" ? { ...startingChampion!, primaryText: chPrimary.trim() }
+          : { ...startingChampion!, imageUrl: await shrinkImageDataUrl(chImage) };
         setManualChallenger(id, challenger);
       }
       router.push(`/ab-tests/${id}`);
@@ -404,29 +409,17 @@ export default function TournamentSetup({ real = false }: { real?: boolean }) {
 
                 <div className="mt-3">
                   {chAxis === "image" ? (
-                    <div className="flex flex-col gap-2.5">
-                      <div className="grid grid-cols-3 gap-2.5">
-                        {DEMO_AD_IMAGES.map((url) => {
-                          const isChampImg = url === champVariant.imageUrl;
-                          const picked = url === chImage;
-                          return (
-                            <button
-                              key={url}
-                              type="button"
-                              disabled={isChampImg}
-                              onClick={() => setChImage(url)}
-                              className="relative p-0 border-none bg-transparent cursor-pointer disabled:cursor-not-allowed"
-                              title={isChampImg ? "챔피언 이미지" : undefined}
-                            >
-                              <img src={url} alt="챌린저 이미지 후보" style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 10, border: `2px solid ${picked ? "var(--w-accent-violet)" : "var(--w-line-normal)"}`, opacity: isChampImg ? 0.4 : 1 }} />
-                              {isChampImg && <span className="absolute bottom-1 left-1 font-bold text-[10px] px-1.5 py-0.5 rounded bg-[rgba(0,0,0,0.6)] text-white">챔피언</span>}
-                              {picked && <span className="absolute top-1 right-1"><Icon name="check-circle" size={16} style={{ color: "var(--w-accent-violet)" }} /></span>}
-                            </button>
-                          );
-                        })}
-                      </div>
-                      <p className="font-medium text-[12px] leading-[1.4] text-[var(--w-fg-alternative)] m-0">챔피언과 다른 이미지를 고르면 B 가 돼요. (browse 데모 — mock 이미지)</p>
-                    </div>
+                    <ChallengerImageGen
+                      headline={champVariant.headline}
+                      primaryText={champVariant.primaryText}
+                      tone={tone}
+                      outcome={objective}
+                      productName={productName}
+                      productDescription={description}
+                      referenceUrl={products.find((p) => p.id === productId)?.imageUrl || champVariant.imageUrl}
+                      value={chImage}
+                      onChange={setChImage}
+                    />
                   ) : chAxis === "headline" ? (
                     <input
                       type="text"
@@ -453,14 +446,14 @@ export default function TournamentSetup({ real = false }: { real?: boolean }) {
                       </div>
                       <SegControl options={DEGREE_OPTIONS} value={chDegree} onChange={(v) => setChDegree(v as Degree)} />
                       <Button
-                        variant="ghost"
+                        variant="primary"
                         size="sm"
                         type="button"
                         disabled={chGenning}
                         onClick={generateChallenger}
-                        className="inline-flex items-center gap-1.5 text-[var(--w-accent-violet)] self-start mt-1"
+                        className="self-start mt-1"
                       >
-                        {chGenning ? <><Icon name="spinner" size={13} spin /> 생성 중…</> : <><Icon name="sparkles" size={13} /> AI 로 B안 생성</>}
+                        {chGenning ? "생성 중…" : "AI 로 B안 생성"}
                       </Button>
                     </div>
                   )}
