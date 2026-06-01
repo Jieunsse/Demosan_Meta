@@ -27,6 +27,17 @@ import { useBrandProfileStorage } from "@features/brand-profile/model/useBrandPr
 import { useProducts } from "@shared/lib/products";
 import { shrinkImageDataUrl } from "@shared/lib/shrink-image";
 import ChallengerImageGen from "./ChallengerImageGen";
+import {
+  buildTournamentRequest,
+  buildDemoSetup,
+  buildChallengerVariant,
+  pickFromPool,
+  isFromExisting,
+  canAdvanceDesign,
+  canStart as canStartFn,
+  type Degree,
+  type SetupFormState,
+} from "./build";
 
 // 실 게재 delivery 옵션 — 셋업이 cron 에 넘길 최소 타겟/링크/CTA. 데모는 미사용.
 const COUNTRY_OPTIONS = [
@@ -64,8 +75,7 @@ const CHALLENGER_AXIS_OPTIONS: { value: TourAxis; label: string }[] = [
   { value: "image", label: "이미지" },
 ];
 
-// 챌린저(B) AI 생성 시 챔피언 대비 변화 폭 — A/B 는 한 요소만 바꾸므로 그 한 요소를 "얼마나" 바꿀지 유저가 고른다.
-type Degree = "slight" | "moderate" | "bold";
+// 챌린저(B) AI 생성 시 챔피언 대비 변화 폭 — A/B 는 한 요소만 바꾸므로 그 한 요소를 "얼마나" 바꿀지 유저가 고른다. Degree 는 ./build.
 const DEGREE_OPTIONS: { value: Degree; label: string }[] = [
   { value: "slight", label: "살짝" },
   { value: "moderate", label: "적당히" },
@@ -188,9 +198,26 @@ export default function TournamentSetup({ real = false }: { real?: boolean }) {
     ? { headline: selected.headline, primaryText: selected.primaryText ?? "", imageUrl: selected.imageUrl || (real ? "" : DEMO_AD_IMAGES[0]) }
     : null;
 
-  // 바꿀 요소가 채워졌는지 — 챌린저 대진 성립 조건.
-  const challengerReady =
-    chAxis === "headline" ? !!chHeadline.trim() : chAxis === "primary_text" ? !!chPrimary.trim() : !!chImage;
+  // 빌더가 읽는 순수 입력 — 페이로드/게이트 직조는 ./build 로.
+  const form: SetupFormState = {
+    championMode,
+    selected: selected ? { ctr: selected.ctr, name: selected.name } : null,
+    champVariant,
+    productId,
+    productName,
+    description,
+    tone,
+    objective,
+    maxRounds,
+    dailyBudget,
+    chAxis,
+    challenger: { headline: chHeadline, primary: chPrimary, image: chImage },
+    landingUrl,
+    ctaType,
+    country,
+    ageMin,
+    ageMax,
+  };
 
   // 우측 대진 미리보기용 챌린저(B) — 바꾼 축만 다르게, 나머지는 챔피언 그대로. 비면 챔피언 값으로 폴백 표시.
   const challengerPreview: TourVariant | null = champVariant
@@ -219,10 +246,8 @@ export default function TournamentSetup({ real = false }: { real?: boolean }) {
       const data = await res.json();
       const pool: string[] = chAxis === "headline" ? data.headlines : data.primaryTexts;
       const cur = chAxis === "headline" ? champVariant.headline : champVariant.primaryText;
-      // 변화 정도 → 풀에서 위치 선택(살짝=가장 가까운 첫 후보, 많이=가장 먼 끝 후보). 실 경로는 위 hint 로 프롬프트가 반영.
-      const filtered = pool.filter((x: string) => x.trim() && x.trim() !== cur.trim());
-      const idx = chDegree === "slight" ? 0 : chDegree === "bold" ? filtered.length - 1 : Math.floor(filtered.length / 2);
-      const pick = filtered[idx] ?? filtered[0] ?? pool[0] ?? "";
+      // 변화 정도 → 풀에서 위치 선택. 실 경로는 위 hint 로 프롬프트가 반영.
+      const pick = pickFromPool(pool, cur, chDegree);
       if (chAxis === "headline") setChHeadline(pick); else setChPrimary(pick);
     } catch {
       setError("챌린저 생성에 실패했어요. 직접 입력하거나 다시 시도해주세요.");
@@ -231,21 +256,15 @@ export default function TournamentSetup({ real = false }: { real?: boolean }) {
     }
   }
 
-  // A/B 설계 스텝 통과 조건 — existing: 챔피언+챌린저 한 요소 / ai: 출발 챔피언 생성 재료.
-  const canAdvanceDesign = championMode === "ai"
-    ? !!(productName.trim() && description.trim())
-    : !!selected && challengerReady;
-  // 게재 조건 스텝까지 채워야 시작 가능.
-  const canStart =
-    canAdvanceDesign && maxRounds >= 1 && dailyBudget > 0 &&
-    (!real || !!landingUrl.trim());
+  const designReady = canAdvanceDesign(form);
+  const startReady = canStartFn(form, real);
 
   async function handleStart() {
-    if (!canStart || starting) return;
+    if (!startReady || starting) return;
     setStarting(true);
     setError("");
     try {
-      const fromExisting = championMode === "existing" && selected && champVariant;
+      const fromExisting = isFromExisting(form);
 
       // 출발 챔피언 기준선 — 목표별 결정 지표 단위 (rate=실제 광고 CTR / awareness=실제 광고 CPM, 없으면 spec 기본값).
       const seedSpec = tourMetricSpec(objective);
@@ -260,37 +279,14 @@ export default function TournamentSetup({ real = false }: { real?: boolean }) {
         const res = await fetch("/api/tournaments", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            brandProfileId: activeId || "default",
-            productId: productId || "manual",
-            productName: productName.trim(),
-            brandDescription: description.trim(),
-            productDescription: description.trim(),
-            tone,
-            objective,
-            mode: "manual-n",
-            maxRounds,
-            dailyBudget,
-            startingCtr,
-            championSource: fromExisting ? "existing" : "ai",
-            startingChampion: fromExisting ? champVariant! : undefined,
-            championSourceName: fromExisting ? selected!.name : undefined,
-            goalId: objective,
-            linkUrl: landingUrl.trim(),
-            ctaType,
-            countries: [country],
-            ageMin,
-            ageMax,
-          }),
+          // 페이로드는 빌더로, startingCtr 만 목표별 seedSpec 값(awareness=CPM)으로 덮어쓴다.
+          body: JSON.stringify({ ...buildTournamentRequest(form, activeId ?? ""), startingCtr }),
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data?.error || "토너먼트 생성에 실패했어요.");
         const id = data.id as string;
         if (fromExisting) {
-          const challenger: TourVariant =
-            chAxis === "primary_text" ? { ...champVariant!, primaryText: chPrimary.trim() }
-            : { ...champVariant!, headline: chHeadline.trim() };
-          await tournamentClient(false).setChallenger(id, challenger);
+          await tournamentClient(false).setChallenger(id, buildChallengerVariant(chAxis, champVariant!, form.challenger));
         }
         router.push(`/ab-tests/${id}`);
         return;
@@ -298,31 +294,17 @@ export default function TournamentSetup({ real = false }: { real?: boolean }) {
 
       // 둘러보기는 localStorage 저장(데모) — 큰 생성 이미지(2MB PNG)를 그대로 복사하면 용량을 넘겨
       // 저장이 조용히 실패한다. 챔피언/챌린저 이미지를 저장 전 축소해 발자국을 줄인다.
-      const startingChampion = fromExisting
-        ? { ...champVariant!, imageUrl: await shrinkImageDataUrl(champVariant!.imageUrl ?? "") }
+      const demoSetup = buildDemoSetup(form);
+      const startingChampion = demoSetup.startingChampion
+        ? { ...demoSetup.startingChampion, imageUrl: await shrinkImageDataUrl(demoSetup.startingChampion.imageUrl ?? "") }
         : undefined;
-
-      const id = await startTournament({
-        brandProfileId: "browse",
-        productId: "browse",
-        productName: productName.trim(),
-        brandDescription: description.trim(),
-        productDescription: description.trim(),
-        tone,
-        objective,
-        maxRounds,
-        dailyBudget,
-        startingCtr,
-        championSource: fromExisting ? "existing" : "ai",
-        startingChampion,
-        championSourceName: fromExisting ? selected!.name : undefined,
-      });
+      const id = await startTournament({ ...demoSetup, startingCtr, startingChampion });
       // existing 경로: 셋업에서 구성한 라운드1 챌린저(B)를 pendingChallenger 로 시드 → 상세가 챌린저 검토 비트로 오픈.
       if (fromExisting) {
         const challenger: TourVariant =
-          chAxis === "headline" ? { ...startingChampion!, headline: chHeadline.trim() }
-          : chAxis === "primary_text" ? { ...startingChampion!, primaryText: chPrimary.trim() }
-          : { ...startingChampion!, imageUrl: await shrinkImageDataUrl(chImage) };
+          chAxis === "image"
+            ? { ...startingChampion!, imageUrl: await shrinkImageDataUrl(form.challenger.image) }
+            : buildChallengerVariant(chAxis, startingChampion!, form.challenger);
         setManualChallenger(id, challenger);
       }
       router.push(`/ab-tests/${id}`);
@@ -524,7 +506,7 @@ export default function TournamentSetup({ real = false }: { real?: boolean }) {
               </span>
             </div>
 
-            <Button variant="primary" type="button" disabled={!canAdvanceDesign} onClick={() => setStep("delivery")} className="w-full">
+            <Button variant="primary" type="button" disabled={!designReady} onClick={() => setStep("delivery")} className="w-full">
               다음 — 게재 조건 <Icon name="arrow-right" size={15} />
             </Button>
           </aside>
@@ -619,7 +601,7 @@ export default function TournamentSetup({ real = false }: { real?: boolean }) {
 
             {error && <p className="font-medium text-[12.5px] leading-[1.4] text-[var(--w-status-negative)] m-0">{error}</p>}
 
-            <Button variant="primary" type="button" disabled={!canStart || starting} onClick={handleStart} className="w-full">
+            <Button variant="primary" type="button" disabled={!startReady || starting} onClick={handleStart} className="w-full">
               {starting
                 ? <><Icon name="spinner" size={15} spin /> {championMode === "existing" ? "시작 중…" : "출발 챔피언 생성 중…"}</>
                 : <><Icon name="sparkles" size={15} /> 토너먼트 시작</>}

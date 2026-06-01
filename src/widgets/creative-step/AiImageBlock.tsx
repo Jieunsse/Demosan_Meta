@@ -12,9 +12,9 @@ import { Button } from "@shared/ui/Button";
 import { Skeleton } from "@shared/ui/Skeleton";
 import { cn } from "@shared/lib/cn";
 import { useApiMutation } from "@shared/lib/api/useApiMutation";
-import { fetchImageStream } from "@features/generate-image/stream";
-import { readFileAsDataUrl, splitDataUrl, urlToRef } from "@features/generate-image/refs";
 import type { ImageVariant, ReferenceImage } from "@/lib/gemini-image";
+import { fetchImageStream } from "@features/generate-image/image-stream";
+import { splitDataUrl, buildBriefRefs, computeBriefTargets } from "@features/generate-image/brief-refs";
 import type {
   ImageConcept,
   SuggestImageConceptsParams,
@@ -31,6 +31,36 @@ import BriefForm, { type AspectId } from "./BriefForm";
 const MAX_REF_MB = 3;
 
 type AiImageMode = "concept" | "brief";
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result));
+    r.onerror = () => reject(new Error("파일을 읽지 못했어요."));
+    r.readAsDataURL(file);
+  });
+}
+
+// URL(원격 또는 data:)을 Package Reference 용 base64 ReferenceImage 로 변환.
+async function urlToRef(url: string): Promise<{ ref: ReferenceImage; preview: string } | null> {
+  try {
+    if (url.startsWith("data:")) {
+      const ref = splitDataUrl(url);
+      return ref ? { ref, preview: url } : null;
+    }
+    const blob = await (await fetch(url)).blob();
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result));
+      r.onerror = () => reject(new Error("이미지 인코딩 실패"));
+      r.readAsDataURL(blob);
+    });
+    const ref = splitDataUrl(dataUrl);
+    return ref ? { ref, preview: dataUrl } : null;
+  } catch {
+    return null;
+  }
+}
 
 const EMPTY_CONCEPTS: ImageConcept[] = [
   { label: "", prompt: "" },
@@ -267,33 +297,12 @@ export default function AiImageBlock({
       showToast("연출컷·로고·자료를 최소 1개 올려주세요");
       return;
     }
-    const cur: [string, string, string] = state.generatedImages ?? ["", "", ""];
-    const targets = [0, 1, 2].filter((i) => !cur[i]);
+    const targets = computeBriefTargets(state.generatedImages);
     if (targets.length === 0) {
       showToast("모든 슬롯이 차 있어요. 먼저 삭제하거나 다시 생성해주세요");
       return;
     }
-    const combined = [...scenes, ...(logo ? [logo] : [])];
-    const materialImages = selectedMaterials
-      .filter((m) => m.type === "image" || m.type === "pdf")
-      .map((m) => splitDataUrl(m.storageUrl))
-      .filter((r): r is ReferenceImage => !!r);
-    const sceneRefs = [...combined.map(splitDataUrl).filter((r): r is ReferenceImage => !!r), ...materialImages];
-
-    const txtText = selectedMaterials
-      .filter((m) => m.type === "txt")
-      .map((m) => {
-        if (m.storageUrl.startsWith("data:text/plain;base64,")) {
-          try {
-            return `[참고 자료: ${m.name}]\n${atob(m.storageUrl.split(",")[1])}`;
-          } catch {
-            return null;
-          }
-        }
-        return null;
-      })
-      .filter(Boolean)
-      .join("\n\n");
+    const { sceneRefs, txtText } = buildBriefRefs({ scenes, logo, materials: selectedMaterials });
 
     const p = buildBriefPrompt({
       headline: state.headline,
