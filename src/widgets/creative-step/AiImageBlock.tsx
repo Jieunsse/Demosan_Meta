@@ -12,7 +12,9 @@ import { Button } from "@shared/ui/Button";
 import { Skeleton } from "@shared/ui/Skeleton";
 import { cn } from "@shared/lib/cn";
 import { useApiMutation } from "@shared/lib/api/useApiMutation";
-import type { GenerateImageParams, ImageVariant, ReferenceImage } from "@/lib/gemini-image";
+import type { ImageVariant, ReferenceImage } from "@/lib/gemini-image";
+import { fetchImageStream } from "@features/generate-image/image-stream";
+import { splitDataUrl, buildBriefRefs, computeBriefTargets } from "@features/generate-image/brief-refs";
 import type {
   ImageConcept,
   SuggestImageConceptsParams,
@@ -28,45 +30,6 @@ import BriefForm, { type AspectId } from "./BriefForm";
 
 const MAX_REF_MB = 3;
 
-async function fetchImageStream(
-  params: GenerateImageParams,
-  onImage: (index: number, image: string) => void,
-): Promise<void> {
-  const res = await fetch("/api/generate-image-stream", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(params),
-  });
-  if (!res.ok || !res.body) throw new Error("이미지 생성 요청에 실패했어요.");
-
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
-    for (const line of lines) {
-      if (!line.startsWith("data: ")) continue;
-      const data = line.slice(6).trim();
-      if (data === "[DONE]") return;
-      let parsed: { index?: number; image?: string; error?: string };
-      try {
-        parsed = JSON.parse(data);
-      } catch {
-        continue;
-      }
-      if (parsed.error) throw new Error(parsed.error);
-      if (typeof parsed.index === "number" && parsed.image) {
-        onImage(parsed.index, parsed.image);
-      }
-    }
-  }
-}
-
 type AiImageMode = "concept" | "brief";
 
 function readFileAsDataUrl(file: File): Promise<string> {
@@ -76,11 +39,6 @@ function readFileAsDataUrl(file: File): Promise<string> {
     r.onerror = () => reject(new Error("파일을 읽지 못했어요."));
     r.readAsDataURL(file);
   });
-}
-
-function splitDataUrl(dataUrl: string): ReferenceImage | null {
-  const m = /^data:([^;]+);base64,(.+)$/.exec(dataUrl);
-  return m ? { mimeType: m[1], dataBase64: m[2] } : null;
 }
 
 // URL(원격 또는 data:)을 Package Reference 용 base64 ReferenceImage 로 변환.
@@ -339,33 +297,12 @@ export default function AiImageBlock({
       showToast("연출컷·로고·자료를 최소 1개 올려주세요");
       return;
     }
-    const cur: [string, string, string] = state.generatedImages ?? ["", "", ""];
-    const targets = [0, 1, 2].filter((i) => !cur[i]);
+    const targets = computeBriefTargets(state.generatedImages);
     if (targets.length === 0) {
       showToast("모든 슬롯이 차 있어요. 먼저 삭제하거나 다시 생성해주세요");
       return;
     }
-    const combined = [...scenes, ...(logo ? [logo] : [])];
-    const materialImages = selectedMaterials
-      .filter((m) => m.type === "image" || m.type === "pdf")
-      .map((m) => splitDataUrl(m.storageUrl))
-      .filter((r): r is ReferenceImage => !!r);
-    const sceneRefs = [...combined.map(splitDataUrl).filter((r): r is ReferenceImage => !!r), ...materialImages];
-
-    const txtText = selectedMaterials
-      .filter((m) => m.type === "txt")
-      .map((m) => {
-        if (m.storageUrl.startsWith("data:text/plain;base64,")) {
-          try {
-            return `[참고 자료: ${m.name}]\n${atob(m.storageUrl.split(",")[1])}`;
-          } catch {
-            return null;
-          }
-        }
-        return null;
-      })
-      .filter(Boolean)
-      .join("\n\n");
+    const { sceneRefs, txtText } = buildBriefRefs({ scenes, logo, materials: selectedMaterials });
 
     const p = buildBriefPrompt({
       headline: state.headline,
