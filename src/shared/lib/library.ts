@@ -29,6 +29,7 @@ export interface LibraryItem {
   goal: string;
   target: string;
   gradient: string;
+  image?: string;
   tag: string;
 }
 

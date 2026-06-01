@@ -137,3 +137,11 @@ export const LAUNCH_PROFILES: Record<ObjectivePhase1Id, LaunchObjectiveProfile> 
 export function getLaunchProfile(id: ObjectivePhase1Id): LaunchObjectiveProfile {
   return LAUNCH_PROFILES[id]
 }
+
+// outcome(11 chip) → 게재 정책. Phase 1 8개만 프로파일 보유, Phase 2/null 은 null.
+// 흩어져 있던 `outcome in LAUNCH_PROFILES ? LAUNCH_PROFILES[outcome] : ...` 의 단일 selector.
+export function profileOf(outcome: string | null): LaunchObjectiveProfile | null {
+  return outcome && outcome in LAUNCH_PROFILES
+    ? getLaunchProfile(outcome as ObjectivePhase1Id)
+    : null
+}

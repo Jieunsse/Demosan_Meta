@@ -1,11 +1,15 @@
 // Server-side only — campaign CRUD operations. Do not import from client components.
 
 import { OBJECTIVES_PHASE1, type ObjectivePhase1Id } from '@entities/creative/options'
-import { graphFetch } from './meta-ads-graph'
+import { graphFetch, MetaApiError } from './meta-ads-graph'
 
 // PRD §13 — leads_call goal 추가로 OUTCOME_LEADS 도 합법 objective.
 // 단 leads_form (Phase 2 Instant Form) 은 페이지 ToS · Lead Form 빌더 필요해서 별도 트랙.
 export type MetaObjectiveParam = 'OUTCOME_TRAFFIC' | 'OUTCOME_AWARENESS' | 'OUTCOME_ENGAGEMENT' | 'OUTCOME_LEADS'
+// 라우트 입력 검증용 — MetaObjectiveParam 과 동일 집합의 단일 출처.
+export const VALID_OBJECTIVES: ReadonlySet<MetaObjectiveParam> = new Set([
+  'OUTCOME_TRAFFIC', 'OUTCOME_AWARENESS', 'OUTCOME_ENGAGEMENT', 'OUTCOME_LEADS',
+])
 export type BidStrategyParam = 'LOWEST_COST_WITHOUT_CAP' | 'LOWEST_COST_WITH_BID_CAP' | 'COST_CAP'
 export type PlacementsParam = { mode: 'auto' } | { mode: 'manual'; positions: string[] }
 export type PlatformsParam = 'both' | 'facebook' | 'instagram'
@@ -354,10 +358,6 @@ export const metaAdsCampaign = {
 
       return { campaignId: campaign.id, adSetId: adSet.id, adId: ad.id }
     } catch (err) {
-      // graphFetch 가 MetaError 를 plain Error 메시지로 평탄화하므로 진단용으로 코드/서브코드를 재추출.
-      const errorMessage = err instanceof Error ? err.message : String(err)
-      const codeMatch = errorMessage.match(/오류 \((\d+)\)/)
-      const subcodeMatch = errorMessage.match(/subcode=(\d+)/)
       console.error('[meta-ads] createCampaign failed', {
         campaignId: campaign.id,
         adSetId,
@@ -366,9 +366,108 @@ export const metaAdsCampaign = {
         imageHash,
         pageId,
         accountId,
-        errorCode: codeMatch ? Number(codeMatch[1]) : undefined,
-        errorSubcode: subcodeMatch ? Number(subcodeMatch[1]) : undefined,
-        errorMessage,
+        errorCode: err instanceof MetaApiError ? err.code : undefined,
+        errorSubcode: err instanceof MetaApiError ? err.subcode : undefined,
+        errorMessage: err instanceof Error ? err.message : String(err),
+      })
+      try {
+        await graphFetch<{ success?: boolean }>(`/${campaign.id}?access_token=${token}`, { method: 'DELETE' })
+      } catch {
+        // 정리 실패는 의도적으로 swallow — 원래 에러를 다시 던짐.
+      }
+      throw err
+    }
+  },
+
+  // ADR-038 §4 — A/B 토너먼트 실 라운드 게재. createCampaign 의 abTest(같은 AdSet 2광고) 와 달리
+  // 셀 A(챔피언)·B(챌린저)를 각각 독립 AdSet 으로 만들고 /act/ad_studies SPLIT_TEST 로 묶어
+  // Meta 가 청중을 50/50 분할·자체 유의성 winner 를 판정하게 한다(엔진 z-검정 대신 Meta verdict 채택).
+  // 셀 구성(creative override)은 createCampaign abTest 분기와 동일 규칙. 부분 생성 정리도 대칭.
+  async createSplitTestStudy(
+    params: CreateCampaignParams,
+    token: string,
+    accountId: string,
+    pageId: string,
+  ): Promise<{ campaignId: string; adSetIds: [string, string]; adIds: [string, string]; studyId: string }> {
+    if (!pageId) {
+      throw new Error('광고를 게재하려면 페이스북 페이지를 먼저 선택해야 해요.')
+    }
+    if (!params.countries || params.countries.length === 0) {
+      throw new Error('타겟 지역(국가)을 최소 한 곳 선택해야 해요.')
+    }
+    if (!params.abTestEnabled || !params.abTestAxis || !params.abTestVariantB) {
+      throw new Error('A/B 시험 축과 B안이 필요해요.')
+    }
+    const axis = params.abTestAxis
+    const variantB = params.abTestVariantB
+    if (variantB.axis !== axis) {
+      throw new Error('A/B 시험 축과 B안 형식이 맞지 않아요.')
+    }
+
+    const plan = deriveLaunchPlan(params, pageId)
+    const imageHash = params.imageDataUrl
+      ? await uploadAdImage(params.imageDataUrl, token, accountId)
+      : undefined
+
+    const post = <T extends object>(path: string, body: Record<string, unknown>) =>
+      graphFetch<T>(path, {
+        method: 'POST',
+        body: JSON.stringify({ ...body, access_token: token }),
+      })
+
+    const overrideA: CreativeOverride = { imageHash, headline: params.headline, primaryText: params.primaryText }
+    const overrideB: CreativeOverride =
+      variantB.axis === 'headline'
+        ? { imageHash, headline: variantB.headline, primaryText: params.primaryText }
+        : variantB.axis === 'primary_text'
+          ? { imageHash, headline: params.headline, primaryText: variantB.primaryText }
+          : { imageHash, headline: params.headline, primaryText: params.primaryText }
+
+    const campaign = await post<{ id: string }>(`/${accountId}/campaigns`, buildCampaignBody(params, plan))
+    try {
+      // 셀 = 독립 AdSet 1개 + creative + ad. 두 AdSet 은 동일 타겟, axis 한 필드만 갈린다.
+      // dailyBudget 은 셀당 절반 — 총 일 예산이 토너먼트 dailyBudget 과 일치(엔진 봉투 회계·데모 spendPerCell 정합).
+      const cellBudget = String(Math.round(params.dailyBudget / 2))
+      const cell = async (override: CreativeOverride, tag: 'A' | 'B') => {
+        const adSet = await post<{ id: string }>(`/${accountId}/adsets`, {
+          ...buildAdSetBody(params, plan, campaign.id),
+          name: `AdFlow AdSet ${tag} — ${override.headline}`,
+          daily_budget: cellBudget,
+        })
+        const creative = await post<{ id: string }>(`/${accountId}/adcreatives`, buildCreativeBody(params, pageId, override, tag))
+        const ad = await post<{ id: string }>(`/${accountId}/ads`, buildAdBody(adSet.id, creative.id, plan.status, override.headline, tag))
+        return { adSetId: adSet.id, adId: ad.id }
+      }
+      const a = await cell(overrideA, 'A')
+      const b = await cell(overrideB, 'B')
+
+      // ad study cells — 셀 이름(A/B)으로 winner 매핑. treatment_percentage 합 100, adsets=셀의 AdSet ID.
+      const study = await post<{ id: string }>(`/${accountId}/ad_studies`, {
+        name: `AdFlow Split — ${params.headline}`.slice(0, 80),
+        description: 'AdFlow A/B 토너먼트 라운드',
+        type: 'SPLIT_TEST',
+        start_time: toUnixKST(params.startDate),
+        end_time: toUnixKST(params.endDate, true),
+        cells: [
+          { name: 'A', treatment_percentage: 50, adsets: [a.adSetId] },
+          { name: 'B', treatment_percentage: 50, adsets: [b.adSetId] },
+        ],
+      })
+
+      return {
+        campaignId: campaign.id,
+        adSetIds: [a.adSetId, b.adSetId],
+        adIds: [a.adId, b.adId],
+        studyId: study.id,
+      }
+    } catch (err) {
+      console.error('[meta-ads] createSplitTestStudy failed', {
+        campaignId: campaign.id,
+        pageId,
+        accountId,
+        errorCode: err instanceof MetaApiError ? err.code : undefined,
+        errorSubcode: err instanceof MetaApiError ? err.subcode : undefined,
+        errorMessage: err instanceof Error ? err.message : String(err),
       })
       try {
         await graphFetch<{ success?: boolean }>(`/${campaign.id}?access_token=${token}`, { method: 'DELETE' })

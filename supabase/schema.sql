@@ -51,3 +51,54 @@ create table if not exists onboarded_users (
   user_email   text primary key,
   onboarded_at timestamptz not null default now()
 );
+
+-- ADR-038 — A/B 토너먼트 실 유저 이관. 다른 테이블과 달리 미러가 아니라 source-of-truth(primary):
+-- 서버 cron 폴러가 브라우저 없이 라운드를 진행하므로 Supabase 가 진실의 원천이다. 전체 Tournament 는
+-- data jsonb, 폴러가 필터링하는 status 는 컬럼으로 승격. user_email = 소유 유저(섬2 가 Meta 토큰 매칭).
+create table if not exists tournaments (
+  id               text primary key,
+  user_email       text,
+  brand_profile_id text,
+  status           text not null,
+  mode             text not null,
+  data             jsonb not null,
+  created_at       text not null,
+  updated_at       timestamptz default now()
+);
+
+create index if not exists tournaments_status on tournaments (status);
+
+-- axhub(Google) 신원에 매달리는 사용자 + Meta 연결 영속 (lib/user-store.ts).
+-- 신원=앵커, meta_connection=최초 Facebook 연결로 받은 토큰 묶음(2회차+ 자동 복원), role/workspace=자체 관리.
+create table if not exists app_users (
+  axhub_id        text primary key,
+  email           text not null,
+  name            text,
+  image           text,
+  role            text not null default '팀장',
+  workspace_id    text,
+  meta_connection jsonb,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now()
+);
+
+create index if not exists app_users_email_idx on app_users (email);
+create index if not exists app_users_workspace_idx on app_users (workspace_id);
+
+-- ADR-042 — 토너먼트 폴러 자기기록 관측성 1겹. cron 1회 호출 = 1행(집계 only, PK 없음).
+-- pg_net(트리거 스왑 후)은 fire-and-forget 이라 "요청 보냄"까지만 안다 — 핸들러가 try/finally 끝에서
+-- 직접 실행 요약을 남긴다. health 라우트(2겹)가 마지막 ok=true 의 finished_at 나이로 dead-man's switch 를 건다.
+create table if not exists cron_runs (
+  job          text        not null,
+  ok           boolean     not null,
+  scanned      int         not null default 0,
+  settled      int         not null default 0,
+  advanced     int         not null default 0,
+  error_count  int         not null default 0,
+  errors       jsonb       not null default '[]',
+  started_at   timestamptz not null,
+  finished_at  timestamptz not null default now()
+);
+
+create index if not exists cron_runs_job_ok_finished
+  on cron_runs (job, ok, finished_at desc);

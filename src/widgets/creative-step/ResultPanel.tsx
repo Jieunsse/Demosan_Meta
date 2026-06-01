@@ -9,7 +9,6 @@ import { Card } from "@shared/ui/Card";
 import { Skeleton } from "@shared/ui/Skeleton";
 import { cn } from "@shared/lib/cn";
 import { findHook, type CopyHook } from "@entities/creative/options";
-import AiImageBlock from "./AiImageBlock";
 
 interface Props {
   generating: boolean;
@@ -21,15 +20,15 @@ interface Props {
   primaryTextIdx: number;
   onSelectPrimaryText: (i: number) => void;
   displayedHooks: [CopyHook, CopyHook, CopyHook] | null;
+  proofPointsCited: [boolean, boolean, boolean] | null;
   primaryText: string;
   setPrimaryText: (v: string) => void;
   elapsed: number;
   onSaveToLibrary: () => void;
   saved: boolean;
   goLibrary: () => void;
-  onNext: () => void;
-  imageDataUrl: string | null;
-  setImageDataUrl: (v: string | null) => void;
+  /** ADR-040 — phase 1(카피) → phase 2(이미지) 전환. */
+  onGoImage: () => void;
 }
 
 export default function ResultPanel(p: Props) {
@@ -140,6 +139,11 @@ export default function ResultPanel(p: Props) {
                             <Badge kind="violet">{findHook(p.displayedHooks[i]).ko} 방식</Badge>
                           </span>
                         )}
+                        {p.proofPointsCited?.[i] && (
+                          <span title="브랜드 근거 자료의 수치를 인용했어요 (ADR-031)" className="inline-flex">
+                            <Badge kind="success">근거 ✓</Badge>
+                          </span>
+                        )}
                       </div>
                       <div className="font-[600] text-[14.5px] leading-[1.45] text-[var(--w-fg-strong)] mt-1">{t}</div>
                     </div>
@@ -161,9 +165,6 @@ export default function ResultPanel(p: Props) {
             />
           </div>
 
-
-          <AiImageBlock imageDataUrl={p.imageDataUrl} setImageDataUrl={p.setImageDataUrl} />
-
           <div className="flex items-center justify-between gap-3" style={{ paddingTop: 16, borderTop: "1px solid var(--w-line-alternative)", flexWrap: "wrap", gap: 10 }}>
             <span style={{ display: "inline-flex", alignItems: "center", gap: 6, font: "500 12px/1 var(--w-font-sans)", color: "var(--w-fg-normal)" }}>
               <Icon name="check" size={14} style={{ color: "var(--w-status-positive)" }} />
@@ -180,7 +181,7 @@ export default function ResultPanel(p: Props) {
                   <Icon name="folder" size={14} /> 소재 라이브러리에 저장
                 </Button>
               )}
-              <Button variant="primary" type="button" onClick={p.onNext}>다음: 광고 집행 <Icon name="arrow-right" size={14} /></Button>
+              <Button variant="primary" type="button" onClick={p.onGoImage}>다음: 이미지 만들기 <Icon name="arrow-right" size={14} /></Button>
             </div>
           </div>
         </>

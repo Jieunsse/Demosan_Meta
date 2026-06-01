@@ -5,7 +5,7 @@
 // 결정 지점 🧑(DecisionBanner) = 발표자가 직접 누르며 설명, 자동 단계 🤖(AutoBanner) = 엔진이 판정·승격.
 // 시간 경과(라이브 결산)는 하단 PresenterTournamentBar(+7일)가 구동한다.
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import Icon from "@shared/ui/Icon";
@@ -15,44 +15,45 @@ import { Chip } from "@shared/ui/Chip";
 import { IgPostPreview } from "@shared/ui/IgPostPreview";
 import { useToast } from "@shared/ui/Toast";
 import {
-  getTournament,
   roundAdKpis,
   nextAxis,
   deriveAxis,
   deriveBeat,
   detectAnomaly,
   AXIS_LABEL,
+  MIN_ROUND_DAYS,
   TOURNAMENT_CHANGE_EVENT,
   type Tournament,
   type TourVariant,
   type TourRound,
   type TourAxis,
 } from "@entities/ab-test/tournament/tournament";
-import {
-  regenerateChampion,
-  confirmChampion,
-  proposeChallenger,
-  setManualChallenger,
-  launchRound,
-  endTournament,
-  resolveAnomaly,
-  discardPendingChallenger,
-  refillEnvelope,
-} from "@entities/ab-test/tournament/runner";
+import { tournamentClient } from "@entities/ab-test/tournament/client";
 import { buildRoundReport, type AdReport, type RoundReport } from "@entities/ab-test/tournament/report";
 import PresenterTournamentBar from "@widgets/presenter-fast-forward/tournament";
 
 // ADR-035 — 비트는 엔진 deriveBeat 단일 소스 (auto 무인 / manual-n 제어 분기).
 
-// 누적 실적 — settled 라운드는 저장된 adKpis, running 라운드는 현 챔피언 기준 즉석 산출.
-function tournamentTotals(t: Tournament): { spend: number; days: number } {
+// 라운드 경과일 — 실 게재 라운드는 launchedAt 기준(UTC 차분), 미게재면 0.
+function elapsedDays(round: TourRound): number {
+  if (!round.launchedAt) return 0;
+  const start = Date.parse(round.launchedAt);
+  if (Number.isNaN(start)) return 0;
+  return Math.max(0, Math.floor((Date.now() - start) / 86400000));
+}
+
+// 누적 실적 — 데모: settled adKpis + running 즉석 산출(시드). 실: settled adKpis 실측만, running 은 결산 전이라 제외.
+function tournamentTotals(t: Tournament, isReal: boolean): { spend: number; days: number } {
   let spend = 0;
   let days = 0;
   for (const r of t.rounds) {
-    days += Math.max(0, r.fastForwardDays);
-    const k = r.status === "settled" ? r.adKpis : r.fastForwardDays > 0 ? roundAdKpis(r, t.championCtr, t.dailyBudget) : undefined;
-    if (k) {
-      spend += k[0].spend + k[1].spend;
+    if (isReal) {
+      if (r.adKpis) spend += r.adKpis[0].spend + r.adKpis[1].spend;
+      days += r.status === "settled" ? MIN_ROUND_DAYS : elapsedDays(r);
+    } else {
+      days += Math.max(0, r.fastForwardDays);
+      const k = r.status === "settled" ? r.adKpis : r.fastForwardDays > 0 ? roundAdKpis(r, t.championCtr, t.dailyBudget) : undefined;
+      if (k) spend += k[0].spend + k[1].spend;
     }
   }
   return { spend, days };
@@ -65,25 +66,59 @@ export default function AbTournamentDetailPage() {
   const router = useRouter();
   const { data: session } = useSession();
   const browseMode = !!session?.browseMode;
+  const isReal = !browseMode;
   const showToast = useToast();
+  const client = useMemo(() => tournamentClient(browseMode), [browseMode]);
 
-  const [t, setT] = useState<Tournament | null>(() => (typeof window !== "undefined" ? getTournament(id) : null));
+  const [t, setT] = useState<Tournament | null>(null);
+  const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    const reload = () => setT(getTournament(id));
+    let alive = true;
+    const reload = () =>
+      client.get(id).then((next) => {
+        if (!alive) return;
+        setT(next);
+        setLoading(false);
+      });
     reload();
-    window.addEventListener(TOURNAMENT_CHANGE_EVENT, reload);
-    return () => window.removeEventListener(TOURNAMENT_CHANGE_EVENT, reload);
-  }, [id]);
+    if (browseMode) {
+      // 데모 — localStorage 변경 이벤트로 즉시 반영.
+      window.addEventListener(TOURNAMENT_CHANGE_EVENT, reload);
+      return () => {
+        alive = false;
+        window.removeEventListener(TOURNAMENT_CHANGE_EVENT, reload);
+      };
+    }
+    // 실 — 서버 cron 이 라운드를 결산·진행하므로 주기 폴링으로 최신화(라이브 대기 상태 동기화).
+    const iv = setInterval(reload, 30000);
+    return () => {
+      alive = false;
+      clearInterval(iv);
+    };
+  }, [id, browseMode, client]);
 
-  if (!browseMode) {
+  // mutation 헬퍼 — busy 토글 + 최신 스냅샷 반영 + 토스트/에러 처리. 데모·실 공통.
+  const act = async (op: Promise<Tournament | null>, okMsg?: string) => {
+    setBusy(true);
+    try {
+      const next = await op;
+      if (next) setT(next);
+      if (okMsg) showToast(okMsg);
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "처리 중 문제가 발생했어요");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (loading) {
     return (
       <div className="px-12 py-9 max-w-[760px] mx-auto">
         <Card className="py-12 px-8 flex flex-col items-center gap-3 text-center">
-          <div className="font-bold text-[17px] text-[var(--w-fg-strong)]">토너먼트 상세는 준비 중이에요</div>
-          <div className="font-medium text-[13px] text-[var(--w-fg-neutral)]">A/B 토너먼트 상세 화면은 곧 제공될 예정이에요.</div>
-          <Button variant="secondary" type="button" className="mt-2" onClick={() => router.push("/ab-tests")}>A/B 테스트로</Button>
+          <div className="rounded-full border-[2.4px] border-[var(--w-line-normal)] border-t-[var(--w-primary-normal)] animate-[spin_0.85s_linear_infinite] w-7 h-7" />
+          <div className="font-semibold text-[14px] text-[var(--w-fg-neutral)]">불러오는 중…</div>
         </Card>
       </div>
     );
@@ -104,7 +139,7 @@ export default function AbTournamentDetailPage() {
   const beat = deriveBeat(t);
   const settledRounds = t.rounds.filter((r) => r.status === "settled");
   const lastSettled = settledRounds.at(-1) ?? null;
-  const totals = tournamentTotals(t);
+  const totals = tournamentTotals(t, isReal);
   const startCtr = t.rounds[0]?.verdict?.ctrA ?? t.championCtr;
   const liftPct = startCtr > 0 ? ((t.championCtr - startCtr) / startCtr) * 100 : 0;
   const promotionNote =
@@ -171,12 +206,8 @@ export default function AbTournamentDetailPage() {
         <ChampionReview
           t={t}
           busy={busy}
-          onRegenerate={async () => {
-            setBusy(true);
-            await regenerateChampion(t.id);
-            setBusy(false);
-          }}
-          onConfirm={(edited) => confirmChampion(t.id, edited)}
+          onRegenerate={() => act(client.regenerateChampion(t.id))}
+          onConfirm={(edited) => act(client.confirmChampion(t.id, edited))}
         />
       )}
 
@@ -185,22 +216,17 @@ export default function AbTournamentDetailPage() {
           t={t}
           challenger={t.pendingChallenger}
           busy={busy}
-          onPropose={async () => {
-            setBusy(true);
-            await proposeChallenger(t.id);
-            setBusy(false);
-          }}
-          onManual={(v) => setManualChallenger(t.id, v)}
-          onLaunch={() => launchRound(t.id)}
+          onPropose={() => act(client.proposeChallenger(t.id))}
+          onManual={(v) => act(client.setChallenger(t.id, v))}
+          onLaunch={() => act(client.launch(t.id), isReal ? "라운드를 게재했어요 — Meta 결산까지 기다려요" : undefined)}
         />
       )}
 
-      {(beat === "live" || (beat === "auto-running" && t.rounds.some((r) => r.status === "running"))) && (
-        <LivePanel t={t} />
-      )}
+      {(beat === "live" || (beat === "auto-running" && t.rounds.some((r) => r.status === "running"))) &&
+        (isReal ? <RealLivePanel t={t} /> : <LivePanel t={t} />)}
 
       {beat === "auto-running" && !t.rounds.some((r) => r.status === "running") && (
-        <AutoBetweenPanel lastSettled={lastSettled} dailyBudget={t.dailyBudget} />
+        <AutoBetweenPanel lastSettled={lastSettled} dailyBudget={t.dailyBudget} isReal={isReal} />
       )}
 
       {beat === "anomaly" && (
@@ -208,21 +234,12 @@ export default function AbTournamentDetailPage() {
           t={t}
           lastSettled={lastSettled}
           busy={busy}
-          onPropose={async () => {
-            setBusy(true);
-            await proposeChallenger(t.id);
-            setBusy(false);
-          }}
-          onManual={(v) => setManualChallenger(t.id, v)}
-          onDiscard={() => discardPendingChallenger(t.id)}
-          onAccept={() => {
-            resolveAnomaly(t.id);
-            showToast("챌린저를 교체했어요 — 자동 진행을 재개해요");
-          }}
-          onEnd={() => {
-            endTournament(t.id);
-            showToast("토너먼트를 종료했어요");
-          }}
+          isReal={isReal}
+          onPropose={() => act(client.proposeChallenger(t.id))}
+          onManual={(v) => act(client.setChallenger(t.id, v))}
+          onDiscard={() => act(client.discardChallenger(t.id))}
+          onAccept={() => act(client.resolveAnomaly(t.id), "챌린저를 교체했어요 — 자동 진행을 재개해요")}
+          onEnd={() => act(client.end(t.id), "토너먼트를 종료했어요")}
         />
       )}
 
@@ -230,14 +247,8 @@ export default function AbTournamentDetailPage() {
         <WinnerHandlingPanel
           t={t}
           onPromote={() => router.push("/create")}
-          onRefill={() => {
-            refillEnvelope(t.id);
-            showToast("봉투를 리필했어요 — 자동 진행을 재개해요");
-          }}
-          onArchive={() => {
-            endTournament(t.id);
-            showToast("토너먼트를 마치고 보관했어요");
-          }}
+          onRefill={() => act(client.refillEnvelope(t.id), "예산을 리필했어요 — 자동 진행을 재개해요")}
+          onArchive={() => act(client.end(t.id), "토너먼트를 마치고 보관했어요")}
         />
       )}
 
@@ -247,12 +258,9 @@ export default function AbTournamentDetailPage() {
           dailyBudget={t.dailyBudget}
           nextAxisLabel={nextAxisLabel}
           busy={busy}
-          onPropose={async () => {
-            setBusy(true);
-            await proposeChallenger(t.id);
-            setBusy(false);
-          }}
-          onEnd={() => endTournament(t.id)}
+          isReal={isReal}
+          onPropose={() => act(client.proposeChallenger(t.id))}
+          onEnd={() => act(client.end(t.id))}
         />
       )}
 
@@ -263,13 +271,55 @@ export default function AbTournamentDetailPage() {
         <RoundHistory
           rounds={settledRounds}
           dailyBudget={t.dailyBudget}
+          isReal={isReal}
           summary={`${settledRounds.length}라운드 동안 CTR ${startCtr.toFixed(2)}% → ${t.championCtr.toFixed(2)}%${
             liftPct > 0.5 ? ` · +${liftPct.toFixed(0)}%` : ""
           }`}
         />
       )}
 
-      <PresenterTournamentBar t={t} />
+      {/* 데모만 발표자 빨리감기 — 실 라운드는 서버 cron 이 결산·진행한다. */}
+      {!isReal && <PresenterTournamentBar t={t} />}
+    </div>
+  );
+}
+
+/* ─── live 🤖 (실 유저) — cron 결산 대기 상태 카드 ────────── */
+
+// 실 라운드는 발표자 빨리감기 없이 Meta 가 며칠 게재된다. 결산 전엔 세부 KPI 가 없으므로(폴러가 settle 시 채움)
+// 게재 사실·경과·예정만 보여주고, 상세 폴링(30s)이 결산되면 자동으로 SettledResult 로 넘어간다.
+function RealLivePanel({ t }: { t: Tournament }) {
+  const round = t.rounds.find((r) => r.status === "running")!;
+  const days = elapsedDays(round);
+  const remain = Math.max(0, MIN_ROUND_DAYS - days);
+  return (
+    <div className="flex flex-col gap-4">
+      <AutoBanner
+        title={`라운드 ${round.index} 게재 중 — ${AXIS_LABEL[round.axis]} 비교`}
+        desc="실제 Meta 광고로 챔피언(A)·챌린저(B)를 게재하고 있어요. 서버가 충분한 데이터가 쌓일 때까지 기다렸다가 자동으로 결산해요. 브라우저를 꺼도 진행돼요."
+      />
+      <div className="flex items-center gap-2 py-2.5 px-4 rounded-xl bg-[var(--w-bg-elevated)] border border-[var(--w-line-normal)]">
+        <Icon name="spinner" size={13} spin />
+        <span className="font-semibold text-[12px] text-[var(--w-fg-neutral)]">
+          게재 {days}일째 · {remain > 0 ? `최소 ${MIN_ROUND_DAYS}일 후 결산 (약 ${remain}일 남음)` : "결산 대기 중 — 곧 승자가 가려져요"}
+        </span>
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        <Card className="p-4">
+          <div className="flex items-center gap-1.5 mb-2.5">
+            <span style={{ width: 22, height: 22, borderRadius: "50%", background: "var(--w-bg-alternative)", border: "1.5px solid var(--w-line-normal)", color: "var(--w-fg-neutral)", display: "grid", placeItems: "center" }} className="font-bold text-[11px]">A</span>
+            <span className="font-semibold text-[12.5px] text-[var(--w-fg-neutral)]">챔피언</span>
+          </div>
+          <VariantBody variant={round.champion} only={round.axis} />
+        </Card>
+        <Card className="p-4" style={{ borderColor: "var(--w-primary-normal)" }}>
+          <div className="flex items-center gap-1.5 mb-2.5">
+            <span style={{ width: 22, height: 22, borderRadius: "50%", background: "var(--w-primary-soft)", border: "1.5px solid var(--w-primary-normal)", color: "var(--w-primary-press)", display: "grid", placeItems: "center" }} className="font-bold text-[11px]">B</span>
+            <span className="font-semibold text-[12.5px] text-[var(--w-primary-press)]">챌린저</span>
+          </div>
+          <VariantBody variant={round.challenger} highlight={round.axis} only={round.axis} />
+        </Card>
+      </div>
     </div>
   );
 }
@@ -314,7 +364,7 @@ function StatItem({ label, value }: { label: string; value: string }) {
 function Metric({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-col gap-0.5">
-      <span className="font-medium text-[10.5px] text-[var(--w-fg-alternative)]">{label}</span>
+      <span className="font-medium text-[10.5px] text-[var(--w-fg-neutral)]">{label}</span>
       <span className="font-semibold text-[12.5px] text-[var(--w-fg-strong)]">{value}</span>
     </div>
   );
@@ -505,53 +555,72 @@ function LivePanel({ t }: { t: Tournament }) {
       />
       <VerdictStrip live />
       <div className="grid grid-cols-2 gap-4">
-        <AdMetricCard label="A" tag="챔피언" variant={round.champion} ad={report.ads[0]} hasData={hasData} accent={false} axis={round.axis} />
-        <AdMetricCard label="B" tag="챌린저" variant={round.challenger} ad={report.ads[1]} hasData={hasData} accent axis={round.axis} />
+        <AdMetricCard label="A" tag="챔피언" variant={round.champion} ad={report.ads[0]} hasData={hasData} accent={false} axis={round.axis} delta={report.ads[0].ctr - report.ads[1].ctr} />
+        <AdMetricCard label="B" tag="챌린저" variant={round.challenger} ad={report.ads[1]} hasData={hasData} accent axis={round.axis} delta={report.ads[1].ctr - report.ads[0].ctr} />
       </div>
     </div>
   );
 }
 
-function MetricCat({ title, children }: { title: string; children: ReactNode }) {
+function MetricCat({ children }: { children: ReactNode }) {
   return (
-    <div className="flex flex-col gap-2">
-      <div className="font-semibold text-[10px] uppercase tracking-[0.04em] text-[var(--w-fg-alternative)]">{title}</div>
+    <div className="rounded-xl bg-[var(--w-bg-alternative)] p-3">
       <div className="grid grid-cols-2 gap-y-2 gap-x-4">{children}</div>
     </div>
   );
 }
 
-function AdMetricCard({ label, tag, variant, ad, hasData, accent, mark, axis, prohibited }: {
+function AdMetricCard({ label, tag, variant, ad, hasData, accent, mark, axis, prohibited, real, delta }: {
   label: string; tag: string; variant: TourVariant; ad: AdReport;
-  hasData: boolean; accent: boolean; mark?: string; axis: TourAxis; prohibited?: string[];
+  hasData: boolean; accent: boolean; mark?: string; axis: TourAxis; prohibited?: string[]; real?: boolean; delta?: number;
 }) {
   const v = (s: string) => (hasData ? s : "—");
+  const lead = hasData && delta != null && delta > 0.005;
   return (
     <Card className="p-4" style={accent ? { borderColor: "var(--w-primary-normal)" } : undefined}>
-      <div className="flex items-center gap-1.5 mb-2.5">
+      <div className="flex items-center gap-1.5 mb-3">
         <span style={{ width: 22, height: 22, borderRadius: "50%", background: accent ? "var(--w-primary-soft)" : "var(--w-bg-alternative)", border: `1.5px solid ${accent ? "var(--w-primary-normal)" : "var(--w-line-normal)"}`, color: accent ? "var(--w-primary-press)" : "var(--w-fg-neutral)", display: "grid", placeItems: "center" }} className="font-bold text-[11px]">{label}</span>
         <span className="font-semibold text-[12.5px]" style={{ color: accent ? "var(--w-primary-press)" : "var(--w-fg-neutral)" }}>{tag}</span>
         {mark && <Chip variant={mark === "승격" ? "live" : "neutral"}>{mark}</Chip>}
-        <span className="ml-auto font-bold text-[15px] text-[var(--w-fg-strong)]">{hasData ? `${ad.ctr.toFixed(2)}%` : "—"}</span>
+      </div>
+      <div className="flex items-baseline gap-2 mb-3">
+        <span className="font-semibold text-[10px] uppercase tracking-[0.05em] text-[var(--w-fg-alternative)]">CTR</span>
+        <span className="font-bold text-[26px] leading-none tabular-nums" style={{ color: accent ? "var(--w-primary-press)" : "var(--w-fg-strong)" }}>{hasData ? `${ad.ctr.toFixed(2)}%` : "—"}</span>
+        {lead && <span className="font-bold text-[12.5px] text-[var(--w-status-positive)]">▲ {delta!.toFixed(2)}</span>}
       </div>
       <VariantBody variant={variant} only={axis} prohibited={prohibited} />
-      <div className="mt-3 pt-3 border-t border-[var(--w-line-normal)] flex flex-col gap-3">
-        <MetricCat title="노출 & 도달">
-          <Metric label="노출" value={v(ad.impressions.toLocaleString("ko-KR"))} />
-          <Metric label="도달" value={v(ad.reach.toLocaleString("ko-KR"))} />
-          <Metric label="빈도" value={v(ad.frequency.toFixed(2))} />
-          <Metric label="CPM" value={v(krw(ad.cpm))} />
-        </MetricCat>
-        <MetricCat title="클릭 & 참여">
-          <Metric label="클릭" value={v(ad.clicks.toLocaleString("ko-KR"))} />
-          <Metric label="링크 클릭" value={v(ad.linkClicks.toLocaleString("ko-KR"))} />
-          <Metric label="CPC" value={v(krw(ad.cpc))} />
-        </MetricCat>
-        <MetricCat title="예산 & 지출">
-          <Metric label="지출" value={v(krw(ad.spend))} />
-          <Metric label="남은 예산" value={v(krw(ad.budgetRemaining))} />
-        </MetricCat>
-      </div>
+      {/* 실 유저 — Meta 실측 4지표 + 실측 파생 단가(CPM·CPC)만. reach·빈도·링크클릭은 시드 추정이라 숨김(ADR-038 fake-performance). */}
+      {real ? (
+        <div className="mt-3 pt-3 border-t border-[var(--w-line-normal)] flex flex-col gap-3">
+          <MetricCat>
+            <Metric label="노출" value={v(ad.impressions.toLocaleString("ko-KR"))} />
+            <Metric label="클릭" value={v(ad.clicks.toLocaleString("ko-KR"))} />
+          </MetricCat>
+          <MetricCat>
+            <Metric label="지출" value={v(krw(ad.spend))} />
+            <Metric label="CPM" value={v(krw(ad.cpm))} />
+            <Metric label="CPC" value={v(krw(ad.cpc))} />
+          </MetricCat>
+        </div>
+      ) : (
+        <div className="mt-3 pt-3 border-t border-[var(--w-line-normal)] flex flex-col gap-3">
+          <MetricCat>
+            <Metric label="노출" value={v(ad.impressions.toLocaleString("ko-KR"))} />
+            <Metric label="도달" value={v(ad.reach.toLocaleString("ko-KR"))} />
+            <Metric label="빈도" value={v(ad.frequency.toFixed(2))} />
+            <Metric label="CPM" value={v(krw(ad.cpm))} />
+          </MetricCat>
+          <MetricCat>
+            <Metric label="클릭" value={v(ad.clicks.toLocaleString("ko-KR"))} />
+            <Metric label="링크 클릭" value={v(ad.linkClicks.toLocaleString("ko-KR"))} />
+            <Metric label="CPC" value={v(krw(ad.cpc))} />
+          </MetricCat>
+          <MetricCat>
+            <Metric label="지출" value={v(krw(ad.spend))} />
+            <Metric label="남은 예산" value={v(krw(ad.budgetRemaining))} />
+          </MetricCat>
+        </div>
+      )}
     </Card>
   );
 }
@@ -586,12 +655,12 @@ function VerdictStrip({ report, winnerIsB, live }: { report?: RoundReport; winne
 
 /* ─── between (result 🤖 + continue/end 🧑) ─────────────── */
 
-function BetweenPanel({ lastSettled, dailyBudget, nextAxisLabel, busy, onPropose, onEnd }: {
-  lastSettled: TourRound | null; dailyBudget: number; nextAxisLabel: string; busy: boolean; onPropose: () => void; onEnd: () => void;
+function BetweenPanel({ lastSettled, dailyBudget, nextAxisLabel, busy, isReal, onPropose, onEnd }: {
+  lastSettled: TourRound | null; dailyBudget: number; nextAxisLabel: string; busy: boolean; isReal: boolean; onPropose: () => void; onEnd: () => void;
 }) {
   return (
     <div className="flex flex-col gap-4">
-      {lastSettled && <SettledResult round={lastSettled} dailyBudget={dailyBudget} />}
+      {lastSettled && <SettledResult round={lastSettled} dailyBudget={dailyBudget} isReal={isReal} />}
       <DecisionBanner
         title={lastSettled ? "다음 라운드를 진행할까요?" : "첫 챌린저를 붙여볼까요?"}
         desc={lastSettled
@@ -608,13 +677,15 @@ function BetweenPanel({ lastSettled, dailyBudget, nextAxisLabel, busy, onPropose
   );
 }
 
-function SettledResult({ round, dailyBudget, prohibited }: { round: TourRound; dailyBudget: number; prohibited?: string[] }) {
+function SettledResult({ round, dailyBudget, prohibited, isReal }: { round: TourRound; dailyBudget: number; prohibited?: string[]; isReal?: boolean }) {
   const winnerIsB = round.rawWinner === "B";
   const kpis = round.adKpis ?? [
     { ctr: round.verdict?.ctrA ?? 0, impressions: 0, clicks: 0, spend: 0 },
     { ctr: round.verdict?.ctrB ?? 0, impressions: 0, clicks: 0, spend: 0 },
   ];
-  const report = buildRoundReport(kpis, { seed: round.campaignId, dailyBudget, days: round.fastForwardDays });
+  // 실 라운드는 fastForwardDays 가 없으므로 게재 기간(MIN_ROUND_DAYS)으로 예산 파생(표시 단가용).
+  const reportDays = isReal ? MIN_ROUND_DAYS : round.fastForwardDays;
+  const report = buildRoundReport(kpis, { seed: round.campaignId, dailyBudget, days: reportDays });
   const completed = report.status === "COMPLETED";
   const pct = Math.round(report.confidenceLevel * 100);
   const sig = completed ? `통계적으로 유의 (신뢰도 ${pct}%)` : `통계적으론 불충분 (신뢰도 ${pct}%)`;
@@ -631,8 +702,8 @@ function SettledResult({ round, dailyBudget, prohibited }: { round: TourRound; d
       />
       <VerdictStrip report={report} winnerIsB={winnerIsB} />
       <div className="grid grid-cols-2 gap-4">
-        <AdMetricCard label="A" tag="챔피언" variant={round.champion} ad={report.ads[0]} hasData accent={!winnerIsB} mark={winnerIsB ? undefined : "방어"} axis={round.axis} />
-        <AdMetricCard label="B" tag="챌린저" variant={round.challenger} ad={report.ads[1]} hasData accent={winnerIsB} mark={winnerIsB ? "승격" : undefined} axis={round.axis} prohibited={prohibited} />
+        <AdMetricCard label="A" tag="챔피언" variant={round.champion} ad={report.ads[0]} hasData accent={!winnerIsB} mark={winnerIsB ? undefined : "방어"} axis={round.axis} real={isReal} delta={report.ads[0].ctr - report.ads[1].ctr} />
+        <AdMetricCard label="B" tag="챌린저" variant={round.challenger} ad={report.ads[1]} hasData accent={winnerIsB} mark={winnerIsB ? "승격" : undefined} axis={round.axis} prohibited={prohibited} real={isReal} delta={report.ads[1].ctr - report.ads[0].ctr} />
       </div>
     </div>
   );
@@ -640,13 +711,15 @@ function SettledResult({ round, dailyBudget, prohibited }: { round: TourRound; d
 
 /* ─── auto-running (무인 라운드 전환) 🤖 ─────────────────── */
 
-function AutoBetweenPanel({ lastSettled, dailyBudget }: { lastSettled: TourRound | null; dailyBudget: number }) {
+function AutoBetweenPanel({ lastSettled, dailyBudget, isReal }: { lastSettled: TourRound | null; dailyBudget: number; isReal: boolean }) {
   return (
     <div className="flex flex-col gap-4">
-      {lastSettled && <SettledResult round={lastSettled} dailyBudget={dailyBudget} />}
+      {lastSettled && <SettledResult round={lastSettled} dailyBudget={dailyBudget} isReal={isReal} />}
       <AutoBanner
         title="자동 진행 중 — 다음 챌린저를 준비하고 있어요"
-        desc="AI 가 우세 안을 챔피언으로 올리고 다음 챌린저를 자동으로 붙여요. 하단 발표자 빨리감기 +7일로 다음 라운드를 굴려보세요."
+        desc={isReal
+          ? "AI 가 우세 안을 챔피언으로 올리고 다음 챌린저를 자동으로 붙여요. 서버가 다음 라운드를 게재하면 여기서 이어볼 수 있어요."
+          : "AI 가 우세 안을 챔피언으로 올리고 다음 챌린저를 자동으로 붙여요. 하단 발표자 빨리감기 +7일로 다음 라운드를 굴려보세요."}
       />
     </div>
   );
@@ -654,8 +727,8 @@ function AutoBetweenPanel({ lastSettled, dailyBudget }: { lastSettled: TourRound
 
 /* ─── anomaly (이상 신호) 🧑 — ADR-035 ⓑ ───────────────── */
 
-function AnomalyPanel({ t, lastSettled, busy, onPropose, onManual, onDiscard, onAccept, onEnd }: {
-  t: Tournament; lastSettled: TourRound | null; busy: boolean;
+function AnomalyPanel({ t, lastSettled, busy, isReal, onPropose, onManual, onDiscard, onAccept, onEnd }: {
+  t: Tournament; lastSettled: TourRound | null; busy: boolean; isReal: boolean;
   onPropose: () => Promise<void>; onManual: (v: TourVariant) => void; onDiscard: () => void;
   onAccept: () => void; onEnd: () => void;
 }) {
@@ -750,7 +823,7 @@ function AnomalyPanel({ t, lastSettled, busy, onPropose, onManual, onDiscard, on
 
   return (
     <div className="flex flex-col gap-4">
-      {lastSettled && <SettledResult round={lastSettled} dailyBudget={t.dailyBudget} prohibited={a?.kind === "prohibited" ? a.words : undefined} />}
+      {lastSettled && <SettledResult round={lastSettled} dailyBudget={t.dailyBudget} prohibited={a?.kind === "prohibited" ? a.words : undefined} isReal={isReal} />}
       {Warning}
       <div className="flex gap-2.5">
         <Button variant="primary" type="button" disabled={busy} onClick={async () => { await onPropose(); setRevising(true); }}>
@@ -775,7 +848,7 @@ function WinnerHandlingPanel({ t, onPromote, onRefill, onArchive }: {
       <div className="flex items-start gap-3 py-4 px-5 rounded-xl bg-[var(--w-primary-soft)] border border-[var(--w-primary-weak)]">
         <span className="text-[22px] leading-none">🏆</span>
         <div>
-          <div className="font-bold text-[15px] leading-[1.3] text-[var(--w-primary-press)]">자원 봉투를 다 썼어요 — 위너 처리를 결정해주세요</div>
+          <div className="font-bold text-[15px] leading-[1.3] text-[var(--w-primary-press)]">예산을 다 썼어요 — 위너 처리를 결정해주세요</div>
           <div className="font-medium text-[12.5px] leading-[1.5] text-[var(--w-fg-neutral)] mt-1">
             {settled}개 라운드 무인 진행 · 최종 CTR {t.championCtr.toFixed(2)}%
             {lift > 0.5 && <span className="text-[var(--w-status-positive)] font-semibold"> · 출발 대비 +{lift.toFixed(0)}%</span>}
@@ -787,7 +860,7 @@ function WinnerHandlingPanel({ t, onPromote, onRefill, onArchive }: {
         <Button variant="primary" type="button" onClick={onPromote}>
           <Icon name="sparkles" size={14} /> 실제 캠페인으로 승격
         </Button>
-        <Button variant="secondary" type="button" onClick={onRefill}>봉투 리필해서 계속</Button>
+        <Button variant="secondary" type="button" onClick={onRefill}>예산 리필해서 계속</Button>
         <Button variant="secondary" type="button" className="ml-auto" onClick={onArchive}>종료하고 보관</Button>
       </div>
     </div>
@@ -820,7 +893,7 @@ function DonePanel({ t, onCreate }: { t: Tournament; onCreate: () => void }) {
 
 /* ─── 라운드 기록 ───────────────────────────────────────── */
 
-function RoundHistory({ rounds, summary, dailyBudget }: { rounds: TourRound[]; summary: string; dailyBudget: number }) {
+function RoundHistory({ rounds, summary, dailyBudget, isReal }: { rounds: TourRound[]; summary: string; dailyBudget: number; isReal: boolean }) {
   const [open, setOpen] = useState<number | null>(null);
   return (
     <div>
@@ -860,7 +933,7 @@ function RoundHistory({ rounds, summary, dailyBudget }: { rounds: TourRound[]; s
               </button>
               {expanded && (
                 <div className="mt-2">
-                  <SettledResult round={r} dailyBudget={dailyBudget} />
+                  <SettledResult round={r} dailyBudget={dailyBudget} isReal={isReal} />
                 </div>
               )}
             </div>

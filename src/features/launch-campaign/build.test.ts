@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CreativeState } from "@entities/creative/model";
 import type { LaunchState, LaunchParams, LaunchResponse } from "@entities/campaign/model";
-import { buildLaunchParams, buildLaunchedCampaign, launchSuccessMessage } from "./build";
+import { buildLaunchParams, buildLaunchedCampaign, launchSuccessMessage, planBrowseLaunch } from "./build";
 
 // 회귀 안전망 — Launch Campaign 빌더의 모드·목표·skip 분기와 페이로드 매핑 일관성.
 
@@ -308,5 +308,61 @@ describe("launchSuccessMessage", () => {
     });
     expect(msg).toContain("A/B 시험");
     expect(msg).toContain("광고 2개");
+  });
+});
+
+// ADR-033 — Browse Mode 게재 계획. ts 주입으로 결정적 (구 widget runLaunch browse 분기 추출).
+describe("planBrowseLaunch", () => {
+  const TS = 1717000000000;
+  const params = (over: Partial<LaunchState> = {}, creativeOver: Partial<CreativeState> = {}) =>
+    buildLaunchParams({ ...baseCreative, ...creativeOver }, { ...baseLaunch, ...over }, { skipAdCreation: false });
+
+  it("결정적 mock ID — campaignId/adSetId/adId 가 ts 기반", () => {
+    const plan = planBrowseLaunch(params(), { brandName: "그린루틴", ts: TS });
+    expect(plan.launched.campaignId).toBe(`cmp_browse_${TS}`);
+    expect(plan.launched.adSetId).toBe(`adset_browse_${TS}`);
+    expect(plan.launched.adId).toBe(`ad_browse_${TS}`);
+    expect(plan.launched.adIds).toBeUndefined();
+    expect(plan.browseCampaign.id).toBe(`cmp_browse_${TS}`);
+  });
+
+  it("skipAdCreation → adId 없음 (캠페인+세트만)", () => {
+    const p = buildLaunchParams(baseCreative, baseLaunch, { skipAdCreation: true });
+    const plan = planBrowseLaunch(p, { ts: TS });
+    expect(plan.launched.adId).toBeUndefined();
+    expect(plan.launched.adIds).toBeUndefined();
+  });
+
+  it("A/B 활성 → adIds 두 개 (_a/_b)", () => {
+    const p = buildLaunchParams(baseCreative, {
+      ...baseLaunch, mode: "detailed", abTestEnabled: true,
+      abTestAxis: "headline", abTestVariantB: { axis: "headline", headline: "B안" },
+    }, { skipAdCreation: false });
+    const plan = planBrowseLaunch(p, { ts: TS });
+    expect(plan.launched.adIds).toEqual([`ad_browse_${TS}_a`, `ad_browse_${TS}_b`]);
+    expect(plan.launched.adId).toBeUndefined();
+  });
+
+  it("browse 비호환 objective(OUTCOME_SALES) → OUTCOME_TRAFFIC 폴백", () => {
+    const plan = planBrowseLaunch(params({}, { objective: "OUTCOME_SALES", outcome: "sales" }), { ts: TS });
+    expect(plan.browseCampaign.objective).toBe("OUTCOME_TRAFFIC");
+  });
+
+  it("browseCampaign 이름 = brandName + headline, 소재·타겟 보존", () => {
+    const plan = planBrowseLaunch(params(), { brandName: "그린루틴", ts: TS });
+    expect(plan.browseCampaign.name).toBe("그린루틴 — 테스트 헤드라인");
+    expect(plan.browseCampaign.headline).toBe("테스트 헤드라인");
+    expect(plan.browseCampaign.countries).toEqual(["KR"]);
+  });
+
+  it("brandName 미지정 → '내 캠페인' 폴백", () => {
+    const plan = planBrowseLaunch(params(), { ts: TS });
+    expect(plan.browseCampaign.name).toBe("내 캠페인 — 테스트 헤드라인");
+  });
+
+  it("message = launchSuccessMessage(params) 와 동일", () => {
+    const p = params();
+    const plan = planBrowseLaunch(p, { ts: TS });
+    expect(plan.message).toBe(launchSuccessMessage(p));
   });
 });

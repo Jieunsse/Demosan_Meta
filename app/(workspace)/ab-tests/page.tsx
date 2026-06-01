@@ -9,243 +9,98 @@ import { Button } from "@shared/ui/Button";
 import { Card } from "@shared/ui/Card";
 import { Chip } from "@shared/ui/Chip";
 import { Select } from "@shared/ui/Select";
-import { SegControl } from "@shared/ui/SegControl";
-import { fetchCampaigns } from "@entities/campaign/api";
-import { MOCK_CAMPAIGN_SUMMARIES } from "@/lib/mock-campaigns";
 import { listTournaments, roundAdKpis, deriveBeat, isDecisionBeat, isRunningBeat, AXIS_LABEL as TOUR_AXIS_LABEL, TOURNAMENT_CHANGE_EVENT, type Tournament, type TourBeat } from "@entities/ab-test/tournament/tournament";
+import { tournamentClient } from "@entities/ab-test/tournament/client";
 import { seedTournamentDemo } from "@entities/ab-test/tournament/seed";
 import PresenterTournamentListBar from "@widgets/presenter-fast-forward/tournament-list";
-import type { CampaignSummary } from "@/lib/meta-ads";
-
-type Filter = "all" | "running" | "concluded";
-
-const AXIS_LABEL: Record<string, string> = {
-  headline: "헤드라인",
-  primary_text: "광고 문구",
-  image: "이미지",
-};
-
-const STATUS_MAP: Record<string, { label: string; chip: string }> = {
-  live: { label: "게재 중", chip: "live" },
-  paused: { label: "일시정지", chip: "paused" },
-  ended: { label: "종료", chip: "ended" },
-  review: { label: "검토 중", chip: "review" },
-  issue: { label: "이슈", chip: "issue" },
-};
-
-const MOCK_AB_CAMPAIGNS = MOCK_CAMPAIGN_SUMMARIES.filter((c) => c.abTestEnabled);
-
-function isRunning(c: CampaignSummary) {
-  return c.status === "live" || c.status === "review";
-}
 
 export default function AbTestsPage() {
   const router = useRouter();
   const { data: session } = useSession();
   const browseMode = !!session?.browseMode;
   const connected = !!(session?.adAccountName && session?.pageName);
-  const [filter, setFilter] = useState<Filter>("all");
 
-  // ADR-033 — Browse Mode 시연: 실제 A/B 캠페인 대신 localStorage 토너먼트(흐름2)를 노출.
-  const [tournaments, setTournaments] = useState<Tournament[]>([]);
+  // ADR-033 — Browse Mode 시연: localStorage 토너먼트(흐름2)를 노출.
+  const [demoTournaments, setDemoTournaments] = useState<Tournament[]>([]);
   useEffect(() => {
     if (!browseMode) return;
-    const reload = () => setTournaments(listTournaments());
+    const reload = () => setDemoTournaments(listTournaments());
     seedTournamentDemo(); // 비어 있으면 시연용 토너먼트 멱등 seed (흐름1 seedAutoPilotDemo 대칭)
     reload();
     window.addEventListener(TOURNAMENT_CHANGE_EVENT, reload);
     return () => window.removeEventListener(TOURNAMENT_CHANGE_EVENT, reload);
   }, [browseMode]);
 
-  const campaignsQ = useQuery({
-    queryKey: ["campaigns", "all"],
-    queryFn: () => fetchCampaigns("all"),
-    enabled: connected,
+  // ADR-038 섬2 — 실 유저: Supabase 토너먼트를 API 로 조회(소유분만). 데모 분기와 동일 대시보드.
+  const realQ = useQuery({
+    queryKey: ["tournaments", "real"],
+    queryFn: () => tournamentClient(false).list(),
+    enabled: !browseMode && connected,
     retry: false,
+    refetchInterval: 30000, // 서버 cron 이 라운드를 진행하므로 주기적으로 최신화
   });
 
-  const abCampaigns = (campaignsQ.data ?? []).filter((c) => c.abTestEnabled);
-
-  const filtered = abCampaigns.filter((c) => {
-    if (filter === "running") return isRunning(c);
-    if (filter === "concluded") return !isRunning(c);
-    return true;
-  });
-
-  const useMock = !connected || (!campaignsQ.isLoading && !campaignsQ.isError && filtered.length === 0);
-
-  const mockFiltered = MOCK_AB_CAMPAIGNS.filter((c) => {
-    if (filter === "running") return isRunning(c);
-    if (filter === "concluded") return !isRunning(c);
-    return true;
-  });
-
-  // ADR-033 — Browse Mode 시연: 토너먼트(흐름2) 대시보드. 평면 리스트 → 성과·결정·진행/완료 서사.
   if (browseMode) {
     return (
       <>
         <TournamentDashboard
-          tournaments={tournaments}
+          tournaments={demoTournaments}
           onOpen={(id) => router.push(`/ab-tests/${id}`)}
           onNew={() => router.push("/ab-tests/new")}
         />
-        <PresenterTournamentListBar tournaments={tournaments} />
+        <PresenterTournamentListBar tournaments={demoTournaments} />
       </>
     );
   }
 
-  return (
-    <div className="px-12 py-9 pb-16 max-w-[1280px] w-full mx-auto flex flex-col gap-7" data-screen-label="A/B 테스트">
-      <div className="flex justify-between items-end gap-6">
-        <div>
-          <h1 className="m-0 font-bold text-[28px] leading-[1.25] tracking-[-0.024em] text-[var(--w-fg-strong)]">A/B 테스트</h1>
-          <p className="font-medium text-[14px] leading-[1.5] tracking-[0.004em] text-[var(--w-fg-neutral)] mt-1.5 mb-0">진행 중인 실험과 결과를 한눈에 확인해요</p>
-        </div>
-        <Button variant="primary" type="button" onClick={() => router.push("/ab-tests/new")}>
-          <Icon name="plus" size={14} /> 새 A/B 테스트
-        </Button>
+  // 미연결 실 유저 — 토너먼트는 실 Meta 게재 위에서만 돌아간다. 연결 유도.
+  if (!connected) {
+    return (
+      <div className="px-12 py-9 pb-16 max-w-[760px] w-full mx-auto" data-screen-label="A/B 테스트">
+        <Card className="py-12 px-8 flex flex-col items-center gap-3 text-center">
+          <div style={{ width: 56, height: 56, borderRadius: "50%", background: "var(--w-primary-soft)", color: "var(--w-primary-normal)", display: "grid", placeItems: "center" }}>
+            <Icon name="chart" size={24} />
+          </div>
+          <div className="font-bold text-[17px] leading-[1.3] text-[var(--w-fg-strong)]">A/B 토너먼트를 시작하려면 계정 연결이 필요해요</div>
+          <div className="font-medium text-[13px] leading-[1.5] text-[var(--w-fg-neutral)] max-w-[420px]">실제 Meta 광고 위에서 챔피언-챌린저 라운드를 돌려요. 광고 계정·페이지를 연결하면 토너먼트를 열 수 있어요.</div>
+          <Button variant="primary" type="button" className="mt-2" onClick={() => router.push("/connect")}>계정 연결</Button>
+        </Card>
       </div>
+    );
+  }
 
-      <>
-      <div className="mb-5">
-        <SegControl
-          options={[
-            { label: "전체", value: "all" },
-            { label: "진행 중", value: "running" },
-            { label: "완료", value: "concluded" },
-          ]}
-          value={filter}
-          onChange={(v) => setFilter(v as Filter)}
-        />
-      </div>
-
-      {campaignsQ.isLoading ? (
-        <Card className="flex flex-col items-center gap-3 py-10 px-8">
+  if (realQ.isLoading) {
+    return (
+      <div className="px-12 py-9 pb-16 max-w-[1200px] w-full mx-auto" data-screen-label="A/B 테스트">
+        <Card className="flex flex-col items-center gap-3 py-12 px-8">
           <div className="rounded-full border-[2.4px] border-[var(--w-line-normal)] border-t-[var(--w-primary-normal)] animate-[spin_0.85s_linear_infinite] w-7 h-7" />
           <div className="font-semibold text-[14px] leading-[1.3] text-[var(--w-fg-strong)]">불러오는 중…</div>
         </Card>
-      ) : campaignsQ.isError ? (
-        <EmptyCard
-          icon="warn"
-          title="불러오지 못했어요"
-          sub={campaignsQ.error instanceof Error ? campaignsQ.error.message : "잠시 후 다시 시도해 주세요"}
-          ctaLabel="다시 시도"
-          onAction={() => campaignsQ.refetch()}
-        />
-      ) : useMock ? (
-        <>
-          <MockBanner connected={connected} onConnect={() => router.push("/connect")} onCreate={() => router.push("/create")} />
-          {mockFiltered.length === 0 ? (
-            <Card className="py-8 text-center text-[var(--w-fg-neutral)] font-medium text-[13px] leading-[1.5]">
-              {filter === "running" ? "진행 중인 예시가 없어요" : "완료된 예시가 없어요"}
-            </Card>
-          ) : (
-            <div className="flex flex-col gap-3">
-              {mockFiltered.map((c) => (
-                <AbTestCard
-                  key={c.id}
-                  campaign={c}
-                  demo
-                  onClick={() => router.push(`/campaigns/${c.id}`)}
-                  onApplyWinner={c.status === "ended" ? () => router.push(`/create?prefill=campaign:${c.id}`) : undefined}
-                />
-              ))}
-            </div>
-          )}
-        </>
-      ) : (
-        <div className="flex flex-col gap-3">
-          {filtered.map((c) => (
-            <AbTestCard
-              key={c.id}
-              campaign={c}
-              onClick={() => router.push(`/campaigns/${c.id}`)}
-              onApplyWinner={c.status === "ended" ? () => router.push(`/create?prefill=campaign:${c.id}`) : undefined}
-            />
-          ))}
-        </div>
-      )}
-      </>
-    </div>
-  );
-}
+      </div>
+    );
+  }
 
-function MockBanner({ connected, onConnect, onCreate }: { connected: boolean; onConnect: () => void; onCreate: () => void }) {
-  return (
-    <div className="flex items-center gap-3 py-3 px-4 rounded-[10px] bg-[var(--w-primary-soft)] border border-[var(--w-primary-weak)] mb-4">
-      <Icon name="eye" size={16} style={{ color: "var(--w-primary-normal)", flex: "0 0 auto" }} />
-      <span className="flex-1 font-medium text-[13px] leading-[1.4] text-[var(--w-primary-press)]">
-        {connected ? "아직 A/B 테스트가 없어요. 아래는 예시예요." : "계정 미연결 상태예요. 아래는 예시 데이터예요."}
-      </span>
-      {connected ? (
-        <Button variant="primary" size="sm" type="button" onClick={onCreate}>광고 만들기</Button>
-      ) : (
-        <Button variant="primary" size="sm" type="button" onClick={onConnect}>계정 연결</Button>
-      )}
-    </div>
-  );
-}
-
-function AbTestCard({ campaign: c, onClick, onApplyWinner, demo = false }: { campaign: CampaignSummary; onClick: () => void; onApplyWinner?: () => void; demo?: boolean }) {
-  const running = isRunning(c);
-  const concluded = c.status === "ended";
-  const statusInfo = STATUS_MAP[c.status] ?? { label: c.status, chip: "neutral" };
-  const axisLabel = AXIS_LABEL[c.abTestAxis ?? ""] ?? c.abTestAxis ?? "—";
+  if (realQ.isError) {
+    return (
+      <div className="px-12 py-9 pb-16 max-w-[760px] w-full mx-auto" data-screen-label="A/B 테스트">
+        <Card className="py-12 px-8 flex flex-col items-center gap-3 text-center">
+          <div style={{ width: 56, height: 56, borderRadius: "50%", background: "var(--w-bg-alternative)", color: "var(--w-fg-alternative)", display: "grid", placeItems: "center" }}>
+            <Icon name="warn" size={24} />
+          </div>
+          <div className="font-bold text-[17px] leading-[1.3] text-[var(--w-fg-strong)]">불러오지 못했어요</div>
+          <div className="font-medium text-[13px] leading-[1.5] text-[var(--w-fg-neutral)] max-w-[420px]">{realQ.error instanceof Error ? realQ.error.message : "잠시 후 다시 시도해 주세요"}</div>
+          <Button variant="secondary" type="button" className="mt-2" onClick={() => realQ.refetch()}>다시 시도</Button>
+        </Card>
+      </div>
+    );
+  }
 
   return (
-    <div
-      className="bg-[var(--w-bg-elevated)] border border-[var(--w-line-normal)] rounded-2xl flex items-center gap-[18px] py-[18px] px-5 w-full"
-      style={{ opacity: demo ? 0.85 : 1 }}
-    >
-      <div style={{ width: 40, height: 40, borderRadius: 10, background: running ? "var(--w-primary-soft)" : "var(--w-bg-alternative)", color: running ? "var(--w-primary-normal)" : "var(--w-fg-alternative)", display: "grid", placeItems: "center", flex: "0 0 auto" }}>
-        <Icon name="chart" size={20} />
-      </div>
-
-      <button type="button" onClick={onClick} className="flex-1 min-w-0 text-left cursor-pointer">
-        <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-          <Chip variant={statusInfo.chip as "live" | "paused" | "review" | "ended" | "issue" | "neutral"} dot>{statusInfo.label}</Chip>
-          <Chip variant="neutral">{axisLabel} 축</Chip>
-          {demo && <Chip variant="neutral" style={{ opacity: 0.7 }}>예시</Chip>}
-        </div>
-        <div className="font-semibold text-[14px] leading-[1.4] text-[var(--w-fg-strong)] mb-1 whitespace-nowrap overflow-hidden text-ellipsis">
-          {c.headline ?? c.name}
-        </div>
-        <div className="grid gap-x-2 gap-y-1 font-medium text-[12.5px] leading-[1.4] text-[var(--w-fg-neutral)]" style={{ gridTemplateColumns: "16px 1fr" }}>
-          <span className="text-[var(--w-fg-alternative)] text-[10px] font-bold place-self-center">A</span>
-          <span className="whitespace-nowrap overflow-hidden text-ellipsis">{c.abTestVariantA ?? "—"}</span>
-          <span className="text-[var(--w-primary-normal)] text-[10px] font-bold place-self-center">B</span>
-          <span className="whitespace-nowrap overflow-hidden text-ellipsis">{c.abTestVariantB ?? "—"}</span>
-        </div>
-      </button>
-
-      <div className="flex items-center gap-2 flex-shrink-0">
-        {concluded && onApplyWinner && (
-          <button
-            type="button"
-            onClick={onApplyWinner}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[var(--w-primary-soft)] text-[var(--w-primary-normal)] font-semibold text-[12px] leading-none hover:bg-[rgba(0,102,255,0.15)] transition-colors duration-[120ms]"
-          >
-            <Icon name="sparkles" size={12} /> 우세 안 반영하기
-          </button>
-        )}
-        <button type="button" onClick={onClick} className="w-8 h-8 grid place-items-center rounded-lg hover:bg-[var(--w-bg-neutral)] transition-colors duration-[120ms]">
-          <Icon name="arrow-right" size={16} style={{ color: "var(--w-fg-alternative)" }} />
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function EmptyCard({ icon, title, sub, ctaLabel, onAction }: { icon: import("@shared/ui/Icon").IconName; title: string; sub: string; ctaLabel: string; onAction: () => void }) {
-  return (
-    <Card className="py-12 px-8 flex flex-col items-center gap-3 text-center">
-      <div style={{ width: 56, height: 56, borderRadius: "50%", background: "var(--w-bg-alternative)", color: "var(--w-fg-alternative)", display: "grid", placeItems: "center" }}>
-        <Icon name={icon} size={24} />
-      </div>
-      <div className="font-bold text-[17px] leading-[1.3] text-[var(--w-fg-strong)]">{title}</div>
-      <div className="font-medium text-[13px] leading-[1.5] text-[var(--w-fg-neutral)] max-w-[380px]">{sub}</div>
-      <Button variant="secondary" type="button" className="mt-2" onClick={onAction}>{ctaLabel}</Button>
-    </Card>
+    <TournamentDashboard
+      tournaments={realQ.data ?? []}
+      onOpen={(id) => router.push(`/ab-tests/${id}`)}
+      onNew={() => router.push("/ab-tests/new")}
+    />
   );
 }
 
@@ -440,7 +295,7 @@ function TournamentDashboard({ tournaments, onOpen, onNew }: { tournaments: Tour
             tone="decision"
             icon={<span className="text-[26px] leading-none">🤖</span>}
             title="지금은 전부 자동 진행 중"
-            desc="AI 가 무인으로 챔피언-챌린저 라운드를 돌리고 있어요. 봉투가 소진되거나 이상 신호가 잡히면 그때만 여기로 올라와요."
+            desc="AI 가 무인으로 챔피언-챌린저 라운드를 돌리고 있어요. 예산이 소진되거나 이상 신호가 잡히면 그때만 여기로 올라와요."
             onNew={onNew}
           />
         )}

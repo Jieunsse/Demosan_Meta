@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildCreativePrompt } from "./gemini-creative";
+import { buildCreativePrompt, parseImageConcepts } from "./gemini-creative";
 import type { GenerateCreativeParams } from "./gemini-creative";
 
 const BASE: GenerateCreativeParams = {
@@ -97,5 +97,59 @@ describe("buildCreativePrompt — 카피 훅 주입 (ADR-029)", () => {
       hooks: ["story"],
     });
     expect(prompt).toContain("본문1 = Number"); // traffic 추천 풀
+  });
+});
+
+describe("parseImageConcepts — Image Concept 3개 검증 (ADR-040)", () => {
+  const valid = JSON.stringify({
+    concepts: [
+      { label: "스튜디오 · 클로즈업", prompt: "studio close-up, pastel" },
+      { label: "야외 · 와이드", prompt: "outdoor wide shot, morning light" },
+      { label: "플랫레이 · 탑다운", prompt: "flat lay, top-down, minimal" },
+    ],
+  });
+
+  it("유효한 concept 3개를 그대로 반환한다", () => {
+    const { concepts } = parseImageConcepts(valid);
+    expect(concepts).toHaveLength(3);
+    expect(concepts.every((c) => c.label && c.prompt)).toBe(true);
+  });
+
+  it("JSON 파싱 실패 시 throw", () => {
+    expect(() => parseImageConcepts("not json")).toThrow();
+  });
+
+  it("label·prompt 둘 다 있는 게 3개 미만이면 throw", () => {
+    const text = JSON.stringify({
+      concepts: [
+        { label: "a", prompt: "p1" },
+        { label: "b" }, // prompt 누락 → 탈락
+        { label: "c", prompt: "p3" },
+      ],
+    });
+    expect(() => parseImageConcepts(text)).toThrow();
+  });
+
+  it("4개 이상이면 앞 3개로 자른다", () => {
+    const text = JSON.stringify({
+      concepts: [
+        { label: "1", prompt: "p1" },
+        { label: "2", prompt: "p2" },
+        { label: "3", prompt: "p3" },
+        { label: "4", prompt: "p4" },
+      ],
+    });
+    expect(parseImageConcepts(text).concepts).toHaveLength(3);
+  });
+
+  it("label 의 한자는 제거된다", () => {
+    const text = JSON.stringify({
+      concepts: [
+        { label: "스튜디오寫真", prompt: "p1" },
+        { label: "b", prompt: "p2" },
+        { label: "c", prompt: "p3" },
+      ],
+    });
+    expect(parseImageConcepts(text).concepts[0].label).toBe("스튜디오");
   });
 });

@@ -1,6 +1,6 @@
 // Server-side only — do not import from 'use client' components.
 
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { generateGeminiText, isGeminiConfigured } from "./gemini-client";
 
 export type DraftChannel = "instagram" | "facebook";
 
@@ -14,18 +14,6 @@ export interface ChannelDraftResult {
   caption: string;
   hashtags: string[]; // FB 의 경우 빈 배열
   imagePrompt: string;
-}
-
-const TEXT_MODELS = ["gemini-2.0-flash", "gemini-2.5-flash"];
-
-function requireEnv(key: string): string {
-  const v = process.env[key];
-  if (!v) throw new Error(`${key} 가 .env.local 에 설정되지 않았어요.`);
-  return v;
-}
-
-function is503(err: unknown): boolean {
-  return err instanceof Error && err.message.includes("503");
 }
 
 function stripHanja(text: string): string {
@@ -59,34 +47,13 @@ ${p.suggestionDetail.map((l) => `- ${l}`).join("\n")}
 `.trim();
 };
 
-async function generateWithFallback(apiKey: string, prompt: string): Promise<string> {
-  for (const modelName of TEXT_MODELS) {
-    try {
-      const model = new GoogleGenerativeAI(apiKey).getGenerativeModel({
-        model: modelName,
-        generationConfig: { responseMimeType: "application/json" },
-      });
-      const result = await model.generateContent(prompt);
-      return result.response.text();
-    } catch (err) {
-      if (is503(err) && modelName !== TEXT_MODELS[TEXT_MODELS.length - 1]) {
-        await new Promise((r) => setTimeout(r, 1500));
-        continue;
-      }
-      throw err;
-    }
-  }
-  throw new Error("모든 AI 모델이 일시적으로 응답하지 않아요. 잠시 후 다시 시도해주세요.");
-}
-
 export const geminiChannelDraft = {
   get isConfigured() {
-    return !!process.env.GOOGLE_AI_API_KEY;
+    return isGeminiConfigured();
   },
 
   async generate(params: GenerateChannelDraftParams): Promise<ChannelDraftResult> {
-    const apiKey = requireEnv("GOOGLE_AI_API_KEY");
-    const text = await generateWithFallback(apiKey, PROMPT(params));
+    const text = await generateGeminiText(PROMPT(params), { json: true });
 
     let parsed: { caption?: unknown; hashtags?: unknown; imagePrompt?: unknown };
     try {

@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
 import { metaAds } from '@/lib/meta-ads'
-import { withRouteHandler, ValidationError } from '@/lib/route-handler'
+import { withMetaSession } from '@/lib/meta-session'
+import { ValidationError } from '@/lib/route-handler'
 
 const MIN_DAILY_BUDGET_KRW = 10_000
 
@@ -14,13 +13,8 @@ type ControlBody = {
   dailyBudget?: number
 }
 
-export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions)
-  if (!session?.accessToken || !session?.adAccountId) {
-    return NextResponse.json({ error: '광고 계정을 먼저 연결해주세요.' }, { status: 401 })
-  }
-  const { accessToken } = session
-  return withRouteHandler(true, '', async () => {
+export const POST = withMetaSession(['adAccount'], async (req: NextRequest, s) => {
+    const { accessToken } = s
     const body = (await req.json()) as ControlBody
     const { campaignId, adSetId, adId, action, dailyBudget } = body
 
@@ -49,5 +43,4 @@ export async function POST(req: NextRequest) {
     }
 
     throw new ValidationError('알 수 없는 action 이에요.')
-  })
-}
+})

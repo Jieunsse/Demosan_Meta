@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
 import { metaAds } from '@/lib/meta-ads'
-import { resolveAdAccountId, resolveAccessToken } from '@/lib/env'
-import { withRouteHandler, ValidationError } from '@/lib/route-handler'
+import { withMetaSession } from '@/lib/meta-session'
+import { ValidationError } from '@/lib/route-handler'
 import { COUNTRY_CODES } from '@shared/lib/geo-options'
 
 const MIN_DAILY_BUDGET_KRW = 10_000
@@ -24,20 +22,8 @@ type BoostPostBody = {
   landingUrl?: string
 }
 
-export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions)
-  if (!session?.accessToken || !session?.adAccountId || !session?.pageId) {
-    return NextResponse.json({ error: '광고 계정과 페이스북 페이지를 먼저 선택해주세요.' }, { status: 401 })
-  }
-  if (!session.igUserId) {
-    return NextResponse.json({ error: '인스타그램 계정이 연결돼 있지 않아요.' }, { status: 401 })
-  }
-
-  const { pageId, igUserId } = session
-  const accessToken = resolveAccessToken(session.accessToken)
-  const adAccountId = resolveAdAccountId(session.adAccountId)
-
-  return withRouteHandler(true, '', async () => {
+export const POST = withMetaSession(['adAccount', 'page', 'ig'], async (req: NextRequest, s) => {
+    const { accessToken, adAccountId, pageId, igUserId } = s
     const body = (await req.json()) as BoostPostBody
 
     if (!body.igMediaId || typeof body.igMediaId !== 'string') {
@@ -99,5 +85,4 @@ export async function POST(req: NextRequest) {
       pageId,
     )
     return NextResponse.json(result)
-  })
-}
+})

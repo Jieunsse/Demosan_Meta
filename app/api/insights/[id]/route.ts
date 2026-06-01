@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { metaAds, type InsightsPeriod, type MetaObjectiveParam } from '@/lib/meta-ads'
+import { metaAds, VALID_OBJECTIVES, type InsightsPeriod, type MetaObjectiveParam } from '@/lib/meta-ads'
 import { OBJECTIVES_PHASE1, type ObjectivePhase1Id } from '@entities/creative/options'
 import { getMockInsights } from '@/lib/mock-campaigns'
 import { withRouteHandler } from '@/lib/route-handler'
+import { requireMetaSession } from '@/lib/meta-session'
 
-const VALID_OBJECTIVES: ReadonlySet<MetaObjectiveParam> = new Set(['OUTCOME_TRAFFIC', 'OUTCOME_AWARENESS', 'OUTCOME_ENGAGEMENT', 'OUTCOME_LEADS'])
 const VALID_GOAL_IDS: ReadonlySet<string> = new Set(OBJECTIVES_PHASE1.map((g) => g.id))
 
 // PRD-ab-testing.md §7.2 — `?adIds=a,b` 형식. 정확히 두 개일 때만 광고별 row 분기 진입.
@@ -28,10 +28,6 @@ export async function GET(
   if (session?.browseMode) {
     return NextResponse.json(getMockInsights(id, period ?? 'all', adIds))
   }
-  if (!session?.accessToken) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-  const { accessToken } = session
   const objRaw = req.nextUrl.searchParams.get('objective')
   const objective: MetaObjectiveParam | undefined =
     objRaw && VALID_OBJECTIVES.has(objRaw as MetaObjectiveParam) ? (objRaw as MetaObjectiveParam) : undefined
@@ -43,7 +39,8 @@ export async function GET(
   // server 는 캠페인 합계만 라이브로 fetch, 광고별 row 는 client 가 launched.startDate 로 seedMockAdRows 합성.
   const isFakeAd = adIds?.every((a) => a.startsWith('mock_ad_')) ?? false
   const liveAdIds = isFakeAd ? undefined : adIds
-  return withRouteHandler(true, '', async () =>
-    NextResponse.json(await metaAds.getInsights(id, accessToken, period, objective, goalId, liveAdIds))
-  )
+  return withRouteHandler(true, '', async () => {
+    const s = requireMetaSession(session)
+    return NextResponse.json(await metaAds.getInsights(id, s.accessToken, period, objective, goalId, liveAdIds))
+  })
 }

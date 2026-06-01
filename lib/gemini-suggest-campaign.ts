@@ -1,6 +1,7 @@
 // Server-side only — do not import from 'use client' components.
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { isGeminiConfigured, requireGeminiKey } from "./gemini-client";
 import { OBJECTIVES_PHASE1, type ObjectiveId } from "@entities/creative/options";
 
 const PHASE1_IDS = OBJECTIVES_PHASE1.map((o) => o.id);
@@ -22,14 +23,10 @@ export interface SuggestCampaignResult {
   suggestions: [CampaignSuggestion, CampaignSuggestion, CampaignSuggestion];
 }
 
-const isConfigured = !!process.env.GOOGLE_AI_API_KEY;
+const isConfigured = isGeminiConfigured();
 
 async function suggest(params: SuggestCampaignParams): Promise<SuggestCampaignResult> {
-  if (!process.env.GOOGLE_AI_API_KEY) {
-    throw new Error("GOOGLE_AI_API_KEY 가 설정되지 않았어요.");
-  }
-
-  const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY);
+  const genAI = new GoogleGenerativeAI(requireGeminiKey());
   const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
   const brandCtx = [

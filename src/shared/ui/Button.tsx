@@ -1,7 +1,13 @@
 import { forwardRef, type ButtonHTMLAttributes } from "react";
 import { cn } from "@shared/lib/cn";
 
-export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "inverse" | "fb";
+export type ButtonVariant =
+  | "primary"
+  | "secondary"
+  | "ghost"
+  | "danger"
+  | "inverse"
+  | "fb";
 export type ButtonSize = "sm" | "md" | "lg";
 
 const BASE =
@@ -46,10 +52,16 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   ({ variant = "secondary", size = "md", block, className, ...props }, ref) => (
     <button
       ref={ref}
-      className={cn(BASE, variant !== "fb" && SIZE[size], VARIANT[variant], block && "w-full", className)}
+      className={cn(
+        BASE,
+        variant !== "fb" && SIZE[size],
+        VARIANT[variant],
+        block && "w-full",
+        className,
+      )}
       {...props}
     />
-  )
+  ),
 );
 Button.displayName = "Button";
 
@@ -59,6 +71,14 @@ export function buttonVariants({
   size = "md",
   block,
   className,
-}: Partial<Pick<ButtonProps, "variant" | "size" | "block" | "className">> = {}) {
-  return cn(BASE, variant !== "fb" && SIZE[size], VARIANT[variant], block && "w-full", className);
+}: Partial<
+  Pick<ButtonProps, "variant" | "size" | "block" | "className">
+> = {}) {
+  return cn(
+    BASE,
+    variant !== "fb" && SIZE[size],
+    VARIANT[variant],
+    block && "w-full",
+    className,
+  );
 }
