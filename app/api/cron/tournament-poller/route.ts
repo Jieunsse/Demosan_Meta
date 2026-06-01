@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getRealTournamentRunner, supabaseTournamentStore } from "@entities/ab-test/tournament/real";
 import { pushTournamentConcluded } from "@/lib/notifications/registry";
 import { deriveBeat } from "@entities/ab-test/tournament/engine";
+import { recordCronRun } from "@shared/lib/cron-runs";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -25,47 +26,57 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const runner = getRealTournamentRunner();
-  const all = await supabaseTournamentStore.list();
-  const active = all.filter((t) => t.status === "running" && t.delivery);
-
+  const startedAt = new Date().toISOString();
+  let scanned = 0;
   let settled = 0;
   let advanced = 0;
   const errors: string[] = [];
 
-  for (const t of active) {
-    try {
-      const result = await runner.pollAndSettle(t.id);
-      if (result.status !== "settled") continue;
-      settled += 1;
+  try {
+    const runner = getRealTournamentRunner();
+    const all = await supabaseTournamentStore.list();
+    const active = all.filter((t) => t.status === "running" && t.delivery);
+    scanned = active.length;
 
-      // auto 무인 체인 — 봉투/이상신호 브레이크가 없으면 다음 라운드 자동 게재.
-      if (t.mode === "auto") {
-        await runner.autoAdvance(t.id);
-      }
+    for (const t of active) {
+      try {
+        const result = await runner.pollAndSettle(t.id);
+        if (result.status !== "settled") continue;
+        settled += 1;
 
-      // 결산 후 최신 상태로 SSE push (autoAdvance 가 status 를 바꿨을 수 있어 다시 읽는다).
-      const fresh = await supabaseTournamentStore.get(t.id);
-      if (!fresh?.delivery) continue;
-      if (fresh.mode === "auto" && deriveBeat(fresh) === "auto-running" && !result.completed) {
-        advanced += 1;
+        // auto 무인 체인 — 봉투/이상신호 브레이크가 없으면 다음 라운드 자동 게재.
+        if (t.mode === "auto") {
+          await runner.autoAdvance(t.id);
+        }
+
+        // 결산 후 최신 상태로 SSE push (autoAdvance 가 status 를 바꿨을 수 있어 다시 읽는다).
+        const fresh = await supabaseTournamentStore.get(t.id);
+        if (!fresh?.delivery) continue;
+        if (fresh.mode === "auto" && deriveBeat(fresh) === "auto-running" && !result.completed) {
+          advanced += 1;
+        }
+        pushTournamentConcluded(fresh.delivery.accessToken, {
+          id: `tourn-${fresh.id}-r${result.round.index}-${result.round.launchedAt ?? ""}`,
+          message: result.completed
+            ? `🏁 '${fresh.productName}' 토너먼트가 끝났어요 — 최종 챔피언이 확정됐어요.`
+            : `라운드 ${result.round.index} 결산 완료 — ${result.winnerIsB ? "새 챌린저 승격" : "챔피언 방어"}`,
+          ts: Date.now(),
+          tournamentId: fresh.id,
+          productName: fresh.productName,
+          roundIndex: result.round.index,
+          winnerIsB: result.winnerIsB,
+          completed: result.completed,
+        });
+      } catch (e) {
+        errors.push(`${t.id}: ${e instanceof Error ? e.message : String(e)}`);
       }
-      pushTournamentConcluded(fresh.delivery.accessToken, {
-        id: `tourn-${fresh.id}-r${result.round.index}-${result.round.launchedAt ?? ""}`,
-        message: result.completed
-          ? `🏁 '${fresh.productName}' 토너먼트가 끝났어요 — 최종 챔피언이 확정됐어요.`
-          : `라운드 ${result.round.index} 결산 완료 — ${result.winnerIsB ? "새 챌린저 승격" : "챔피언 방어"}`,
-        ts: Date.now(),
-        tournamentId: fresh.id,
-        productName: fresh.productName,
-        roundIndex: result.round.index,
-        winnerIsB: result.winnerIsB,
-        completed: result.completed,
-      });
-    } catch (e) {
-      errors.push(`${t.id}: ${e instanceof Error ? e.message : String(e)}`);
     }
+  } catch (e) {
+    // 스캔 자체 실패(store.list 등) — finally 에서 ok=false 로 기록되도록 errors 에 적재.
+    errors.push(`poller: ${e instanceof Error ? e.message : String(e)}`);
+  } finally {
+    await recordCronRun({ job: "tournament-poller", ok: errors.length === 0, scanned, settled, advanced, errors, startedAt });
   }
 
-  return NextResponse.json({ scanned: active.length, settled, advanced, errors });
+  return NextResponse.json({ scanned, settled, advanced, errors });
 }
